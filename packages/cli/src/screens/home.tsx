@@ -9,7 +9,7 @@ export function Home() {
         <box backgroundColor={colors.bg} alignItems="center" justifyContent="center" flexGrow={1}>
             <box width={60} alignItems="center" gap={1}>
                 <box flexDirection="row" gap={1} marginBottom={1}>
-                    <ascii-font font="tiny" text="Code" />
+                    <ascii-font color={colors.text} font="tiny" text="Code" />
                     <ascii-font color={colors.accent} font="tiny" text="Yantram" />
                 </box>
                 <InputBar />
