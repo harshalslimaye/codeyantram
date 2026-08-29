@@ -163,4 +163,34 @@ describe('open/close', () => {
     // The mechanism itself is a one-line `useEffect(() => setOpen(true),
     // [value])` in command-menu.tsx; "escape closes the menu" above covers
     // the other half.
+
+    test('ctrl+c closes the menu without changing the value', async () => {
+        const { setup, onSelect } = mountWithValue('/de');
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('debug'));
+
+        rendered.mockInput.pressCtrlC();
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('debug'));
+
+        expect(rendered.captureCharFrame()).not.toContain('debug');
+        expect(onSelect).not.toHaveBeenCalled();
+        rendered.renderer.destroy();
+    });
+});
+
+describe('layer ownership', () => {
+    test('claims the autocomplete layer while open and releases it once closed', async () => {
+        const { setup } = mountWithValue('/de');
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('debug'));
+
+        expect(rendered.layers.isOnTop('autocomplete')).toBe(true);
+
+        rendered.mockInput.pressEscape();
+        await settleEscape();
+        await rendered.waitFor(() => rendered.layers.isOnTop('root'));
+
+        expect(rendered.layers.isOnTop('root')).toBe(true);
+        rendered.renderer.destroy();
+    });
 });

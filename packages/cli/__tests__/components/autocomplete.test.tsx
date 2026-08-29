@@ -190,6 +190,42 @@ describe('escape', () => {
     });
 });
 
+describe('ctrl+c', () => {
+    // Unlike escape, ctrl+c is not a prefix of any other sequence, so there
+    // is no disambiguation delay to wait out here.
+    test('ctrl+c calls onClose', async () => {
+        const { setup, onClose } = mountMenu();
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        rendered.mockInput.pressCtrlC();
+        await rendered.waitFor(() => onClose.mock.calls.length > 0);
+
+        expect(onClose).toHaveBeenCalledTimes(1);
+        rendered.renderer.destroy();
+    });
+});
+
+describe('layer ownership', () => {
+    test('claims the autocomplete layer while open', async () => {
+        const { setup } = mountMenu();
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(rendered.layers.isOnTop('autocomplete')).toBe(true);
+        rendered.renderer.destroy();
+    });
+
+    test('does not claim the autocomplete layer while closed', async () => {
+        const { setup } = mountMenu({ open: false });
+        const rendered = await setup;
+        await rendered.renderOnce();
+
+        expect(rendered.layers.isOnTop('autocomplete')).toBe(false);
+        rendered.renderer.destroy();
+    });
+});
+
 describe('scrolling', () => {
     const TEN_ITEMS = makeItems([
         'agents', 'connect', 'debug', 'diff', 'editor',
