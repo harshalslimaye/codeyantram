@@ -1,30 +1,9 @@
 {
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    // Environment setup & latest features
+    // OpenTUI's React renderer supplies the JSX namespace, and its type
+    // definitions reference DOM lib types.
     "lib": ["ESNext", "DOM"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "jsxImportSource": "@opentui/react",
-    "allowJs": true,
-
-    // Bundler mode
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-
-    // Best practices
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-
-    // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "jsxImportSource": "@opentui/react"
   }
 }

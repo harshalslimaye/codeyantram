@@ -5,9 +5,11 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/index.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "devDependencies": {
+    "@types/react": "^19.2.18",
     "typescript": "^5.9.3"
   },
   "dependencies": {
