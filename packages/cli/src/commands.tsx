@@ -1,8 +1,10 @@
-import type { SelectOption } from '@opentui/core';
+import type { ReactNode } from 'react';
+import { ThemePicker } from './components/theme-picker';
 
 export type ActionArgs = {
     exit: () => void;
     populate: () => void;
+    overlay: (title: string, body: ReactNode) => void;
 };
 
 export type Command = {
@@ -65,5 +67,10 @@ export const SLASH_COMMANDS: Command[] = [
         name: 'models',
         description: 'Switch model',
         action: populate
+    },
+    {
+        name: 'themes',
+        description: 'Switch theme',
+        action: args => args.overlay('Themes', <ThemePicker />)
     },
 ];

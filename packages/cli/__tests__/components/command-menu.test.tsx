@@ -193,4 +193,41 @@ describe('layer ownership', () => {
         expect(rendered.layers.isOnTop('root')).toBe(true);
         rendered.renderer.destroy();
     });
+
+    // Selecting a command that opens an overlay doesn't change `value` the
+    // way a populate command does, so nothing incidentally causes the menu
+    // to close — unlike populate commands, where the newly-filled text no
+    // longer matching anything closes it as a side effect. Without an
+    // explicit close, 'autocomplete' stays claimed underneath 'overlay' the
+    // whole time, and closing the overlay would hand ownership back to
+    // 'autocomplete' instead of 'root'.
+    test('selecting an overlay command closes the menu, not just opens the overlay on top of it', async () => {
+        const { setup } = mountWithValue('/themes');
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('themes'));
+
+        rendered.mockInput.pressEnter();
+        await rendered.waitForFrame(f => f.includes('Themes'));
+
+        // Close the overlay and check what layer is left underneath it.
+        rendered.mockInput.pressEscape();
+        await settleEscape();
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('Themes'));
+
+        expect(rendered.layers.isOnTop('root')).toBe(true);
+        expect(rendered.layers.isOnTop('autocomplete')).toBe(false);
+        rendered.renderer.destroy();
+    });
+
+    test('selecting an overlay command clears the prompt, like populate does', async () => {
+        const { setup, onSelect } = mountWithValue('/themes');
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('themes'));
+
+        rendered.mockInput.pressEnter();
+        await rendered.waitFor(() => onSelect.mock.calls.length > 0);
+
+        expect(onSelect).toHaveBeenCalledWith('');
+        rendered.renderer.destroy();
+    });
 });
