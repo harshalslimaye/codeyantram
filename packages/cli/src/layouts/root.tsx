@@ -1,10 +1,19 @@
 import type { ReactNode } from 'react';
 import { ThemeProvider } from '../providers/theme';
+import { KeyboardProvider } from '../providers/keyboard';
+import type { LayerStack } from '../keyboard';
 
-export function Root({ children }: { children: ReactNode }) {
+type RootProps = {
+    layers: LayerStack;
+    children: ReactNode;
+};
+
+export function Root({ layers, children }: RootProps) {
     return (
-        <ThemeProvider>
-            {children}
-        </ThemeProvider>
+        <KeyboardProvider layers={layers}>
+            <ThemeProvider>
+                {children}
+            </ThemeProvider>
+        </KeyboardProvider>
     );
 }
