@@ -3,7 +3,6 @@ import { testRender } from '@opentui/react/test-utils';
 import { useKeyboard } from '@opentui/react';
 import { useTheme, ThemeProvider } from '../../src/providers/theme';
 import { DEFAULT_THEME } from '../../src/theme';
-import { tick } from '../support/mount';
 
 function ShowTheme() {
     const { theme, colors } = useTheme();
@@ -37,10 +36,6 @@ describe('useTheme', () => {
 });
 
 describe('ThemeProvider', () => {
-    // Pinned as a known-incomplete behavior, not a desired one: setTheme is
-    // currently `() => {}`. If this is ever implemented for real, this test
-    // should fail and get updated deliberately, rather than the no-op
-    // silently starting to "work" (or not) with nobody noticing either way.
     function SetThemeHarness() {
         const { theme, setTheme } = useTheme();
         useKeyboard(key => {
@@ -49,7 +44,7 @@ describe('ThemeProvider', () => {
         return <text>{theme.name}</text>;
     }
 
-    test('setTheme does not currently change the active theme', async () => {
+    test('setTheme changes the active theme', async () => {
         const rendered = await testRender(
             <ThemeProvider>
                 <SetThemeHarness />
@@ -59,11 +54,10 @@ describe('ThemeProvider', () => {
         await rendered.waitForFrame(f => f.includes(DEFAULT_THEME.name));
 
         rendered.mockInput.pressKey('s');
-        await tick(50);
+        const frame = await rendered.waitForFrame(f => f.includes('Changed'));
 
-        const frame = rendered.captureCharFrame();
-        expect(frame).toContain(DEFAULT_THEME.name);
-        expect(frame).not.toContain('Changed');
+        expect(frame).toContain('Changed');
+        expect(frame).not.toContain(DEFAULT_THEME.name);
         rendered.renderer.destroy();
     });
 });

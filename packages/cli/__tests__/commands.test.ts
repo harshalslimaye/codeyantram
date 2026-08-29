@@ -1,9 +1,14 @@
 import { describe, test, expect, mock } from 'bun:test';
 import { SLASH_COMMANDS, type ActionArgs } from '../src/commands';
 
-function stubArgs(): ActionArgs & { exit: ReturnType<typeof mock>; populate: ReturnType<typeof mock> } {
-    return { exit: mock(() => {}), populate: mock(() => {}) };
+function stubArgs(): ActionArgs & { exit: ReturnType<typeof mock>; populate: ReturnType<typeof mock>; overlay: ReturnType<typeof mock> } {
+    return { exit: mock(() => {}), populate: mock(() => {}), overlay: mock(() => {}) };
 }
+
+// Commands with real behavior beyond "fill the input with my own text" —
+// excluded from the blanket "populates" check below, and covered by their
+// own assertions instead.
+const IMPLEMENTED_COMMANDS = ['exit', 'themes'];
 
 describe('SLASH_COMMANDS', () => {
     test('every command has a name and description', () => {
@@ -60,10 +65,23 @@ describe('command actions', () => {
     });
 
     test('every not-yet-implemented command populates instead of exiting', () => {
-        for (const command of SLASH_COMMANDS.filter(c => c.name !== 'exit')) {
+        for (const command of SLASH_COMMANDS.filter(c => !IMPLEMENTED_COMMANDS.includes(c.name))) {
             const args = stubArgs();
             command.action(args);
             expect(args.populate).toHaveBeenCalledTimes(1);
         }
+    });
+
+    test('themes opens an overlay instead of populating or exiting', () => {
+        const themesCommand = SLASH_COMMANDS.find(command => command.name === 'themes');
+        expect(themesCommand).toBeDefined();
+
+        const args = stubArgs();
+        themesCommand!.action(args);
+
+        expect(args.overlay).toHaveBeenCalledTimes(1);
+        expect(args.overlay.mock.calls[0]?.[0]).toBe('Themes');
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
     });
 });

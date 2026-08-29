@@ -22,10 +22,10 @@ type ThemeProviderProps = {
 };
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-    const [theme] = useState<Theme>(DEFAULT_THEME);
+    const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
     return (
-        <ThemeContext.Provider value={{ colors: theme.colors, theme, setTheme: () => {} }}>
+        <ThemeContext.Provider value={{ colors: theme.colors, theme, setTheme }}>
             {children}
         </ThemeContext.Provider>
     );
