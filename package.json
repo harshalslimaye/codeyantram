@@ -1,10 +1,13 @@
 {
   "name": "codeyantram",
-  "module": "index.ts",
   "type": "module",
   "private": true,
+  "workspaces": ["packages/*"],
   "scripts": {
-    "dev:cli": "bun run --watch packages/cli/src/index.tsx"
+    "dev:cli": "cd packages/cli && bun run dev",
+    "test:cli": "bun run -F cli test",
+    "test": "bun run -F '*' test",
+    "typecheck": "bun run -F '*' typecheck"
   },
   "devDependencies": {
     "@types/bun": "latest"
