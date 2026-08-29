@@ -41,11 +41,15 @@ export function CommandMenu({ value, onSelect }: CommandMenuProps) {
         : [];
 
     // For commands, Enter and Tab both just select the highlighted command.
+    // Each command's action decides what "selecting" it actually does —
+    // populate fills the input with this command's full text (the default,
+    // for commands with no real implementation yet), exit quits the app.
     const selectItem = (cmd: Command) => {
         if (!activeTrigger) return;
 
         cmd.action({
             exit: () => renderer.destroy(),
+            populate: () => onSelect(`${value.slice(0, wordStart)}${activeTrigger.char}${cmd.name} `),
         });
     };
 

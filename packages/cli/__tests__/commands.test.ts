@@ -1,8 +1,8 @@
 import { describe, test, expect, mock } from 'bun:test';
 import { SLASH_COMMANDS, type ActionArgs } from '../src/commands';
 
-function stubArgs(): ActionArgs & { exit: ReturnType<typeof mock> } {
-    return { exit: mock(() => {}) };
+function stubArgs(): ActionArgs & { exit: ReturnType<typeof mock>; populate: ReturnType<typeof mock> } {
+    return { exit: mock(() => {}), populate: mock(() => {}) };
 }
 
 describe('SLASH_COMMANDS', () => {
@@ -48,6 +48,22 @@ describe('command actions', () => {
             const args = stubArgs();
             command.action(args);
             expect(args.exit).not.toHaveBeenCalled();
+        }
+    });
+
+    test('exit does not populate the input', () => {
+        const exitCommand = SLASH_COMMANDS.find(command => command.name === 'exit');
+        const args = stubArgs();
+        exitCommand!.action(args);
+
+        expect(args.populate).not.toHaveBeenCalled();
+    });
+
+    test('every not-yet-implemented command populates instead of exiting', () => {
+        for (const command of SLASH_COMMANDS.filter(c => c.name !== 'exit')) {
+            const args = stubArgs();
+            command.action(args);
+            expect(args.populate).toHaveBeenCalledTimes(1);
         }
     });
 });
