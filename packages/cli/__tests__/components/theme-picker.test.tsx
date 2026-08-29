@@ -22,7 +22,7 @@ import { NO_BUILTIN_CTRL_C, tick } from '../support/mount';
 // character, re-opening the overlay from scratch mid-search — which is
 // exactly what happened before this guard was added here.
 function Harness() {
-    const { theme } = useTheme();
+    const { currentTheme } = useTheme();
     const overlay = useOverlay();
     const layers = useLayerStack();
 
@@ -32,7 +32,7 @@ function Harness() {
         overlay.show('Themes', <ThemePicker />);
     });
 
-    return <text>current:{theme.name}</text>;
+    return <text>current:{currentTheme.name}</text>;
 }
 
 function mount(width = 60, height = 30) {
@@ -124,6 +124,21 @@ describe('filtering', () => {
             if (theme.name === 'Thirai' || theme.name === DEFAULT_THEME.name) continue;
             expect(frame).not.toContain(theme.name);
         }
+        rendered.renderer.destroy();
+    });
+
+    test('shows "No Themes found" when the search matches nothing', async () => {
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('t');
+        await rendered.waitForFrame(f => f.includes('Themes'));
+
+        await rendered.mockInput.typeText('zzz', 15);
+        await tick(50);
+        await rendered.renderOnce();
+
+        expect(rendered.captureCharFrame()).toContain('No Themes found');
         rendered.renderer.destroy();
     });
 });

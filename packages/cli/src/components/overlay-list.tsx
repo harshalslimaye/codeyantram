@@ -22,6 +22,8 @@ type OverlayListProps<T> = {
     isActive?: (item: T) => boolean;
     placeholder?: string;
     maxVisible?: number;
+    /** Shown in place of the list when the search text matches nothing. */
+    emptyMessage?: string;
 };
 
 /**
@@ -38,6 +40,7 @@ export function OverlayList<T>({
     isActive,
     placeholder = 'Search',
     maxVisible = 6,
+    emptyMessage = 'No results',
 }: OverlayListProps<T>) {
     const { colors } = useTheme();
     const layers = useLayerStack();
@@ -94,24 +97,32 @@ export function OverlayList<T>({
         <box>
             <input focused value={query} onInput={setQuery} placeholder={placeholder} />
             <box marginTop={1}>
-                {scrollOffset > 0 && (
+                {filtered.length === 0 ? (
                     <box paddingX={1}>
-                        <text attributes={TextAttributes.DIM}>▲</text>
+                        <text attributes={TextAttributes.DIM}>{emptyMessage}</text>
                     </box>
-                )}
-                {visibleItems.map((item, i) => {
-                    const index = scrollOffset + i;
-                    const isSelected = index === selectedIndex;
-                    return (
-                        <box key={getKey(item)} backgroundColor={isSelected ? colors.accent : undefined} paddingX={1}>
-                            {renderer(item, { isSelected, isActive: isActive?.(item) ?? false })}
-                        </box>
-                    );
-                })}
-                {scrollOffset + maxVisible < filtered.length && (
-                    <box paddingX={1}>
-                        <text attributes={TextAttributes.DIM}>▼</text>
-                    </box>
+                ) : (
+                    <>
+                        {scrollOffset > 0 && (
+                            <box paddingX={1}>
+                                <text attributes={TextAttributes.DIM}>▲</text>
+                            </box>
+                        )}
+                        {visibleItems.map((item, i) => {
+                            const index = scrollOffset + i;
+                            const isSelected = index === selectedIndex;
+                            return (
+                                <box key={getKey(item)} backgroundColor={isSelected ? colors.accent : undefined} paddingX={1}>
+                                    {renderer(item, { isSelected, isActive: isActive?.(item) ?? false })}
+                                </box>
+                            );
+                        })}
+                        {scrollOffset + maxVisible < filtered.length && (
+                            <box paddingX={1}>
+                                <text attributes={TextAttributes.DIM}>▼</text>
+                            </box>
+                        )}
+                    </>
                 )}
             </box>
         </box>

@@ -4,7 +4,7 @@ import { OverlayList } from './overlay-list';
 import { themes, type Theme } from '../theme';
 
 export function ThemePicker() {
-    const { theme, setTheme } = useTheme();
+    const { currentTheme, setTheme } = useTheme();
     const overlay = useOverlay();
 
     return (
@@ -12,7 +12,7 @@ export function ThemePicker() {
             items={themes}
             getKey={t => t.name}
             filter={(t, query) => t.name.toLowerCase().startsWith(query.toLowerCase())}
-            isActive={t => t.name === theme.name}
+            isActive={t => t.name === currentTheme.name}
             onSelect={t => {
                 setTheme(t);
                 overlay.close();
@@ -20,6 +20,7 @@ export function ThemePicker() {
             renderer={(t: Theme, { isActive }) => (
                 <text>{isActive ? '● ' : '  '}{t.name}</text>
             )}
+            emptyMessage="No Themes found"
         />
     );
 }

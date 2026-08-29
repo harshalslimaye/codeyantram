@@ -23,6 +23,7 @@ function mountList(overrides: Partial<{
     maxVisible: number;
     isActive: (item: string) => boolean;
     onTop: boolean;
+    emptyMessage: string;
 }> = {}) {
     const onSelect = mock((_item: string) => {});
     const items = overrides.items ?? THREE_ITEMS;
@@ -45,6 +46,7 @@ function mountList(overrides: Partial<{
                     renderer={renderItem}
                     isActive={overrides.isActive}
                     maxVisible={overrides.maxVisible}
+                    emptyMessage={overrides.emptyMessage}
                 />
             </ThemeProvider>
         </KeyboardProvider>,
@@ -80,6 +82,33 @@ describe('filtering', () => {
         expect(frame).toContain('beta');
         expect(frame).not.toContain('alpha');
         expect(frame).not.toContain('gamma');
+        rendered.renderer.destroy();
+    });
+});
+
+describe('no matches', () => {
+    test('shows a default message instead of the list', async () => {
+        const { setup } = mountList();
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        await rendered.mockInput.typeText('zzz', 15);
+        const frame = await rendered.waitForFrame(f => f.includes('No results'));
+
+        expect(frame).toContain('No results');
+        expect(frame).not.toContain('alpha');
+        rendered.renderer.destroy();
+    });
+
+    test('uses a caller-supplied message when given one', async () => {
+        const { setup } = mountList({ emptyMessage: 'No Themes found' });
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        await rendered.mockInput.typeText('zzz', 15);
+        const frame = await rendered.waitForFrame(f => f.includes('No Themes found'));
+
+        expect(frame).toContain('No Themes found');
         rendered.renderer.destroy();
     });
 });
