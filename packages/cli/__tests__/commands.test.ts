@@ -23,7 +23,7 @@ function stubArgs(): ActionArgs & {
 // Commands with real behavior beyond the generic "show an info toast"
 // placeholder — excluded from the blanket "shows a toast" check below, and
 // covered by their own assertions instead.
-const IMPLEMENTED_COMMANDS = ['exit', 'themes'];
+const IMPLEMENTED_COMMANDS = ['exit', 'themes', 'models'];
 
 describe('SLASH_COMMANDS', () => {
     test('every command has a name and description', () => {
@@ -99,6 +99,19 @@ describe('command actions', () => {
 
         expect(args.overlay).toHaveBeenCalledTimes(1);
         expect(args.overlay.mock.calls[0]?.[0]).toBe('Themes');
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
+    });
+
+    test('models opens an overlay instead of populating or exiting', () => {
+        const modelsCommand = SLASH_COMMANDS.find(command => command.name === 'models');
+        expect(modelsCommand).toBeDefined();
+
+        const args = stubArgs();
+        modelsCommand!.action(args);
+
+        expect(args.overlay).toHaveBeenCalledTimes(1);
+        expect(args.overlay.mock.calls[0]?.[0]).toBe('Models');
         expect(args.populate).not.toHaveBeenCalled();
         expect(args.exit).not.toHaveBeenCalled();
     });
