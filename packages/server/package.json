@@ -1,5 +1,5 @@
 {
-  "name": "server",
+  "name": "@codeyantram/server",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
@@ -18,6 +18,6 @@
     "@ai-sdk/anthropic": "^4.0.45",
     "ai": "^7.0.84",
     "hono": "^4.13.5",
-    "shared": "workspace:*"
+    "@codeyantram/shared": "workspace:*"
   }
 }

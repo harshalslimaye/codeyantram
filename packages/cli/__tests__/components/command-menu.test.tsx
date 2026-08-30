@@ -8,8 +8,10 @@ import { mountDropup, settleEscape } from '../support/mount';
 //
 // These tests exercise the real SLASH_COMMANDS list (see ../../src/commands),
 // so they use whichever commands currently exist there rather than
-// placeholder names — 'models' stands in for "some generic command with a
-// unique prefix", 'agents'/'exit' for "any two other real commands".
+// placeholder names — 'models'/'upgrade' stand in for "some command with a
+// unique prefix", 'agents'/'exit' for "any two other real commands". 'models'
+// itself now opens a real overlay (see model-picker.test.tsx), so the
+// "generic toast placeholder" tests below use 'agents' instead.
 
 function mountWithValue(value: string, onSelect = mock((_v: string) => {})) {
     const setup = mountDropup(<CommandMenu value={value} onSelect={onSelect} />);
@@ -90,34 +92,34 @@ describe('trigger matching and filtering', () => {
 });
 
 describe('selecting a command', () => {
-    // 'models' (like every current command besides 'exit' and 'themes')
-    // shows an info toast rather than filling in the input via `populate` —
-    // see commands.test.ts for the toast-is-called assertion itself.
-    // `populate` is still exercised by command-menu.tsx's wiring; it just
-    // has no live command using it right now, so it isn't covered via
+    // 'agents' (like every current command besides 'exit', 'themes', and
+    // 'models') shows an info toast rather than filling in the input via
+    // `populate` — see commands.test.ts for the toast-is-called assertion
+    // itself. `populate` is still exercised by command-menu.tsx's wiring; it
+    // just has no live command using it right now, so it isn't covered via
     // SLASH_COMMANDS here.
     test('selecting a placeholder command closes the menu without populating', async () => {
-        const { setup, onSelect } = mountWithValue('/mo');
+        const { setup, onSelect } = mountWithValue('/ag');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('models'));
+        await rendered.waitForFrame(f => f.includes('agents'));
 
         rendered.mockInput.pressEnter();
-        await rendered.waitFor(() => !rendered.captureCharFrame().includes('models'));
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('agents'));
 
-        expect(rendered.captureCharFrame()).not.toContain('models');
+        expect(rendered.captureCharFrame()).not.toContain('agents');
         expect(onSelect).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
 
     test('Tab selects the same as Enter', async () => {
-        const { setup, onSelect } = mountWithValue('/mo');
+        const { setup, onSelect } = mountWithValue('/ag');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('models'));
+        await rendered.waitForFrame(f => f.includes('agents'));
 
         rendered.mockInput.pressTab();
-        await rendered.waitFor(() => !rendered.captureCharFrame().includes('models'));
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('agents'));
 
-        expect(rendered.captureCharFrame()).not.toContain('models');
+        expect(rendered.captureCharFrame()).not.toContain('agents');
         expect(onSelect).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });

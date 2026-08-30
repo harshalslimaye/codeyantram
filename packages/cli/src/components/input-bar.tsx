@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { TextAttributes } from '@opentui/core';
 import { useKeyboard, useRenderer } from '@opentui/react';
 import { useTheme } from '../providers/theme';
+import { useModel } from '../providers/model';
 import { useLayerStack } from '../providers/keyboard';
 import { ROOT_LAYER } from '../keyboard';
 import { CommandMenu } from './command-menu';
@@ -12,6 +13,7 @@ type InputBarProps = {
 
 export function InputBar({ placeholder = "ask anything ... 'fix the socket handshake'" }: InputBarProps) {
     const { colors } = useTheme();
+    const { model } = useModel();
     const [value, setValue] = useState('');
     const layers = useLayerStack();
     const renderer = useRenderer();
@@ -56,7 +58,7 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
                     <box flexDirection="row" gap={1}>
                         <text fg={colors.accent}>plan</text>
                         <text attributes={TextAttributes.DIM}>›</text>
-                        <text attributes={TextAttributes.DIM}>claude-sonnet-5</text>
+                        <text attributes={TextAttributes.DIM}>{model.id}</text>
                     </box>
                     <box>
                         <text attributes={TextAttributes.DIM}>↵ send</text>
