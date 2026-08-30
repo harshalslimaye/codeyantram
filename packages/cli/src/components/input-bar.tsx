@@ -69,7 +69,7 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
     });
 
     return (
-        <box position="relative" width="100%">
+        <box border={['left']} borderColor={colors.accent} position="relative" width="100%">
             <box backgroundColor={colors.panel} paddingX={2} paddingY={1} width="100%">
                 <CommandMenu value={value} onSelect={setValue} />
                 <input
@@ -80,11 +80,12 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
                     paddingX={2}
                     placeholder={placeholder}
                 />
-                <box flexDirection="row" justifyContent="space-between" marginBottom={paddingBottom}>
+                <box flexDirection="row" justifyContent="space-between">
                     <box flexDirection="row" gap={1}>
                         <text fg={colors.accent}>{agent.name}</text>
-                        <text attributes={TextAttributes.DIM}>›</text>
-                        <text attributes={TextAttributes.DIM}>{model.id}</text>
+                        <text attributes={TextAttributes.DIM}>·</text>
+                        <text fg={colors.accent}>{model.id}</text>
+                        <text attributes={TextAttributes.DIM}>{model.provider}</text>
                     </box>
                     <box>
                         <text attributes={TextAttributes.DIM}>↵ send</text>
