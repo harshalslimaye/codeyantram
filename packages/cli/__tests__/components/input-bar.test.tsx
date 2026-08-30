@@ -4,24 +4,26 @@ import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel } from '@codeyantram/shar
 import { InputBar } from '../../src/components/input-bar';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
+import { AgentProvider } from '../../src/providers/agent';
 import { KeyboardProvider } from '../../src/providers/keyboard';
 import { OverlayProvider } from '../../src/providers/overlay';
 import { ToastProvider } from '../../src/providers/toast';
 import { createLayerStack } from '../../src/keyboard';
+import { DEFAULT_AGENT } from '../../src/agents';
 import { NO_BUILTIN_CTRL_C, tick, settleEscape } from '../support/mount';
 
 const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
 
 // Mirrors how Root and Home actually wrap InputBar: a KeyboardProvider for
-// the layer stack InputBar now claims/reads, a ModelProvider since InputBar
-// reads the active model for its footer, a ToastProvider and OverlayProvider
-// since InputBar renders CommandMenu which now reads both (its `/agents`
-// command toasts, its `/themes` and `/models` commands each open an
-// overlay), and headroom above so the command menu's "position: absolute;
-// bottom: 100%" dropup has room to render into. See autocomplete.test.tsx
-// for why each test mounts fresh and performs one interaction arc ending in
-// a single wait. Hands back the layer stack so a test can assert on
-// ownership.
+// the layer stack InputBar now claims/reads, a ModelProvider and
+// AgentProvider since InputBar reads the active model and agent for its
+// footer, a ToastProvider and OverlayProvider since InputBar renders
+// CommandMenu which now reads both (its `/themes`, `/models`, and `/agents`
+// commands each open an overlay), and headroom above so the command menu's
+// "position: absolute; bottom: 100%" dropup has room to render into. See
+// autocomplete.test.tsx for why each test mounts fresh and performs one
+// interaction arc ending in a single wait. Hands back the layer stack so a
+// test can assert on ownership.
 function mount(props?: { placeholder?: string }) {
     const layers = createLayerStack();
 
@@ -29,13 +31,15 @@ function mount(props?: { placeholder?: string }) {
         <KeyboardProvider layers={layers}>
             <ThemeProvider>
                 <ModelProvider>
-                    <ToastProvider>
-                        <OverlayProvider>
-                            <box paddingTop={15} width={40}>
-                                <InputBar {...props} />
-                            </box>
-                        </OverlayProvider>
-                    </ToastProvider>
+                    <AgentProvider>
+                        <ToastProvider>
+                            <OverlayProvider>
+                                <box paddingTop={15} width={40}>
+                                    <InputBar {...props} />
+                                </box>
+                            </OverlayProvider>
+                        </ToastProvider>
+                    </AgentProvider>
                 </ModelProvider>
             </ThemeProvider>
         </KeyboardProvider>,
@@ -61,10 +65,11 @@ describe('rendering', () => {
         rendered.renderer.destroy();
     });
 
-    test('renders the model and send chrome', async () => {
+    test('renders the agent, model, and send chrome', async () => {
         const rendered = await mount();
         const frame = await rendered.waitForFrame(f => f.includes(DEFAULT_MODEL.id));
 
+        expect(frame).toContain(DEFAULT_AGENT.name);
         expect(frame).toContain(DEFAULT_MODEL.id);
         expect(frame).toContain('send');
         rendered.renderer.destroy();
@@ -102,10 +107,10 @@ describe('typing', () => {
 
 describe('end to end', () => {
     // No current command uses the `populate` (fill-in-full-text) action —
-    // every command besides 'exit'/'themes'/'models' shows a toast instead
-    // (see commands.test.ts) — so the meaningful end-to-end path through a
-    // real command is 'exit': typing it and pressing Enter should reach the
-    // renderer's real exit path.
+    // every command besides 'exit'/'themes'/'models'/'agents' shows a toast
+    // instead (see commands.test.ts) — so the meaningful end-to-end path
+    // through a real command is 'exit': typing it and pressing Enter should
+    // reach the renderer's real exit path.
     test('typing /exit and pressing enter reaches the exit path', async () => {
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('ask anything'));
