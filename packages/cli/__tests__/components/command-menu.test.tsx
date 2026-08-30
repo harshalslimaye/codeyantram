@@ -5,6 +5,11 @@ import { mountDropup, settleEscape } from '../support/mount';
 // See autocomplete.test.tsx for why each test mounts fresh, performs one
 // interaction arc with real yields between key presses, and ends in a
 // single wait.
+//
+// These tests exercise the real SLASH_COMMANDS list (see ../../src/commands),
+// so they use whichever commands currently exist there rather than
+// placeholder names — 'models' stands in for "some generic command with a
+// unique prefix", 'agents'/'exit' for "any two other real commands".
 
 function mountWithValue(value: string, onSelect = mock((_v: string) => {})) {
     const setup = mountDropup(<CommandMenu value={value} onSelect={onSelect} />);
@@ -18,7 +23,7 @@ describe('trigger matching and filtering', () => {
         const frame = await rendered.waitForFrame(f => f.includes('agents'));
 
         expect(frame).toContain('agents');
-        expect(frame).toContain('connect');
+        expect(frame).toContain('exit');
         rendered.renderer.destroy();
     });
 
@@ -31,32 +36,32 @@ describe('trigger matching and filtering', () => {
         rendered.renderer.destroy();
     });
 
-    test('"/de" filters to just debug', async () => {
-        const { setup } = mountWithValue('/de');
+    test('"/mo" filters to just models', async () => {
+        const { setup } = mountWithValue('/mo');
         const rendered = await setup;
-        const frame = await rendered.waitForFrame(f => f.includes('debug'));
+        const frame = await rendered.waitForFrame(f => f.includes('models'));
 
-        expect(frame).toContain('debug');
+        expect(frame).toContain('models');
         expect(frame).not.toContain('agents');
         expect(frame).not.toContain('exit');
         rendered.renderer.destroy();
     });
 
     test('trigger mid-prompt is matched, not just at the start', async () => {
-        const { setup } = mountWithValue('please look at /he');
+        const { setup } = mountWithValue('please look at /up');
         const rendered = await setup;
-        const frame = await rendered.waitForFrame(f => f.includes('help'));
+        const frame = await rendered.waitForFrame(f => f.includes('upgrade'));
 
-        expect(frame).toContain('help');
+        expect(frame).toContain('upgrade');
         rendered.renderer.destroy();
     });
 
-    test('"/debug " (trailing space) closes the menu', async () => {
-        const { setup } = mountWithValue('/debug ');
+    test('"/models " (trailing space) closes the menu', async () => {
+        const { setup } = mountWithValue('/models ');
         const rendered = await setup;
         await rendered.renderOnce();
 
-        expect(rendered.captureCharFrame()).not.toContain('debug');
+        expect(rendered.captureCharFrame()).not.toContain('models');
         rendered.renderer.destroy();
     });
 
@@ -77,7 +82,7 @@ describe('trigger matching and filtering', () => {
         await rendered.renderOnce();
 
         const frame = rendered.captureCharFrame();
-        for (const name of ['agents', 'connect', 'debug']) {
+        for (const name of ['agents', 'models', 'exit']) {
             expect(frame).not.toContain(name);
         }
         rendered.renderer.destroy();
@@ -85,39 +90,35 @@ describe('trigger matching and filtering', () => {
 });
 
 describe('selecting a command', () => {
-    test('selecting a populate-based command fills in the full command text', async () => {
-        const { setup, onSelect } = mountWithValue('/de');
+    // 'models' (like every current command besides 'exit' and 'themes')
+    // shows an info toast rather than filling in the input via `populate` —
+    // see commands.test.ts for the toast-is-called assertion itself.
+    // `populate` is still exercised by command-menu.tsx's wiring; it just
+    // has no live command using it right now, so it isn't covered via
+    // SLASH_COMMANDS here.
+    test('selecting a placeholder command closes the menu without populating', async () => {
+        const { setup, onSelect } = mountWithValue('/mo');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('debug'));
+        await rendered.waitForFrame(f => f.includes('models'));
 
         rendered.mockInput.pressEnter();
-        await rendered.waitFor(() => onSelect.mock.calls.length > 0);
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('models'));
 
-        expect(onSelect).toHaveBeenCalledWith('/debug ');
-        rendered.renderer.destroy();
-    });
-
-    test('selecting preserves text before the trigger word', async () => {
-        const { setup, onSelect } = mountWithValue('please look at /de');
-        const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('debug'));
-
-        rendered.mockInput.pressEnter();
-        await rendered.waitFor(() => onSelect.mock.calls.length > 0);
-
-        expect(onSelect).toHaveBeenCalledWith('please look at /debug ');
+        expect(rendered.captureCharFrame()).not.toContain('models');
+        expect(onSelect).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
 
     test('Tab selects the same as Enter', async () => {
-        const { setup, onSelect } = mountWithValue('/de');
+        const { setup, onSelect } = mountWithValue('/mo');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('debug'));
+        await rendered.waitForFrame(f => f.includes('models'));
 
         rendered.mockInput.pressTab();
-        await rendered.waitFor(() => onSelect.mock.calls.length > 0);
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('models'));
 
-        expect(onSelect).toHaveBeenCalledWith('/debug ');
+        expect(rendered.captureCharFrame()).not.toContain('models');
+        expect(onSelect).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
 
@@ -142,15 +143,15 @@ describe('selecting a command', () => {
 
 describe('open/close', () => {
     test('escape closes the menu without changing the value', async () => {
-        const { setup, onSelect } = mountWithValue('/de');
+        const { setup, onSelect } = mountWithValue('/mo');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('debug'));
+        await rendered.waitForFrame(f => f.includes('models'));
 
         rendered.mockInput.pressEscape();
         await settleEscape();
-        await rendered.waitFor(() => !rendered.captureCharFrame().includes('debug'));
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('models'));
 
-        expect(rendered.captureCharFrame()).not.toContain('debug');
+        expect(rendered.captureCharFrame()).not.toContain('models');
         expect(onSelect).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
@@ -165,14 +166,14 @@ describe('open/close', () => {
     // the other half.
 
     test('ctrl+c closes the menu without changing the value', async () => {
-        const { setup, onSelect } = mountWithValue('/de');
+        const { setup, onSelect } = mountWithValue('/mo');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('debug'));
+        await rendered.waitForFrame(f => f.includes('models'));
 
         rendered.mockInput.pressCtrlC();
-        await rendered.waitFor(() => !rendered.captureCharFrame().includes('debug'));
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('models'));
 
-        expect(rendered.captureCharFrame()).not.toContain('debug');
+        expect(rendered.captureCharFrame()).not.toContain('models');
         expect(onSelect).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
@@ -180,9 +181,9 @@ describe('open/close', () => {
 
 describe('layer ownership', () => {
     test('claims the autocomplete layer while open and releases it once closed', async () => {
-        const { setup } = mountWithValue('/de');
+        const { setup } = mountWithValue('/mo');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('debug'));
+        await rendered.waitForFrame(f => f.includes('models'));
 
         expect(rendered.layers.isOnTop('autocomplete')).toBe(true);
 
