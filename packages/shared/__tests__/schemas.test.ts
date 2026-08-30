@@ -19,6 +19,11 @@ const userMessage = {
     parts: [{ type: "text" as const, text: "hello" }],
 };
 
+const baseRequest = {
+    agent: "Talk" as const,
+    cwd: "/repo",
+};
+
 describe("chatModelIdSchema", () => {
     test("accepts an id from the catalog", () => {
         expect(chatModelIdSchema.parse("gemini-3.5-flash")).toBe("gemini-3.5-flash");
@@ -95,6 +100,31 @@ describe("messagePartSchema", () => {
 
     test("rejects a tool-call part missing its id", () => {
         const result = messagePartSchema.safeParse({ type: "tool-call", toolName: "ls", args: {} });
+        expect(result.success).toBe(false);
+    });
+
+    test("accepts a tool-call part carrying approval fields", () => {
+        const result = messagePartSchema.safeParse({
+            type: "tool-call",
+            toolCallId: "call_1",
+            toolName: "bash",
+            args: { command: "ls" },
+            approvalId: "appr_1",
+            approvalStatus: "pending",
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("rejects an unknown approvalStatus", () => {
+        const result = messagePartSchema.safeParse({
+            type: "tool-call",
+            toolCallId: "call_1",
+            toolName: "bash",
+            args: {},
+            approvalStatus: "maybe",
+        });
+
         expect(result.success).toBe(false);
     });
 
@@ -197,6 +227,7 @@ describe("toRequestMessage", () => {
 describe("chatRequestSchema", () => {
     test("accepts a request with no effort (provider default applies)", () => {
         const result = chatRequestSchema.safeParse({
+            ...baseRequest,
             model: "claude-sonnet-5",
             messages: [userMessage],
         });
@@ -206,6 +237,7 @@ describe("chatRequestSchema", () => {
 
     test("accepts an effort the model supports", () => {
         const result = chatRequestSchema.safeParse({
+            ...baseRequest,
             model: "claude-opus-5",
             messages: [userMessage],
             effort: "max",
@@ -217,6 +249,7 @@ describe("chatRequestSchema", () => {
     test("rejects an effort the model does not support", () => {
         // "max" is Anthropic-only - Gemini tops out at "high".
         const result = chatRequestSchema.safeParse({
+            ...baseRequest,
             model: "gemini-3.5-flash",
             messages: [userMessage],
             effort: "max",
@@ -228,6 +261,7 @@ describe("chatRequestSchema", () => {
 
     test("rejects any effort for a model with no effort control", () => {
         const result = chatRequestSchema.safeParse({
+            ...baseRequest,
             model: "claude-haiku-4-5",
             messages: [userMessage],
             effort: "low",
@@ -238,6 +272,7 @@ describe("chatRequestSchema", () => {
 
     test("accepts claude-haiku-4-5 when no effort is sent", () => {
         const result = chatRequestSchema.safeParse({
+            ...baseRequest,
             model: "claude-haiku-4-5",
             messages: [userMessage],
         });
@@ -247,6 +282,7 @@ describe("chatRequestSchema", () => {
 
     test("rejects an assistant message that still carries reasoning", () => {
         const result = chatRequestSchema.safeParse({
+            ...baseRequest,
             model: "claude-sonnet-5",
             messages: [
                 userMessage,
@@ -258,11 +294,33 @@ describe("chatRequestSchema", () => {
     });
 
     test("rejects an empty message list", () => {
-        expect(chatRequestSchema.safeParse({ model: "claude-sonnet-5", messages: [] }).success).toBe(false);
+        const result = chatRequestSchema.safeParse({ ...baseRequest, model: "claude-sonnet-5", messages: [] });
+        expect(result.success).toBe(false);
     });
 
     test("rejects an unknown model", () => {
-        const result = chatRequestSchema.safeParse({ model: "gpt-9", messages: [userMessage] });
+        const result = chatRequestSchema.safeParse({ ...baseRequest, model: "gpt-9", messages: [userMessage] });
+        expect(result.success).toBe(false);
+    });
+
+    test("rejects a request missing cwd", () => {
+        const result = chatRequestSchema.safeParse({
+            agent: "Talk",
+            model: "claude-sonnet-5",
+            messages: [userMessage],
+        });
+
+        expect(result.success).toBe(false);
+    });
+
+    test("rejects a request with an unknown agent", () => {
+        const result = chatRequestSchema.safeParse({
+            ...baseRequest,
+            agent: "Debug",
+            model: "claude-sonnet-5",
+            messages: [userMessage],
+        });
+
         expect(result.success).toBe(false);
     });
 });
@@ -294,6 +352,16 @@ describe("chatStreamEventSchema", () => {
         expect(
             chatStreamEventSchema.safeParse({ type: "tool-result", toolCallId: "c1", result: "ok" }).success,
         ).toBe(true);
+    });
+
+    test("accepts a tool-approval-request event", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "tool-approval-request",
+            toolCallId: "c1",
+            approvalId: "appr-1",
+        });
+
+        expect(result.success).toBe(true);
     });
 
     test("accepts a done event", () => {

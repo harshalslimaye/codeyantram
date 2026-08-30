@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AGENT_NAMES } from "./agents";
 import {
     EFFORT_LEVELS,
     SUPPORTED_CHAT_MODEL_IDS,
@@ -10,6 +11,7 @@ import {
 export const effortLevelSchema = z.enum(EFFORT_LEVELS);
 export const chatModelIdSchema = z.enum(SUPPORTED_CHAT_MODEL_IDS);
 export const providerSchema = z.enum(SUPPORTED_PROVIDERS);
+export const agentNameSchema = z.enum(AGENT_NAMES);
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -41,6 +43,10 @@ export const reasoningPartSchema = z.object({
     text: z.string(),
 });
 
+export const toolApprovalStatusSchema = z.enum(["pending", "approved", "denied"]);
+
+export type ToolApprovalStatus = z.infer<typeof toolApprovalStatusSchema>;
+
 export const toolCallPartSchema = z.object({
     type: z.literal("tool-call"),
     // Named to match the "tool-call"/"tool-result" stream events, so folding an
@@ -51,6 +57,12 @@ export const toolCallPartSchema = z.object({
     // Filled in once the matching "tool-result" event arrives, so a completed
     // call and its output live in one part rather than two.
     result: z.string().optional(),
+    // Only present for a mutating tool (see isReadOnlyTool). "pending" once the
+    // server's "tool-approval-request" event arrives; the CLI sets it to
+    // "approved"/"denied" once the user decides, before replaying it in the
+    // next request's history.
+    approvalId: z.string().optional(),
+    approvalStatus: toolApprovalStatusSchema.optional(),
 });
 
 export const messagePartSchema = z.discriminatedUnion("type", [
@@ -132,12 +144,17 @@ export function toRequestMessage(message: ChatMessage): RequestMessage {
 }
 
 // What the CLI POSTs to the local server. `effort` is optional - omitting it
-// lets each provider apply its own default (see defaultEffortLevel in models.ts).
+// lets each provider apply its own default (see defaultEffortLevel in
+// models.ts). `agent` and `cwd` are required: the server needs to know
+// whether tools are allowed at all (agentHasTools) and, if so, which project
+// root to resolve every tool's paths against.
 export const chatRequestSchema = z
     .object({
         model: chatModelIdSchema,
         messages: z.array(requestMessageSchema).min(1),
         effort: effortLevelSchema.optional(),
+        agent: agentNameSchema,
+        cwd: z.string().min(1),
     })
     .refine(
         request => {
@@ -205,6 +222,14 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
         type: z.literal("tool-result"),
         toolCallId: z.string(),
         result: z.string(),
+    }),
+    // Sent instead of an eventual "tool-result" when the tool needs approval
+    // before it can run - the turn ends here, and the CLI must resolve the
+    // approval and start a new turn to get a "tool-result" for this call.
+    z.object({
+        type: z.literal("tool-approval-request"),
+        toolCallId: z.string(),
+        approvalId: z.string(),
     }),
     z.object({
         type: z.literal("done"),

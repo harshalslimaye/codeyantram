@@ -101,6 +101,78 @@ describe('MessageList', () => {
         rendered.renderer.destroy();
     });
 
+    test('summarizes a tool call\'s arguments - path, pattern, or command depending on the tool', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [
+                    { type: 'tool-call', toolCallId: 'c1', toolName: 'read_file', args: { path: 'src/a.ts' } },
+                    { type: 'tool-call', toolCallId: 'c2', toolName: 'grep', args: { pattern: 'TODO', path: 'src' } },
+                    { type: 'tool-call', toolCallId: 'c3', toolName: 'bash', args: { command: 'ls -la' } },
+                ],
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('ls -la'));
+
+        expect(frame).toContain('src/a.ts');
+        expect(frame).toContain('TODO in src');
+        expect(frame).toContain('ls -la');
+
+        rendered.renderer.destroy();
+    });
+
+    test('omits the summary line for a tool with no recognized argument to show', async () => {
+        const messages: ChatMessage[] = [
+            { id: '1', role: 'assistant', parts: [{ type: 'tool-call', toolCallId: 'c1', toolName: 'search', args: {} }] },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('search'));
+
+        expect(frame).toContain('search');
+        expect(frame).toContain('running…');
+
+        rendered.renderer.destroy();
+    });
+
+    test('shows needs-approval and denied states', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'c1',
+                        toolName: 'bash',
+                        args: { command: 'rm -rf x' },
+                        approvalId: 'a1',
+                        approvalStatus: 'pending',
+                    },
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'c2',
+                        toolName: 'bash',
+                        args: { command: 'rm -rf y' },
+                        approvalId: 'a2',
+                        approvalStatus: 'denied',
+                    },
+                ],
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('denied'));
+
+        expect(frame).toContain('needs approval');
+        expect(frame).toContain('denied');
+
+        rendered.renderer.destroy();
+    });
+
     test('renders a fenced code block inside an assistant reply', async () => {
         const messages: ChatMessage[] = [
             {

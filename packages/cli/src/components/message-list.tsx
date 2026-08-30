@@ -1,8 +1,49 @@
 import { TextAttributes, type SyntaxStyle, type TreeSitterClient } from '@opentui/core';
-import type { ChatMessage, MessagePart } from '@codeyantram/shared';
+import type { ChatMessage, MessagePart, ToolCallPart } from '@codeyantram/shared';
 import { useTheme } from '../providers/theme';
 import { getAppTreeSitterClient } from '../tree-sitter-client';
 import type { ThemeColors } from '../theme';
+
+function toolStatusLabel(part: ToolCallPart): string {
+    if (part.result !== undefined) return 'done';
+    if (part.approvalStatus === 'pending') return 'needs approval';
+    if (part.approvalStatus === 'denied') return 'denied';
+    return 'running…';
+}
+
+function stringArg(args: ToolCallPart['args'], key: string): string | null {
+    const value = args[key];
+    return typeof value === 'string' ? value : null;
+}
+
+/** A one-line summary of what a tool call is actually doing - the path, pattern, or command - rather than making the reader open the result to find out. */
+function toolArgsSummary(part: ToolCallPart): string | null {
+    const args = part.args;
+
+    switch (part.toolName) {
+        case 'read_file':
+        case 'write_file':
+        case 'edit_file':
+        case 'list_dir':
+            return stringArg(args, 'path');
+
+        case 'glob':
+            return stringArg(args, 'pattern');
+
+        case 'grep': {
+            const pattern = stringArg(args, 'pattern');
+            const path = stringArg(args, 'path');
+            if (pattern === null) return null;
+            return path !== null && path !== '.' ? `${pattern} in ${path}` : pattern;
+        }
+
+        case 'bash':
+            return stringArg(args, 'command');
+
+        default:
+            return null;
+    }
+}
 
 function MessagePartView({
     part,
@@ -41,14 +82,23 @@ function MessagePartView({
                 </box>
             );
 
-        case 'tool-call':
+        case 'tool-call': {
+            const argsSummary = toolArgsSummary(part);
             return (
-                <box flexDirection="row" gap={1}>
-                    <text fg={colors.accent}>■</text>
-                    <text attributes={TextAttributes.BOLD}>{part.toolName}</text>
-                    <text attributes={TextAttributes.DIM}>{part.result !== undefined ? 'done' : 'running…'}</text>
+                <box flexDirection="column">
+                    <box flexDirection="row" gap={1}>
+                        <text fg={colors.accent}>■</text>
+                        <text attributes={TextAttributes.BOLD}>{part.toolName}</text>
+                        <text attributes={TextAttributes.DIM}>{toolStatusLabel(part)}</text>
+                    </box>
+                    {argsSummary !== null && (
+                        <text wrapMode="word" attributes={TextAttributes.DIM}>
+                            {argsSummary}
+                        </text>
+                    )}
                 </box>
             );
+        }
     }
 }
 

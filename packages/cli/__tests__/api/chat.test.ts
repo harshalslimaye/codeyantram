@@ -12,6 +12,8 @@ afterEach(() => {
 const request: ChatRequest = {
     model: 'claude-sonnet-5',
     messages: [{ id: '1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+    agent: 'Talk',
+    cwd: '/repo',
 };
 
 async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {

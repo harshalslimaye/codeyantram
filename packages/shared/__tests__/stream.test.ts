@@ -90,6 +90,46 @@ describe("tool calls", () => {
     });
 });
 
+describe("tool approval", () => {
+    test("an approval request marks the matching call pending, not appends a part", () => {
+        const parts = fold([
+            { type: "tool-call", toolCallId: "c1", toolName: "bash", args: { command: "rm -rf /" } },
+            { type: "tool-approval-request", toolCallId: "c1", approvalId: "appr-1" },
+        ]);
+
+        expect(parts).toEqual([
+            {
+                type: "tool-call",
+                toolCallId: "c1",
+                toolName: "bash",
+                args: { command: "rm -rf /" },
+                approvalId: "appr-1",
+                approvalStatus: "pending",
+            },
+        ]);
+    });
+
+    test("a later tool-result still merges onto the same part, leaving approval fields intact", () => {
+        const parts = fold([
+            { type: "tool-call", toolCallId: "c1", toolName: "bash", args: {} },
+            { type: "tool-approval-request", toolCallId: "c1", approvalId: "appr-1" },
+            { type: "tool-result", toolCallId: "c1", result: "done" },
+        ]);
+
+        expect(parts).toEqual([
+            {
+                type: "tool-call",
+                toolCallId: "c1",
+                toolName: "bash",
+                args: {},
+                approvalId: "appr-1",
+                approvalStatus: "pending",
+                result: "done",
+            },
+        ]);
+    });
+});
+
 describe("lifecycle events", () => {
     test("start, done and error contribute no parts", () => {
         const parts = fold([
