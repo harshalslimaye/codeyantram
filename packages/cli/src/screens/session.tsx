@@ -5,11 +5,11 @@ import { InputBar } from '../components/input-bar';
 
 export function Session() {
     const { colors } = useTheme();
-    const { messages } = useChat();
+    const { messages, isStreaming } = useChat();
 
     return (
         <box backgroundColor={colors.bg} flexGrow={1} flexDirection="column">
-            <MessageList messages={messages} />
+            <MessageList messages={messages} isStreaming={isStreaming} />
             <InputBar paddingBottom={1} />
         </box>
     );
