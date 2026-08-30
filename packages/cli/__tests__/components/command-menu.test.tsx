@@ -20,13 +20,19 @@ function mountWithValue(value: string, onSelect = mock((_v: string) => {})) {
 }
 
 describe('trigger matching and filtering', () => {
-    test('"/" shows every command', async () => {
+    test('"/" shows every command, scrolling for the ones that don\'t fit', async () => {
         const { setup } = mountWithValue('/');
         const rendered = await setup;
         const frame = await rendered.waitForFrame(f => f.includes('agents'));
 
+        // SLASH_COMMANDS now has more entries than Autocomplete's default
+        // maxVisible (8), so 'exit' (last) is scrolled off rather than
+        // visible up front — the '▼' indicator is what proves it's still
+        // reachable, not literally present in this frame. Its actual
+        // selectability is covered by the '/exit' tests below, which filter
+        // down to a single match instead of relying on scroll position.
         expect(frame).toContain('agents');
-        expect(frame).toContain('exit');
+        expect(frame).toContain('▼');
         rendered.renderer.destroy();
     });
 
