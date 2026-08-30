@@ -5,6 +5,7 @@ import { useKeyboard, useRenderer } from '@opentui/react';
 import { useTheme } from '../providers/theme';
 import { useModel } from '../providers/model';
 import { useAgent } from '../providers/agent';
+import { getNextAgent } from '../agents';
 import { useChat } from '../providers/chat';
 import { useLayerStack } from '../providers/keyboard';
 import { ROOT_LAYER } from '../keyboard';
@@ -30,7 +31,7 @@ const textareaKeyBindings = [
 export function InputBar({ placeholder = "ask anything ... 'fix the socket handshake'", paddingBottom = 0 }: InputBarProps) {
     const { colors } = useTheme();
     const { model } = useModel();
-    const { agent } = useAgent();
+    const { agent, setAgent } = useAgent();
     const chat = useChat();
     const [value, setValue] = useState('');
     const layers = useLayerStack();
@@ -68,6 +69,12 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
                 clearInput();
                 return;
             }
+        }
+
+        if (key.name === 'tab') {
+            key.preventDefault();
+            setAgent(getNextAgent(agent));
+            return;
         }
 
         if (!(key.ctrl && key.name === 'c')) return;
