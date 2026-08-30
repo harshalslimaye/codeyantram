@@ -5,6 +5,7 @@ import { useRenderer } from '@opentui/react';
 import { Autocomplete } from './autocomplete';
 import { SLASH_COMMANDS, type Command } from '../commands';
 import { useOverlay } from '../providers/overlay';
+import { useToast } from '../providers/toast';
 
 type Trigger = {
     char: string;
@@ -29,6 +30,7 @@ export function CommandMenu({ value, onSelect }: CommandMenuProps) {
     const [open, setOpen] = useState(true);
     const renderer = useRenderer();
     const { show } = useOverlay();
+    const toast = useToast();
 
     useEffect(() => {
         setOpen(true);
@@ -71,6 +73,7 @@ export function CommandMenu({ value, onSelect }: CommandMenuProps) {
                 onSelect('');
                 show(title, body);
             },
+            toast,
         });
     };
 

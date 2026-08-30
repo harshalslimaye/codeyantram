@@ -4,13 +4,15 @@ import { InputBar } from '../../src/components/input-bar';
 import { ThemeProvider } from '../../src/providers/theme';
 import { KeyboardProvider } from '../../src/providers/keyboard';
 import { OverlayProvider } from '../../src/providers/overlay';
+import { ToastProvider } from '../../src/providers/toast';
 import { createLayerStack } from '../../src/keyboard';
 import { NO_BUILTIN_CTRL_C, tick, settleEscape } from '../support/mount';
 
 // Mirrors how Root and Home actually wrap InputBar: a KeyboardProvider for
-// the layer stack InputBar now claims/reads, an OverlayProvider since
-// InputBar renders CommandMenu which now reads it (its `/themes` command
-// opens one), and headroom above so the command menu's "position: absolute;
+// the layer stack InputBar now claims/reads, a ToastProvider and
+// OverlayProvider since InputBar renders CommandMenu which now reads both
+// (its `/agents` and `/connect` commands toast, its `/themes` command opens
+// an overlay), and headroom above so the command menu's "position: absolute;
 // bottom: 100%" dropup has room to render into. See autocomplete.test.tsx
 // for why each test mounts fresh and performs one interaction arc ending in
 // a single wait. Hands back the layer stack so a test can assert on
@@ -21,11 +23,13 @@ function mount(props?: { placeholder?: string }) {
     return testRender(
         <KeyboardProvider layers={layers}>
             <ThemeProvider>
-                <OverlayProvider>
-                    <box paddingTop={15} width={40}>
-                        <InputBar {...props} />
-                    </box>
-                </OverlayProvider>
+                <ToastProvider>
+                    <OverlayProvider>
+                        <box paddingTop={15} width={40}>
+                            <InputBar {...props} />
+                        </box>
+                    </OverlayProvider>
+                </ToastProvider>
             </ThemeProvider>
         </KeyboardProvider>,
         { width: 40, height: 30, ...NO_BUILTIN_CTRL_C }

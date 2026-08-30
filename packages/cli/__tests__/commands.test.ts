@@ -1,14 +1,29 @@
 import { describe, test, expect, mock } from 'bun:test';
 import { SLASH_COMMANDS, type ActionArgs } from '../src/commands';
 
-function stubArgs(): ActionArgs & { exit: ReturnType<typeof mock>; populate: ReturnType<typeof mock>; overlay: ReturnType<typeof mock> } {
-    return { exit: mock(() => {}), populate: mock(() => {}), overlay: mock(() => {}) };
+function stubArgs(): ActionArgs & {
+    exit: ReturnType<typeof mock>;
+    populate: ReturnType<typeof mock>;
+    overlay: ReturnType<typeof mock>;
+    toast: { info: ReturnType<typeof mock>; warn: ReturnType<typeof mock>; error: ReturnType<typeof mock>; dismiss: ReturnType<typeof mock> };
+} {
+    return {
+        exit: mock(() => {}),
+        populate: mock(() => {}),
+        overlay: mock(() => {}),
+        toast: {
+            info: mock(() => 'id'),
+            warn: mock(() => 'id'),
+            error: mock(() => 'id'),
+            dismiss: mock(() => {}),
+        },
+    };
 }
 
 // Commands with real behavior beyond "fill the input with my own text" —
 // excluded from the blanket "populates" check below, and covered by their
 // own assertions instead.
-const IMPLEMENTED_COMMANDS = ['exit', 'themes'];
+const IMPLEMENTED_COMMANDS = ['agents', 'connect', 'exit', 'themes'];
 
 describe('SLASH_COMMANDS', () => {
     test('every command has a name and description', () => {
@@ -70,6 +85,32 @@ describe('command actions', () => {
             command.action(args);
             expect(args.populate).toHaveBeenCalledTimes(1);
         }
+    });
+
+    test('agents shows an info toast instead of populating or exiting', () => {
+        const agentsCommand = SLASH_COMMANDS.find(command => command.name === 'agents');
+        expect(agentsCommand).toBeDefined();
+
+        const args = stubArgs();
+        agentsCommand!.action(args);
+
+        expect(args.toast.info).toHaveBeenCalledTimes(1);
+        expect(args.toast.warn).not.toHaveBeenCalled();
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
+    });
+
+    test('connect shows a warn toast instead of populating or exiting', () => {
+        const connectCommand = SLASH_COMMANDS.find(command => command.name === 'connect');
+        expect(connectCommand).toBeDefined();
+
+        const args = stubArgs();
+        connectCommand!.action(args);
+
+        expect(args.toast.warn).toHaveBeenCalledTimes(1);
+        expect(args.toast.info).not.toHaveBeenCalled();
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
     });
 
     test('themes opens an overlay instead of populating or exiting', () => {
