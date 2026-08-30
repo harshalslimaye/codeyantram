@@ -23,7 +23,7 @@ function stubArgs(): ActionArgs & {
 // Commands with real behavior beyond the generic "show an info toast"
 // placeholder — excluded from the blanket "shows a toast" check below, and
 // covered by their own assertions instead.
-const IMPLEMENTED_COMMANDS = ['exit', 'themes', 'models', 'agents'];
+const IMPLEMENTED_COMMANDS = ['exit', 'themes', 'models', 'agents', 'connect'];
 
 describe('SLASH_COMMANDS', () => {
     test('every command has a name and description', () => {
@@ -46,9 +46,9 @@ describe('SLASH_COMMANDS', () => {
         }
     });
 
-    test('menu order matches the finalized New/Agents/Models/Sessions/Themes/Upgrade/Support/Exit list', () => {
+    test('menu order matches the finalized New/Agents/Models/Connect/Sessions/Themes/Upgrade/Support/Exit list', () => {
         const names = SLASH_COMMANDS.map(command => command.name);
-        expect(names).toEqual(['new', 'agents', 'models', 'sessions', 'themes', 'upgrade', 'support', 'exit']);
+        expect(names).toEqual(['new', 'agents', 'models', 'connect', 'sessions', 'themes', 'upgrade', 'support', 'exit']);
     });
 });
 
@@ -125,6 +125,19 @@ describe('command actions', () => {
 
         expect(args.overlay).toHaveBeenCalledTimes(1);
         expect(args.overlay.mock.calls[0]?.[0]).toBe('Agents');
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
+    });
+
+    test('connect opens an overlay instead of populating or exiting', () => {
+        const connectCommand = SLASH_COMMANDS.find(command => command.name === 'connect');
+        expect(connectCommand).toBeDefined();
+
+        const args = stubArgs();
+        connectCommand!.action(args);
+
+        expect(args.overlay).toHaveBeenCalledTimes(1);
+        expect(args.overlay.mock.calls[0]?.[0]).toBe('Connect');
         expect(args.populate).not.toHaveBeenCalled();
         expect(args.exit).not.toHaveBeenCalled();
     });
