@@ -6,6 +6,7 @@ import { KeyboardProvider } from '../providers/keyboard';
 import { OverlayProvider } from '../providers/overlay';
 import { ToastProvider } from '../providers/toast';
 import { ChatProvider } from '../providers/chat';
+import { ApprovalOverlay } from '../components/approval-overlay';
 import type { LayerStack } from '../keyboard';
 
 type RootProps = {
@@ -25,6 +26,7 @@ export function Root({ layers, children }: RootProps) {
                                 <OverlayProvider>
                                     {children}
                                 </OverlayProvider>
+                                <ApprovalOverlay />
                             </ChatProvider>
                         </ToastProvider>
                     </AgentProvider>

@@ -1,5 +1,7 @@
+import type { AgentName } from '@codeyantram/shared';
+
 export type Agent = {
-    name: string;
+    name: AgentName;
 };
 
 export const AGENTS: Agent[] = [

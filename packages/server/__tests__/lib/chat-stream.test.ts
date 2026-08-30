@@ -113,4 +113,123 @@ describe('toModelMessages', () => {
             },
         ]);
     });
+
+    test('a pending approval adds a tool-approval-request to the assistant message and no tool message', () => {
+        const messages: RequestMessage[] = [
+            {
+                id: '2',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'call-1',
+                        toolName: 'bash',
+                        args: { command: 'rm -rf x' },
+                        approvalId: 'appr-1',
+                        approvalStatus: 'pending',
+                    },
+                ],
+            },
+        ];
+
+        expect(toModelMessages(messages)).toEqual([
+            {
+                role: 'assistant',
+                content: [
+                    { type: 'tool-call', toolCallId: 'call-1', toolName: 'bash', input: { command: 'rm -rf x' } },
+                    { type: 'tool-approval-request', approvalId: 'appr-1', toolCallId: 'call-1' },
+                ],
+            },
+        ]);
+    });
+
+    test('a decided-but-not-yet-executed approval emits a tool-approval-response with no tool-result', () => {
+        const messages: RequestMessage[] = [
+            {
+                id: '2',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'call-1',
+                        toolName: 'bash',
+                        args: {},
+                        approvalId: 'appr-1',
+                        approvalStatus: 'approved',
+                    },
+                ],
+            },
+        ];
+
+        expect(toModelMessages(messages)).toEqual([
+            {
+                role: 'assistant',
+                content: [
+                    { type: 'tool-call', toolCallId: 'call-1', toolName: 'bash', input: {} },
+                    { type: 'tool-approval-request', approvalId: 'appr-1', toolCallId: 'call-1' },
+                ],
+            },
+            {
+                role: 'tool',
+                content: [{ type: 'tool-approval-response', approvalId: 'appr-1', approved: true }],
+            },
+        ]);
+    });
+
+    test('an approved and executed call emits both the approval response and the tool-result, in that order', () => {
+        const messages: RequestMessage[] = [
+            {
+                id: '2',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'call-1',
+                        toolName: 'bash',
+                        args: {},
+                        approvalId: 'appr-1',
+                        approvalStatus: 'approved',
+                        result: 'ok',
+                    },
+                ],
+            },
+        ];
+
+        expect(toModelMessages(messages)[1]).toEqual({
+            role: 'tool',
+            content: [
+                { type: 'tool-approval-response', approvalId: 'appr-1', approved: true },
+                {
+                    type: 'tool-result',
+                    toolCallId: 'call-1',
+                    toolName: 'bash',
+                    output: { type: 'text', value: 'ok' },
+                },
+            ],
+        });
+    });
+
+    test('a denied approval emits approved: false', () => {
+        const messages: RequestMessage[] = [
+            {
+                id: '2',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'call-1',
+                        toolName: 'bash',
+                        args: {},
+                        approvalId: 'appr-1',
+                        approvalStatus: 'denied',
+                    },
+                ],
+            },
+        ];
+
+        expect(toModelMessages(messages)[1]).toEqual({
+            role: 'tool',
+            content: [{ type: 'tool-approval-response', approvalId: 'appr-1', approved: false }],
+        });
+    });
 });

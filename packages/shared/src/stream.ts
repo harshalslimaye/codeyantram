@@ -60,6 +60,15 @@ export function applyStreamEvent(parts: MessagePart[], event: ChatStreamEvent): 
                     : part,
             );
 
+        // Also merged into the call it belongs to, marking it pending until
+        // the CLI resolves the approval (see ChatProvider.respondToApproval).
+        case "tool-approval-request":
+            return parts.map(part =>
+                part.type === "tool-call" && part.toolCallId === event.toolCallId
+                    ? { ...part, approvalId: event.approvalId, approvalStatus: "pending" as const }
+                    : part,
+            );
+
         case "start":
         case "done":
         case "error":

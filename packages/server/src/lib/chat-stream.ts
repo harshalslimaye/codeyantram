@@ -1,43 +1,83 @@
-import { streamText, type ModelMessage } from 'ai';
+import { stepCountIs, streamText, type ModelMessage } from 'ai';
 import type { SSEStreamingApi } from 'hono/streaming';
 import {
     PROVIDER_ENV_VARS,
+    agentHasTools,
     type ChatRequest,
     type ChatStreamEvent,
     type RequestMessage,
     type ToolCallPart,
 } from '@codeyantram/shared';
 import { MissingCredentialsError, resolveChatModel } from './models';
+import { buildProjectTools } from '../tools';
+
+// Caps how many tool-call/response round trips streamText will run within
+// one turn before giving up and returning whatever it has - a guard against
+// a confused model looping on a tool indefinitely.
+const MAX_TOOL_STEPS = 15;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Converts one assistant message's tool-call parts into a tool-call content block plus, for any that already resolved, the matching tool-result message. */
+/**
+ * Converts one assistant message's tool-call parts into a tool-call content
+ * block - plus, for any part that went through approval, the matching
+ * "tool-approval-request" content (AI SDK requires both to be replayed
+ * together) - and a paired tool message carrying whichever of the approval
+ * response / tool-result are already resolved.
+ */
 function toolPartsToMessages(parts: ToolCallPart[]): ModelMessage[] {
     const messages: ModelMessage[] = [
         {
             role: 'assistant',
-            content: parts.map(part => ({
-                type: 'tool-call' as const,
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                input: part.args,
-            })),
+            content: parts.flatMap(part => {
+                const toolCall = {
+                    type: 'tool-call' as const,
+                    toolCallId: part.toolCallId,
+                    toolName: part.toolName,
+                    input: part.args,
+                };
+
+                return part.approvalId === undefined
+                    ? [toolCall]
+                    : [
+                          toolCall,
+                          {
+                              type: 'tool-approval-request' as const,
+                              approvalId: part.approvalId,
+                              toolCallId: part.toolCallId,
+                          },
+                      ];
+            }),
         },
     ];
 
-    const resolved = parts.filter(part => part.result !== undefined);
-    if (resolved.length > 0) {
-        messages.push({
-            role: 'tool',
-            content: resolved.map(part => ({
+    const toolContent = parts.flatMap(part => {
+        const entries = [];
+
+        if (part.approvalStatus === 'approved' || part.approvalStatus === 'denied') {
+            entries.push({
+                type: 'tool-approval-response' as const,
+                approvalId: part.approvalId as string,
+                approved: part.approvalStatus === 'approved',
+            });
+        }
+
+        if (part.result !== undefined) {
+            entries.push({
                 type: 'tool-result' as const,
                 toolCallId: part.toolCallId,
                 toolName: part.toolName,
-                output: { type: 'text' as const, value: part.result as string },
-            })),
-        });
+                output: { type: 'text' as const, value: part.result },
+            });
+        }
+
+        return entries;
+    });
+
+    if (toolContent.length > 0) {
+        messages.push({ role: 'tool', content: toolContent });
     }
 
     return messages;
@@ -102,12 +142,16 @@ export async function streamChatResponse(
     const { languageModel, providerOptions } = resolved;
     const startedAt = Date.now();
 
+    const toolsEnabled = agentHasTools(request.agent);
+
     try {
         const result = streamText({
             model: languageModel,
             messages: toModelMessages(request.messages),
             providerOptions,
             abortSignal: abortController.signal,
+            tools: toolsEnabled ? buildProjectTools(request.cwd) : undefined,
+            stopWhen: toolsEnabled ? stepCountIs(MAX_TOOL_STEPS) : undefined,
         });
 
         for await (const part of result.stream) {
@@ -135,6 +179,31 @@ export async function streamChatResponse(
                         type: 'tool-result',
                         toolCallId: part.toolCallId,
                         result: typeof part.output === 'string' ? part.output : JSON.stringify(part.output),
+                    });
+                    break;
+                case 'tool-approval-request':
+                    await send(stream, {
+                        type: 'tool-approval-request',
+                        toolCallId: part.toolCall.toolCallId,
+                        approvalId: part.approvalId,
+                    });
+                    break;
+                // Reported through the same "tool-result" event the CLI already
+                // renders as the call's terminal state - a denial or an error
+                // the AI SDK itself raised (execute()'s own errors are already
+                // caught and returned as a string result, never as "tool-error").
+                case 'tool-output-denied':
+                    await send(stream, {
+                        type: 'tool-result',
+                        toolCallId: part.toolCallId,
+                        result: 'Denied by user.',
+                    });
+                    break;
+                case 'tool-error':
+                    await send(stream, {
+                        type: 'tool-result',
+                        toolCallId: part.toolCallId,
+                        result: `Error: ${part.error instanceof Error ? part.error.message : String(part.error)}`,
                     });
                     break;
                 case 'abort':

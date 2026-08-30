@@ -45,6 +45,8 @@ describe('POST /chat', () => {
             body: JSON.stringify({
                 model: 'claude-sonnet-5',
                 messages: [{ id: '1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+                agent: 'Talk',
+                cwd: '/repo',
             }),
         });
 

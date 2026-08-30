@@ -3,6 +3,7 @@ import { useKeyboard } from '@opentui/react';
 import { testRender } from '@opentui/react/test-utils';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
+import { AgentProvider } from '../../src/providers/agent';
 import { ToastProvider } from '../../src/providers/toast';
 import { ChatProvider, useChat } from '../../src/providers/chat';
 import { NO_BUILTIN_CTRL_C, tick } from '../support/mount';
@@ -27,11 +28,14 @@ function Harness() {
     useKeyboard(key => {
         if (key.name === 's') chat.sendMessage('hello');
         if (key.name === 'c') chat.cancel();
+        if (key.name === 'y') chat.respondToApproval(true);
+        if (key.name === 'n') chat.respondToApproval(false);
     });
 
     return (
         <box>
             <text>streaming:{String(chat.isStreaming)}</text>
+            <text>pending:{chat.pendingApproval?.toolName ?? 'none'}</text>
             {chat.messages.map(message => (
                 <text key={message.id}>
                     {message.role}:
@@ -49,11 +53,13 @@ function mount() {
     return testRender(
         <ThemeProvider>
             <ModelProvider>
-                <ToastProvider>
-                    <ChatProvider>
-                        <Harness />
-                    </ChatProvider>
-                </ToastProvider>
+                <AgentProvider>
+                    <ToastProvider>
+                        <ChatProvider>
+                            <Harness />
+                        </ChatProvider>
+                    </ToastProvider>
+                </AgentProvider>
             </ModelProvider>
         </ThemeProvider>,
         { width: 60, height: 20, ...NO_BUILTIN_CTRL_C },
@@ -154,6 +160,127 @@ describe('error handling', () => {
 
         await rendered.renderOnce();
         expect(rendered.captureCharFrame()).toContain('No API key for anthropic');
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('tool approval', () => {
+    test('a pending tool call surfaces as pendingApproval once the turn ends', async () => {
+        mockFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"tool-call","toolCallId":"c1","toolName":"bash","args":{"command":"rm x"}}\n\n',
+                'data: {"type":"tool-approval-request","toolCallId":"c1","approvalId":"a1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await rendered.waitForFrame(f => f.includes('pending:bash'));
+
+        expect(captured?.pendingApproval).toEqual({
+            type: 'tool-call',
+            toolCallId: 'c1',
+            toolName: 'bash',
+            args: { command: 'rm x' },
+            approvalId: 'a1',
+            approvalStatus: 'pending',
+        });
+
+        rendered.renderer.destroy();
+    });
+
+    test('approving sends a follow-up request carrying the decision, with no new user message', async () => {
+        const requests: unknown[] = [];
+        let call = 0;
+        mockFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            call++;
+            return call === 1
+                ? sseResponse([
+                      'data: {"type":"start","messageId":"m1"}\n\n',
+                      'data: {"type":"tool-call","toolCallId":"c1","toolName":"bash","args":{}}\n\n',
+                      'data: {"type":"tool-approval-request","toolCallId":"c1","approvalId":"a1"}\n\n',
+                      'data: {"type":"done","durationMs":5}\n\n',
+                  ])
+                : sseResponse([
+                      'data: {"type":"start","messageId":"m2"}\n\n',
+                      'data: {"type":"tool-result","toolCallId":"c1","result":"done"}\n\n',
+                      'data: {"type":"text-delta","text":"finished"}\n\n',
+                      'data: {"type":"done","durationMs":5}\n\n',
+                  ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await rendered.waitForFrame(f => f.includes('pending:bash'));
+
+        rendered.mockInput.pressKey('y');
+        await rendered.waitForFrame(f => f.includes('finished'));
+
+        expect(call).toBe(2);
+        expect(captured?.pendingApproval).toBeNull();
+        expect(captured?.messages.filter(m => m.role === 'user')).toHaveLength(1);
+
+        const secondRequest = requests[1] as { messages: unknown[] };
+        expect(secondRequest.messages).toContainEqual({
+            id: 'm1',
+            role: 'assistant',
+            parts: [
+                {
+                    type: 'tool-call',
+                    toolCallId: 'c1',
+                    toolName: 'bash',
+                    args: {},
+                    approvalId: 'a1',
+                    approvalStatus: 'approved',
+                },
+            ],
+        });
+
+        rendered.renderer.destroy();
+    });
+
+    test('denying sends the decision and never executes the tool', async () => {
+        let call = 0;
+        mockFetch(async () => {
+            call++;
+            return call === 1
+                ? sseResponse([
+                      'data: {"type":"start","messageId":"m1"}\n\n',
+                      'data: {"type":"tool-call","toolCallId":"c1","toolName":"bash","args":{}}\n\n',
+                      'data: {"type":"tool-approval-request","toolCallId":"c1","approvalId":"a1"}\n\n',
+                      'data: {"type":"done","durationMs":5}\n\n',
+                  ])
+                : sseResponse([
+                      'data: {"type":"start","messageId":"m2"}\n\n',
+                      'data: {"type":"tool-result","toolCallId":"c1","result":"Denied by user."}\n\n',
+                      'data: {"type":"done","durationMs":5}\n\n',
+                  ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await rendered.waitForFrame(f => f.includes('pending:bash'));
+
+        rendered.mockInput.pressKey('n');
+        await rendered.waitForFrame(f => f.includes('pending:none') && f.includes('streaming:false'));
+
+        expect(call).toBe(2);
+
+        const resolvedCall = captured?.messages
+            .flatMap(m => m.parts)
+            .find((part): part is Extract<typeof part, { type: 'tool-call' }> => part.type === 'tool-call');
+        expect(resolvedCall?.approvalStatus).toBe('denied');
+        expect(resolvedCall?.result).toBe('Denied by user.');
 
         rendered.renderer.destroy();
     });
