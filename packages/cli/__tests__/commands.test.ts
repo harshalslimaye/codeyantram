@@ -6,6 +6,7 @@ function stubArgs(): ActionArgs & {
     populate: ReturnType<typeof mock>;
     overlay: ReturnType<typeof mock>;
     toast: { info: ReturnType<typeof mock>; warn: ReturnType<typeof mock>; error: ReturnType<typeof mock>; dismiss: ReturnType<typeof mock> };
+    newSession: ReturnType<typeof mock>;
 } {
     return {
         exit: mock(() => {}),
@@ -17,13 +18,14 @@ function stubArgs(): ActionArgs & {
             error: mock(() => 'id'),
             dismiss: mock(() => {}),
         },
+        newSession: mock(() => {}),
     };
 }
 
 // Commands with real behavior beyond the generic "show an info toast"
 // placeholder — excluded from the blanket "shows a toast" check below, and
 // covered by their own assertions instead.
-const IMPLEMENTED_COMMANDS = ['exit', 'themes', 'models', 'agents', 'connect'];
+const IMPLEMENTED_COMMANDS = ['new', 'exit', 'themes', 'models', 'agents', 'connect'];
 
 describe('SLASH_COMMANDS', () => {
     test('every command has a name and description', () => {
@@ -77,6 +79,27 @@ describe('command actions', () => {
         exitCommand!.action(args);
 
         expect(args.populate).not.toHaveBeenCalled();
+    });
+
+    test('new starts a new session instead of populating, exiting, or toasting', () => {
+        const newCommand = SLASH_COMMANDS.find(command => command.name === 'new');
+        expect(newCommand).toBeDefined();
+
+        const args = stubArgs();
+        newCommand!.action(args);
+
+        expect(args.newSession).toHaveBeenCalledTimes(1);
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
+        expect(args.toast.info).not.toHaveBeenCalled();
+    });
+
+    test('no other command starts a new session', () => {
+        for (const command of SLASH_COMMANDS.filter(c => c.name !== 'new')) {
+            const args = stubArgs();
+            command.action(args);
+            expect(args.newSession).not.toHaveBeenCalled();
+        }
     });
 
     test('every generic placeholder command shows an info toast instead of populating or exiting', () => {

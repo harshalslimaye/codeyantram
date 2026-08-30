@@ -9,12 +9,14 @@
     "test": "bun test"
   },
   "devDependencies": {
+    "@codeyantram/server": "workspace:*",
     "@types/react": "^19.2.18",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@opentui/core": "^0.5.8",
     "@opentui/react": "^0.5.8",
+    "hono": "^4.13.5",
     "react": "^19.2.8",
     "@codeyantram/shared": "workspace:*"
   },

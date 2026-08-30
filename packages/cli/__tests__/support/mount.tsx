@@ -6,6 +6,7 @@ import { AgentProvider } from '../../src/providers/agent';
 import { KeyboardProvider } from '../../src/providers/keyboard';
 import { OverlayProvider } from '../../src/providers/overlay';
 import { ToastProvider } from '../../src/providers/toast';
+import { ChatProvider } from '../../src/providers/chat';
 import { createLayerStack } from '../../src/keyboard';
 
 /**
@@ -17,9 +18,10 @@ import { createLayerStack } from '../../src/keyboard';
  * the KeyboardProvider that layer-claiming components now require, the
  * OverlayProvider that CommandMenu now reads (its `/themes`, `/models`, and
  * `/agents` commands each open one), the ThemeProvider, ModelProvider, and
- * AgentProvider those overlays' contents read from, and the ToastProvider
- * that overlay content can reach via `useToast()`. Hands back the layer
- * stack it created so a test can assert on ownership.
+ * AgentProvider those overlays' contents read from, the ToastProvider that
+ * overlay content can reach via `useToast()`, and the ChatProvider that
+ * CommandMenu now reads for `/new`. Hands back the layer stack it created so
+ * a test can assert on ownership.
  */
 // @opentui/core destroys the renderer on any ctrl+c by default
 // (`exitOnCtrlC`), independent of whatever key handlers a component
@@ -40,16 +42,18 @@ export function mountDropup(node: ReactNode, options?: { width?: number; height?
                 <ModelProvider>
                     <AgentProvider>
                         <ToastProvider>
-                            <OverlayProvider>
-                                <box paddingTop={15} width={width}>
-                                    <box position="relative" width={width}>
-                                        {node}
-                                        <box height={3}>
-                                            <text>anchor</text>
+                            <ChatProvider>
+                                <OverlayProvider>
+                                    <box paddingTop={15} width={width}>
+                                        <box position="relative" width={width}>
+                                            {node}
+                                            <box height={3}>
+                                                <text>anchor</text>
+                                            </box>
                                         </box>
                                     </box>
-                                </box>
-                            </OverlayProvider>
+                                </OverlayProvider>
+                            </ChatProvider>
                         </ToastProvider>
                     </AgentProvider>
                 </ModelProvider>

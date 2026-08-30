@@ -6,6 +6,7 @@ import { Autocomplete } from './autocomplete';
 import { SLASH_COMMANDS, type Command } from '../commands';
 import { useOverlay } from '../providers/overlay';
 import { useToast } from '../providers/toast';
+import { useChat } from '../providers/chat';
 
 type Trigger = {
     char: string;
@@ -31,6 +32,7 @@ export function CommandMenu({ value, onSelect }: CommandMenuProps) {
     const renderer = useRenderer();
     const { show } = useOverlay();
     const toast = useToast();
+    const { newSession } = useChat();
 
     useEffect(() => {
         setOpen(true);
@@ -74,6 +76,7 @@ export function CommandMenu({ value, onSelect }: CommandMenuProps) {
                 show(title, body);
             },
             toast,
+            newSession,
         });
     };
 

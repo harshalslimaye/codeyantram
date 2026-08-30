@@ -8,6 +8,7 @@ import { AgentProvider } from '../../src/providers/agent';
 import { KeyboardProvider } from '../../src/providers/keyboard';
 import { OverlayProvider } from '../../src/providers/overlay';
 import { ToastProvider } from '../../src/providers/toast';
+import { ChatProvider } from '../../src/providers/chat';
 import { createLayerStack } from '../../src/keyboard';
 import { DEFAULT_AGENT } from '../../src/agents';
 import { NO_BUILTIN_CTRL_C, tick, settleEscape } from '../support/mount';
@@ -19,11 +20,12 @@ const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
 // AgentProvider since InputBar reads the active model and agent for its
 // footer, a ToastProvider and OverlayProvider since InputBar renders
 // CommandMenu which now reads both (its `/themes`, `/models`, and `/agents`
-// commands each open an overlay), and headroom above so the command menu's
-// "position: absolute; bottom: 100%" dropup has room to render into. See
-// autocomplete.test.tsx for why each test mounts fresh and performs one
-// interaction arc ending in a single wait. Hands back the layer stack so a
-// test can assert on ownership.
+// commands each open an overlay), a ChatProvider since InputBar now sends
+// through it on Enter and reads isStreaming, and headroom above so the
+// command menu's "position: absolute; bottom: 100%" dropup has room to
+// render into. See autocomplete.test.tsx for why each test mounts fresh and
+// performs one interaction arc ending in a single wait. Hands back the layer
+// stack so a test can assert on ownership.
 function mount(props?: { placeholder?: string }) {
     const layers = createLayerStack();
 
@@ -33,11 +35,13 @@ function mount(props?: { placeholder?: string }) {
                 <ModelProvider>
                     <AgentProvider>
                         <ToastProvider>
-                            <OverlayProvider>
-                                <box paddingTop={15} width={40}>
-                                    <InputBar {...props} />
-                                </box>
-                            </OverlayProvider>
+                            <ChatProvider>
+                                <OverlayProvider>
+                                    <box paddingTop={15} width={40}>
+                                        <InputBar {...props} />
+                                    </box>
+                                </OverlayProvider>
+                            </ChatProvider>
                         </ToastProvider>
                     </AgentProvider>
                 </ModelProvider>

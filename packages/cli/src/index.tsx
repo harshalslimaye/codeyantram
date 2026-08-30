@@ -3,13 +3,23 @@ import { createRoot } from "@opentui/react";
 import { createLayerStack } from "./keyboard";
 import { Root } from "./layouts/root";
 import { Home } from "./screens/home";
+import { Session } from "./screens/session";
+import { useChat } from "./providers/chat";
 
 const layers = createLayerStack();
+
+// The screen is a pure function of chat state, not its own tracked state -
+// sending the first message moves here automatically, and clearing the
+// conversation (e.g. a future /new) moves back, with nothing to keep in sync.
+function AppScreen() {
+  const { messages } = useChat();
+  return messages.length === 0 ? <Home /> : <Session />;
+}
 
 function App() {
   return (
     <Root layers={layers}>
-      <Home />
+      <AppScreen />
     </Root>
   );
 }
