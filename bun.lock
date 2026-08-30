@@ -17,6 +17,7 @@
         "@opentui/core": "^0.5.8",
         "@opentui/react": "^0.5.8",
         "react": "^19.2.8",
+        "shared": "workspace:*",
       },
       "devDependencies": {
         "@types/react": "^19.2.18",
@@ -29,6 +30,16 @@
         "@ai-sdk/anthropic": "^4.0.45",
         "ai": "^7.0.84",
         "hono": "^4.13.5",
+        "shared": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/shared": {
+      "name": "shared",
+      "dependencies": {
+        "zod": "^4.5.4",
       },
       "devDependencies": {
         "typescript": "^5.9.3",
@@ -111,6 +122,8 @@
     "scheduler": ["scheduler@0.27.0", "", {}, "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q=="],
 
     "server": ["server@workspace:packages/server"],
+
+    "shared": ["shared@workspace:packages/shared"],
 
     "shell-quote": ["shell-quote@1.10.0", "", {}, "sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA=="],
 

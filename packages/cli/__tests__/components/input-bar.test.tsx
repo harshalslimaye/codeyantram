@@ -11,7 +11,7 @@ import { NO_BUILTIN_CTRL_C, tick, settleEscape } from '../support/mount';
 // Mirrors how Root and Home actually wrap InputBar: a KeyboardProvider for
 // the layer stack InputBar now claims/reads, a ToastProvider and
 // OverlayProvider since InputBar renders CommandMenu which now reads both
-// (its `/agents` and `/connect` commands toast, its `/themes` command opens
+// (its `/agents` and `/models` commands toast, its `/themes` command opens
 // an overlay), and headroom above so the command menu's "position: absolute;
 // bottom: 100%" dropup has room to render into. See autocomplete.test.tsx
 // for why each test mounts fresh and performs one interaction arc ending in
@@ -85,25 +85,35 @@ describe('typing', () => {
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('ask anything'));
 
-        await rendered.mockInput.typeText('/de', 15);
-        const frame = await rendered.waitForFrame(f => f.includes('debug'));
+        await rendered.mockInput.typeText('/mo', 15);
+        const frame = await rendered.waitForFrame(f => f.includes('models'));
 
-        expect(frame).toContain('debug');
+        expect(frame).toContain('models');
         rendered.renderer.destroy();
     });
 });
 
 describe('end to end', () => {
-    test('typing a command and pressing enter fills in the full command text', async () => {
+    // No current command uses the `populate` (fill-in-full-text) action —
+    // every command besides 'exit'/'themes' shows a toast instead (see
+    // commands.test.ts) — so the meaningful end-to-end path through a real
+    // command is 'exit': typing it and pressing Enter should reach the
+    // renderer's real exit path.
+    test('typing /exit and pressing enter reaches the exit path', async () => {
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('ask anything'));
 
-        await rendered.mockInput.typeText('/de', 15);
-        rendered.mockInput.pressEnter();
-        const frame = await rendered.waitForFrame(f => f.includes('/debug'));
+        // Swallow the real destroy so the test harness itself survives —
+        // we only care that it was *asked* to destroy.
+        const destroySpy = spyOn(rendered.renderer, 'destroy').mockImplementation(() => {});
 
-        expect(frame).toContain('/debug');
-        rendered.renderer.destroy();
+        await rendered.mockInput.typeText('/exit', 15);
+        await rendered.waitForFrame(f => f.includes('exit'));
+        rendered.mockInput.pressEnter();
+        await rendered.waitFor(() => destroySpy.mock.calls.length > 0);
+
+        expect(destroySpy).toHaveBeenCalledTimes(1);
+        destroySpy.mockRestore();
     });
 });
 
@@ -148,8 +158,8 @@ describe('ctrl+c', () => {
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('ask anything'));
 
-        await rendered.mockInput.typeText('/de', 15);
-        await rendered.waitForFrame(f => f.includes('debug'));
+        await rendered.mockInput.typeText('/mo', 15);
+        await rendered.waitForFrame(f => f.includes('models'));
 
         // The menu owns the keyboard here, so this should close it — not
         // clear the text underneath, and not quit.
@@ -158,8 +168,8 @@ describe('ctrl+c', () => {
         await rendered.renderOnce();
 
         const frame = rendered.captureCharFrame();
-        expect(frame).not.toContain('debug');
-        expect(frame).toContain('/de');
+        expect(frame).not.toContain('models');
+        expect(frame).toContain('/mo');
         rendered.renderer.destroy();
     });
 });
@@ -184,16 +194,16 @@ describe('escape', () => {
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('ask anything'));
 
-        await rendered.mockInput.typeText('/de', 15);
-        await rendered.waitForFrame(f => f.includes('debug'));
+        await rendered.mockInput.typeText('/mo', 15);
+        await rendered.waitForFrame(f => f.includes('models'));
 
         rendered.mockInput.pressEscape();
         await settleEscape();
-        await rendered.waitFor(() => !rendered.captureCharFrame().includes('debug'));
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('models'));
 
         const frame = rendered.captureCharFrame();
-        expect(frame).not.toContain('debug');
-        expect(frame).toContain('/de');
+        expect(frame).not.toContain('models');
+        expect(frame).toContain('/mo');
         rendered.renderer.destroy();
     });
 });
