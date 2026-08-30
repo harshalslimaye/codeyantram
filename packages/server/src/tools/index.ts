@@ -20,11 +20,17 @@ const TOOL_EXECUTORS: Record<ToolName, (input: any, cwd: string) => Promise<stri
     bash,
 };
 
-/** Builds the tool set streamText attaches for a Build-mode request, every execute() resolved against the request's own `cwd`. */
-export function buildProjectTools(cwd: string): ToolSet {
+/**
+ * Builds the tool set streamText attaches for a tool-capable request, every
+ * execute() resolved against the request's own `cwd`. Pass `readOnly: true`
+ * (Talk mode) to expose only the read-only tools from the catalog.
+ */
+export function buildProjectTools(cwd: string, readOnly = false): ToolSet {
     const tools: ToolSet = {};
 
     for (const definition of TOOL_CATALOG) {
+        if (readOnly && !isReadOnlyTool(definition.name)) continue;
+
         const executor = TOOL_EXECUTORS[definition.name];
         tools[definition.name] = tool<any, string, Record<string, unknown>>({
             description: definition.description,

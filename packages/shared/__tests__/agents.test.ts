@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { AGENT_NAMES, agentHasTools } from "../src/agents";
+import { AGENT_NAMES, agentHasFullToolAccess, agentHasTools } from "../src/agents";
 
 describe("agentHasTools", () => {
-    test("is false for Talk", () => {
-        expect(agentHasTools("Talk")).toBe(false);
+    test("is true for Talk", () => {
+        expect(agentHasTools("Talk")).toBe(true);
     });
 
     test("is true for Build", () => {
@@ -14,5 +14,15 @@ describe("agentHasTools", () => {
         for (const name of AGENT_NAMES) {
             expect(typeof agentHasTools(name)).toBe("boolean");
         }
+    });
+});
+
+describe("agentHasFullToolAccess", () => {
+    test("is false for Talk", () => {
+        expect(agentHasFullToolAccess("Talk")).toBe(false);
+    });
+
+    test("is true for Build", () => {
+        expect(agentHasFullToolAccess("Build")).toBe(true);
     });
 });
