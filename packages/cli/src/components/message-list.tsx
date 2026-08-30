@@ -75,9 +75,10 @@ function MessagePartView({
                 );
 
         case 'reasoning':
+            if (part.text === '') return null;
             return (
                 <box flexDirection="column">
-                    <text fg={colors.focus} attributes={TextAttributes.DIM}>Thought</text>
+                    <text attributes={TextAttributes.DIM}>Thought</text>
                     <text wrapMode="word" attributes={TextAttributes.DIM}>{part.text}</text>
                 </box>
             );
@@ -114,7 +115,7 @@ function UserMessage({ message, colors }: { message: string, colors: ThemeColors
     return (
         <box flexDirection="row">
             <box padding={1} backgroundColor={colors.panel} flexGrow={1}>
-                <text>$ {message} </text>
+                <text>{message} </text>
             </box>
         </box>
     )

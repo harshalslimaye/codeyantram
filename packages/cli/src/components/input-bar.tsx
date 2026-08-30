@@ -83,9 +83,8 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
                 <box flexDirection="row" justifyContent="space-between">
                     <box flexDirection="row" gap={1}>
                         <text fg={colors.accent}>{agent.name}</text>
-                        <text attributes={TextAttributes.DIM}>·</text>
-                        <text fg={colors.accent}>{model.id}</text>
-                        <text attributes={TextAttributes.DIM}>{model.provider}</text>
+                        <text attributes={TextAttributes.DIM}>›</text>
+                        <text>{model.id}</text>
                     </box>
                     <box>
                         <text attributes={TextAttributes.DIM}>↵ send</text>
