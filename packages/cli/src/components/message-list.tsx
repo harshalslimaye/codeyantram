@@ -113,7 +113,7 @@ function MessagePartView({
 // visually without using it.
 function UserMessage({ message, colors }: { message: string, colors: ThemeColors }) {
     return (
-        <box flexDirection="row">
+        <box border={['left']} borderColor={colors.accent} flexDirection="row">
             <box padding={1} backgroundColor={colors.panel} flexGrow={1}>
                 <text>{message} </text>
             </box>

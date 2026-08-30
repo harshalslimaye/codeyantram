@@ -24,7 +24,7 @@ export function Session() {
                     <Spinner />
                 </box>
             )}
-            <box paddingX={1}>
+            <box padding={1}>
                 <InputBar paddingBottom={1} />
             </box>
         </box>
