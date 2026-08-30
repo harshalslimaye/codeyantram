@@ -5,6 +5,7 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "dev:cli": "cd packages/cli && bun run dev",
+    "dev:server": "cd packages/server && bun run dev",
     "test:cli": "bun run -F cli test",
     "test": "bun run -F '*' test",
     "typecheck": "bun run -F '*' typecheck"
