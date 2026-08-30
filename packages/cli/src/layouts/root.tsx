@@ -5,6 +5,7 @@ import { AgentProvider } from '../providers/agent';
 import { KeyboardProvider } from '../providers/keyboard';
 import { OverlayProvider } from '../providers/overlay';
 import { ToastProvider } from '../providers/toast';
+import { ChatProvider } from '../providers/chat';
 import type { LayerStack } from '../keyboard';
 
 type RootProps = {
@@ -19,9 +20,12 @@ export function Root({ layers, children }: RootProps) {
                 <ModelProvider>
                     <AgentProvider>
                         <ToastProvider>
-                            <OverlayProvider>
-                                {children}
-                            </OverlayProvider>
+                            {/* Needs useModel (request payload) and useToast (surfacing stream errors), so it must sit inside both. */}
+                            <ChatProvider>
+                                <OverlayProvider>
+                                    {children}
+                                </OverlayProvider>
+                            </ChatProvider>
                         </ToastProvider>
                     </AgentProvider>
                 </ModelProvider>

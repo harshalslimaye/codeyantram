@@ -10,6 +10,7 @@ export type ActionArgs = {
     populate: () => void;
     overlay: (title: string, body: ReactNode) => void;
     toast: ToastContextValue;
+    newSession: () => void;
 };
 
 export type Command = {
@@ -22,7 +23,7 @@ export const SLASH_COMMANDS: Command[] = [
     {
         name: 'new',
         description: 'Start a new session',
-        action: args => args.toast.info('New session command selected')
+        action: args => args.newSession()
     },
     {
         name: 'agents',
