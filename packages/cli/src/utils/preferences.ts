@@ -8,6 +8,7 @@ const PREFERENCES_PATH = join(CONFIG_DIR, 'preferences.json');
 export type Preferences = {
     themeName?: string;
     modelId?: string;
+    agentName?: string;
 };
 
 // Bun sets NODE_ENV=test automatically for `bun test`. Providers that store

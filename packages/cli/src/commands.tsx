@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ThemePicker } from './components/theme-picker';
 import { ModelPicker } from './components/model-picker';
+import { AgentPicker } from './components/agent-picker';
 import type { ToastContextValue } from './providers/toast';
 
 export type ActionArgs = {
@@ -25,7 +26,7 @@ export const SLASH_COMMANDS: Command[] = [
     {
         name: 'agents',
         description: 'Switch agent',
-        action: args => args.toast.info('Switch agent command selected')
+        action: args => args.overlay('Agents', <AgentPicker />)
     },
     {
         name: 'models',
