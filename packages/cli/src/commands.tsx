@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
 import { ThemePicker } from './components/theme-picker';
+import type { ToastContextValue } from './providers/toast';
 
 export type ActionArgs = {
     exit: () => void;
     populate: () => void;
     overlay: (title: string, body: ReactNode) => void;
+    toast: ToastContextValue;
 };
 
 export type Command = {
@@ -21,12 +23,12 @@ export const SLASH_COMMANDS: Command[] = [
     {
         name: 'agents',
         description: 'Switch agent',
-        action: populate
+        action: args => args.toast.info('Switch agent command selected')
     },
     {
         name: 'connect',
         description: 'Connect provider',
-        action: populate
+        action: args => args.toast.warn('Connect provider command selected')
     },
     {
         name: 'debug',

@@ -3,6 +3,7 @@ import { testRender } from '@opentui/react/test-utils';
 import { ThemeProvider } from '../../src/providers/theme';
 import { KeyboardProvider } from '../../src/providers/keyboard';
 import { OverlayProvider } from '../../src/providers/overlay';
+import { ToastProvider } from '../../src/providers/toast';
 import { createLayerStack } from '../../src/keyboard';
 
 /**
@@ -11,10 +12,11 @@ import { createLayerStack } from '../../src/keyboard';
  * a relative-positioned container, an anchor below it to give that
  * container real height, and headroom above for the dropup to render into.
  * Mirrors how Root and InputBar wrap Autocomplete in the real app, including
- * the KeyboardProvider that layer-claiming components now require and the
+ * the KeyboardProvider that layer-claiming components now require, the
  * OverlayProvider that CommandMenu now reads (its `/themes` command opens
- * one). Hands back the layer stack it created so a test can assert on
- * ownership.
+ * one), and the ToastProvider that overlay content can reach via
+ * `useToast()`. Hands back the layer stack it created so a test can assert
+ * on ownership.
  */
 // @opentui/core destroys the renderer on any ctrl+c by default
 // (`exitOnCtrlC`), independent of whatever key handlers a component
@@ -32,16 +34,18 @@ export function mountDropup(node: ReactNode, options?: { width?: number; height?
     return testRender(
         <KeyboardProvider layers={layers}>
             <ThemeProvider>
-                <OverlayProvider>
-                    <box paddingTop={15} width={width}>
-                        <box position="relative" width={width}>
-                            {node}
-                            <box height={3}>
-                                <text>anchor</text>
+                <ToastProvider>
+                    <OverlayProvider>
+                        <box paddingTop={15} width={width}>
+                            <box position="relative" width={width}>
+                                {node}
+                                <box height={3}>
+                                    <text>anchor</text>
+                                </box>
                             </box>
                         </box>
-                    </box>
-                </OverlayProvider>
+                    </OverlayProvider>
+                </ToastProvider>
             </ThemeProvider>
         </KeyboardProvider>,
         { width, height, ...NO_BUILTIN_CTRL_C }
