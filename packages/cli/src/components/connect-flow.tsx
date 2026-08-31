@@ -18,6 +18,7 @@ const PROVIDER_LABELS: Record<SupportedProvider, string> = {
     anthropic: 'Anthropic',
     openai: 'OpenAI',
     google: 'Google',
+    deepseek: 'DeepSeek',
 };
 
 type ConnectFormProps = {
