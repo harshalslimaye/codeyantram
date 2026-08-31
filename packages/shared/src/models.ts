@@ -1,6 +1,6 @@
 // Values match the AI SDK's providerOptions keys exactly, so the server can build
 // `providerOptions: { [model.provider]: ... }` without a translation table.
-export const SUPPORTED_PROVIDERS = ["anthropic", "openai", "google"] as const;
+export const SUPPORTED_PROVIDERS = ["anthropic", "openai", "google", "deepseek"] as const;
 
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
@@ -11,6 +11,7 @@ export const PROVIDER_ENV_VARS: Record<SupportedProvider, string> = {
     anthropic: "ANTHROPIC_API_KEY",
     openai: "OPENAI_API_KEY",
     google: "GOOGLE_GENERATIVE_AI_API_KEY",
+    deepseek: "DEEPSEEK_API_KEY",
 };
 
 // Every effort value any supported model accepts. No single provider supports
@@ -72,6 +73,16 @@ export const SUPPORTED_CHAT_MODELS = [
         provider: "google",
         supportedEffortLevels: ["minimal", "low", "medium", "high"],
         defaultEffortLevel: "medium",
+    },
+    {
+        id: "deepseek-v4-flash",
+        provider: "deepseek",
+        supportedEffortLevels: [],
+    },
+    {
+        id: "deepseek-v4-pro",
+        provider: "deepseek",
+        supportedEffortLevels: [],
     },
 ] as const satisfies SupportedChatModelDefinition[];
 

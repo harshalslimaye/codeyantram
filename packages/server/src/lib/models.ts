@@ -10,6 +10,7 @@ import {
 import { buildAnthropicModel } from '../providers/anthropic';
 import { buildGoogleModel } from '../providers/google';
 import { buildOpenAIModel } from '../providers/openai';
+import { buildDeepSeekModel } from '../providers/deepseek';
 import { resolveApiKey } from '../providers';
 
 export class MissingCredentialsError extends Error {
@@ -22,6 +23,7 @@ const MODEL_BUILDERS = {
     anthropic: buildAnthropicModel,
     openai: buildOpenAIModel,
     google: buildGoogleModel,
+    deepseek: buildDeepSeekModel,
 } satisfies Record<SupportedProvider, (apiKey: string, modelId: string) => LanguageModel>;
 
 /**
@@ -38,6 +40,8 @@ function buildProviderOptions(model: SupportedChatModel, effort: EffortLevel): P
             return { openai: { reasoningEffort: effort } };
         case 'google':
             return { google: { thinkingLevel: effort } };
+        case 'deepseek':
+            return {};
     }
 }
 
