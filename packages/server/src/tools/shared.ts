@@ -16,7 +16,7 @@ export function resolveInProject(cwd: string, relativePath: string): string {
     return resolved;
 }
 
-function truncate(output: string): string {
+export function truncate(output: string): string {
     return output.length > MAX_OUTPUT_CHARS ? `${output.slice(0, MAX_OUTPUT_CHARS)}\n… truncated` : output;
 }
 
