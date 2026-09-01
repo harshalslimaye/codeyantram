@@ -54,6 +54,20 @@ describe('read_file', () => {
         expect(result).toContain('Error:');
         expect(result).toContain('outside the project root');
     });
+
+    test('rejects a binary file instead of returning garbled text', async () => {
+        await Bun.write(join(projectDir, 'binary.dat'), Buffer.from([0, 1, 2, 3, 255, 254]));
+        const result = await run(projectDir, 'read_file', { path: 'binary.dat' });
+        expect(result).toContain('Error:');
+        expect(result).toContain('Cannot read binary file');
+    });
+
+    test('truncates output past MAX_OUTPUT_CHARS', async () => {
+        await Bun.write(join(projectDir, 'big.txt'), 'x'.repeat(25_000));
+        const result = await run(projectDir, 'read_file', { path: 'big.txt' });
+        expect(result.length).toBeLessThan(25_000);
+        expect(result).toContain('truncated');
+    });
 });
 
 describe('list_dir', () => {
