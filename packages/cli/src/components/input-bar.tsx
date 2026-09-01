@@ -5,6 +5,7 @@ import { useKeyboard, useRenderer } from '@opentui/react';
 import { useTheme } from '../providers/theme';
 import { useModel } from '../providers/model';
 import { useEffort } from '../providers/effort';
+import { useReasoningVisibility } from '../providers/reasoning-visibility';
 import { useAgent } from '../providers/agent';
 import { getNextAgent } from '../agents';
 import { useChat } from '../providers/chat';
@@ -33,6 +34,7 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
     const { colors } = useTheme();
     const { model } = useModel();
     const { effort } = useEffort();
+    const { showThoughts, toggle: toggleThoughts } = useReasoningVisibility();
     const { agent, setAgent } = useAgent();
     const chat = useChat();
     const [value, setValue] = useState('');
@@ -76,6 +78,12 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
         if (key.name === 'tab') {
             key.preventDefault();
             setAgent(getNextAgent(agent));
+            return;
+        }
+
+        if (key.ctrl && key.name === 't') {
+            key.preventDefault();
+            toggleThoughts();
             return;
         }
 

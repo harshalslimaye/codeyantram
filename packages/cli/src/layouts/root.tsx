@@ -3,6 +3,7 @@ import { ThemeProvider } from '../providers/theme';
 import { ModelProvider } from '../providers/model';
 import { EffortProvider } from '../providers/effort';
 import { AgentProvider } from '../providers/agent';
+import { ReasoningVisibilityProvider } from '../providers/reasoning-visibility';
 import { KeyboardProvider } from '../providers/keyboard';
 import { OverlayProvider } from '../providers/overlay';
 import { ToastProvider } from '../providers/toast';
@@ -22,15 +23,17 @@ export function Root({ layers, children }: RootProps) {
                 <ModelProvider>
                     <EffortProvider>
                         <AgentProvider>
-                            <ToastProvider>
-                                {/* Needs useModel/useEffort (request payload) and useToast (surfacing stream errors), so it must sit inside all three. */}
-                                <ChatProvider>
-                                    <OverlayProvider>
-                                        {children}
-                                    </OverlayProvider>
-                                    <ApprovalOverlay />
-                                </ChatProvider>
-                            </ToastProvider>
+                            <ReasoningVisibilityProvider>
+                                <ToastProvider>
+                                    {/* Needs useModel/useEffort (request payload) and useToast (surfacing stream errors), so it must sit inside all three. */}
+                                    <ChatProvider>
+                                        <OverlayProvider>
+                                            {children}
+                                        </OverlayProvider>
+                                        <ApprovalOverlay />
+                                    </ChatProvider>
+                                </ToastProvider>
+                            </ReasoningVisibilityProvider>
                         </AgentProvider>
                     </EffortProvider>
                 </ModelProvider>

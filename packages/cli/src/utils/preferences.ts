@@ -8,6 +8,7 @@ export type Preferences = {
     agentName?: string;
     // Keyed by model id so switching models remembers each one's own effort choice.
     effortByModel?: Record<string, EffortLevel>;
+    showThoughts?: boolean;
 };
 
 export function readPreferences(): Preferences {
@@ -30,4 +31,12 @@ export function setEffortForModel(modelId: string, effort: EffortLevel): void {
     writePreferences({
         effortByModel: { ...current.effortByModel, [modelId]: effort },
     });
+}
+
+export function getShowThoughts(): boolean | undefined {
+    return readPreferences().showThoughts;
+}
+
+export function setShowThoughts(value: boolean): void {
+    writePreferences({ showThoughts: value });
 }

@@ -1,8 +1,10 @@
 import { TextAttributes, type SyntaxStyle, type TreeSitterClient } from '@opentui/core';
 import type { ChatMessage, MessagePart, ToolCallPart, TokenUsage } from '@codeyantram/shared';
 import { useTheme } from '../providers/theme';
+import { useReasoningVisibility } from '../providers/reasoning-visibility';
 import { getAppTreeSitterClient } from '../tree-sitter-client';
 import type { ThemeColors } from '../theme';
+import { ThinkingIndicator } from './thinking-indicator';
 
 function formatTokenCount(count: number): string {
     return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
@@ -67,14 +69,18 @@ function MessagePartView({
     syntaxStyle,
     treeSitterClient,
     streaming,
+    isLastPart,
     isUser,
+    showThoughts,
 }: {
     part: MessagePart,
     colors: ThemeColors,
     syntaxStyle: SyntaxStyle,
     treeSitterClient: TreeSitterClient,
     streaming: boolean,
+    isLastPart: boolean,
     isUser: boolean,
+    showThoughts: boolean,
 }) {
     switch (part.type) {
         case 'text':
@@ -92,6 +98,9 @@ function MessagePartView({
 
         case 'reasoning':
             if (part.text === '') return null;
+            // Once a later part has started, this reasoning part is sealed - see
+            // appendDelta in stream.ts, which only ever extends the *last* part.
+            if (!showThoughts) return <ThinkingIndicator animate={streaming && isLastPart} />;
             return (
                 <box flexDirection="column">
                     <text attributes={TextAttributes.DIM}>Thought</text>
@@ -143,12 +152,14 @@ function MessageRow({
     syntaxStyle,
     treeSitterClient,
     streaming,
+    showThoughts,
 }: {
     message: ChatMessage,
     colors: ThemeColors,
     syntaxStyle: SyntaxStyle,
     treeSitterClient: TreeSitterClient,
     streaming: boolean,
+    showThoughts: boolean,
 }) {
     const isUser = message.role === 'user';
     const usage = message.role === 'assistant' ? usageSummary(message.usage) : null;
@@ -167,7 +178,9 @@ function MessageRow({
                             syntaxStyle={syntaxStyle}
                             treeSitterClient={treeSitterClient}
                             streaming={streaming}
+                            isLastPart={index === message.parts.length - 1}
                             isUser={isUser}
+                            showThoughts={showThoughts}
                         />
                     )
                 )}
@@ -196,6 +209,7 @@ type MessageListProps = {
  */
 export function MessageList({ messages, isStreaming = false, treeSitterClient = getAppTreeSitterClient() }: MessageListProps) {
     const { colors, syntaxStyle } = useTheme();
+    const { showThoughts } = useReasoningVisibility();
     const lastMessageId = messages[messages.length - 1]?.id;
 
     // flexGrow alone defaults to flexBasis="auto", which uses the scrollbox's
@@ -218,6 +232,7 @@ export function MessageList({ messages, isStreaming = false, treeSitterClient = 
                         syntaxStyle={syntaxStyle}
                         treeSitterClient={treeSitterClient}
                         streaming={isStreaming && message.id === lastMessageId}
+                        showThoughts={showThoughts}
                     />
                 ))}
             </box>
