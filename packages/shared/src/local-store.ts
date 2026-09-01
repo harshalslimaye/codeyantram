@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 
 // Both the CLI's preferences (theme/model/agent) and the shared auth store
 // (provider API keys) are flat JSON files here — this holds the read/write
@@ -38,4 +38,9 @@ export function writeJsonFile(filename: string, data: unknown, options?: { mode?
     } catch (error) {
         console.error(`Failed to persist ${filename}:`, error);
     }
+}
+
+/** Returns the name of the current working directory (root folder). */
+export function getRootFolderName(): string {
+    return basename(process.cwd());
 }
