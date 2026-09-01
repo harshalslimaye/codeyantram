@@ -19,6 +19,9 @@ export const PROVIDER_ENV_VARS: Record<SupportedProvider, string> = {
 // - Anthropic (Opus 5 / Sonnet 5): low, medium, high, xhigh, max (no "none" - thinking has no off-switch at this level)
 // - OpenAI (gpt-5.4 family):       none, low, medium, high, xhigh (no "max")
 // - Google (Gemini 3.5 Flash):     minimal, low, medium, high (no "xhigh"/"max")
+// - DeepSeek (V4 family):          none, low, high, max (no "minimal"/"medium"/"xhigh" - the
+//   API's reasoningEffort field only accepts low/high/max, plus a separate on/off
+//   toggle for "none"; see buildProviderOptions in the server for how that's built)
 export const EFFORT_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
@@ -77,12 +80,14 @@ export const SUPPORTED_CHAT_MODELS = [
     {
         id: "deepseek-v4-flash",
         provider: "deepseek",
-        supportedEffortLevels: [],
+        supportedEffortLevels: ["none", "low", "high", "max"],
+        defaultEffortLevel: "high",
     },
     {
         id: "deepseek-v4-pro",
         provider: "deepseek",
-        supportedEffortLevels: [],
+        supportedEffortLevels: ["none", "low", "high", "max"],
+        defaultEffortLevel: "high",
     },
 ] as const satisfies SupportedChatModelDefinition[];
 

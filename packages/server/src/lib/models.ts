@@ -41,7 +41,12 @@ function buildProviderOptions(model: SupportedChatModel, effort: EffortLevel): P
         case 'google':
             return { google: { thinkingLevel: effort } };
         case 'deepseek':
-            return {};
+            // "none" disables thinking outright; the SDK's reasoningEffort
+            // field takes low/high/max directly (see EFFORT_LEVELS in models.ts
+            // for why "minimal"/"medium"/"xhigh" are never offered for this provider).
+            return effort === 'none'
+                ? { deepseek: { thinking: { type: 'disabled' } } }
+                : { deepseek: { reasoningEffort: effort } };
     }
 }
 

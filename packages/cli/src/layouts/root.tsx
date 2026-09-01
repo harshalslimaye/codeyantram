@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ThemeProvider } from '../providers/theme';
 import { ModelProvider } from '../providers/model';
+import { EffortProvider } from '../providers/effort';
 import { AgentProvider } from '../providers/agent';
 import { KeyboardProvider } from '../providers/keyboard';
 import { OverlayProvider } from '../providers/overlay';
@@ -19,17 +20,19 @@ export function Root({ layers, children }: RootProps) {
         <KeyboardProvider layers={layers}>
             <ThemeProvider>
                 <ModelProvider>
-                    <AgentProvider>
-                        <ToastProvider>
-                            {/* Needs useModel (request payload) and useToast (surfacing stream errors), so it must sit inside both. */}
-                            <ChatProvider>
-                                <OverlayProvider>
-                                    {children}
-                                </OverlayProvider>
-                                <ApprovalOverlay />
-                            </ChatProvider>
-                        </ToastProvider>
-                    </AgentProvider>
+                    <EffortProvider>
+                        <AgentProvider>
+                            <ToastProvider>
+                                {/* Needs useModel/useEffort (request payload) and useToast (surfacing stream errors), so it must sit inside all three. */}
+                                <ChatProvider>
+                                    <OverlayProvider>
+                                        {children}
+                                    </OverlayProvider>
+                                    <ApprovalOverlay />
+                                </ChatProvider>
+                            </ToastProvider>
+                        </AgentProvider>
+                    </EffortProvider>
                 </ModelProvider>
             </ThemeProvider>
         </KeyboardProvider>

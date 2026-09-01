@@ -9,6 +9,7 @@ import {
 import { streamChat } from '../api/chat';
 import { useAgent } from './agent';
 import { useModel } from './model';
+import { useEffort } from './effort';
 import { useToast } from './toast';
 
 type ChatContextValue = {
@@ -50,6 +51,7 @@ function findPendingApproval(message: ChatMessage | undefined): ToolCallPart | n
 
 export function ChatProvider({ children }: ChatProviderProps) {
     const { model } = useModel();
+    const { effort } = useEffort();
     const { agent } = useAgent();
     const toast = useToast();
 
@@ -96,6 +98,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 messages: history.map(toRequestMessage),
                 agent: agent.name,
                 cwd: process.cwd(),
+                effort,
             };
 
             const abortController = new AbortController();
@@ -195,7 +198,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 }
             })();
         },
-        [agent.name, model.id, toast, updateMessages],
+        [agent.name, model.id, effort, toast, updateMessages],
     );
 
     const sendMessage = useCallback(
