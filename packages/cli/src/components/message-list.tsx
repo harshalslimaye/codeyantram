@@ -1,8 +1,24 @@
 import { TextAttributes, type SyntaxStyle, type TreeSitterClient } from '@opentui/core';
-import type { ChatMessage, MessagePart, ToolCallPart } from '@codeyantram/shared';
+import type { ChatMessage, MessagePart, ToolCallPart, TokenUsage } from '@codeyantram/shared';
 import { useTheme } from '../providers/theme';
 import { getAppTreeSitterClient } from '../tree-sitter-client';
 import type { ThemeColors } from '../theme';
+
+function formatTokenCount(count: number): string {
+    return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+}
+
+function usageSummary(usage: TokenUsage | undefined): string | null {
+    if (usage === undefined) return null;
+
+    const { inputTokens, outputTokens } = usage;
+    if (inputTokens === undefined && outputTokens === undefined) return null;
+
+    const parts: string[] = [];
+    if (inputTokens !== undefined) parts.push(`${formatTokenCount(inputTokens)} in`);
+    if (outputTokens !== undefined) parts.push(`${formatTokenCount(outputTokens)} out`);
+    return parts.join(' · ');
+}
 
 function toolStatusLabel(part: ToolCallPart): string {
     if (part.result !== undefined) return 'done';
@@ -135,6 +151,7 @@ function MessageRow({
     streaming: boolean,
 }) {
     const isUser = message.role === 'user';
+    const usage = message.role === 'assistant' ? usageSummary(message.usage) : null;
 
     return (
         <box flexDirection="column" marginBottom={1}>
@@ -155,6 +172,9 @@ function MessageRow({
                     )
                 )}
             </box>
+            {usage !== null && (
+                <text paddingTop={1} attributes={TextAttributes.DIM}>{usage}</text>
+            )}
         </box>
     );
 }
