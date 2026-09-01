@@ -10,6 +10,7 @@ import {
     type ToolCallPart,
 } from '@codeyantram/shared';
 import { MissingCredentialsError, resolveChatModel } from './models';
+import { getSystemMessage } from './system-prompt';
 import { buildProjectTools } from '../tools';
 
 // Caps how many tool-call/response round trips streamText will run within
@@ -148,6 +149,7 @@ export async function streamChatResponse(
     try {
         const result = streamText({
             model: languageModel,
+            system: getSystemMessage(request.agent),
             messages: toModelMessages(request.messages),
             providerOptions,
             abortSignal: abortController.signal,
