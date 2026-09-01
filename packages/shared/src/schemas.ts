@@ -47,6 +47,17 @@ export const toolApprovalStatusSchema = z.enum(["pending", "approved", "denied"]
 
 export type ToolApprovalStatus = z.infer<typeof toolApprovalStatusSchema>;
 
+// Token counts for one assistant turn, as reported by the provider once the
+// stream finishes. Fields are optional because not every provider reports
+// every count (e.g. totalTokens isn't always broken out).
+export const tokenUsageSchema = z.object({
+    inputTokens: z.number().optional(),
+    outputTokens: z.number().optional(),
+    totalTokens: z.number().optional(),
+});
+
+export type TokenUsage = z.infer<typeof tokenUsageSchema>;
+
 export const toolCallPartSchema = z.object({
     type: z.literal("tool-call"),
     // Named to match the "tool-call"/"tool-result" stream events, so folding an
@@ -97,6 +108,9 @@ export const assistantMessageSchema = z.object({
     id: z.string().min(1),
     role: z.literal("assistant"),
     parts: messagePartsSchema,
+    // Filled in once the matching "done" event arrives, so usage travels
+    // with the message it belongs to rather than living only on the wire.
+    usage: tokenUsageSchema.optional(),
 });
 
 export const chatMessageSchema = z.discriminatedUnion("role", [
@@ -234,6 +248,7 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
     z.object({
         type: z.literal("done"),
         durationMs: z.number(),
+        usage: tokenUsageSchema.optional(),
     }),
     z.object({
         type: z.literal("error"),

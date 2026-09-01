@@ -174,8 +174,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
                                 break;
                             }
 
-                            case 'done':
+                            case 'done': {
+                                const id = assistantMessageId;
+                                if (id === null || event.usage === undefined) break;
+                                const usage = event.usage;
+                                updateMessages(current =>
+                                    current.map(message =>
+                                        message.id === id && message.role === 'assistant'
+                                            ? { ...message, usage }
+                                            : message,
+                                    ),
+                                );
                                 break;
+                            }
                         }
                     }
                 } finally {

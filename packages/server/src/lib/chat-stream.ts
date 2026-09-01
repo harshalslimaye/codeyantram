@@ -227,7 +227,17 @@ export async function streamChatResponse(
 
         if (abortController.signal.aborted) return;
 
-        await send(stream, { type: 'done', durationMs: Date.now() - startedAt });
+        const usage = await result.usage;
+
+        await send(stream, {
+            type: 'done',
+            durationMs: Date.now() - startedAt,
+            usage: {
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                totalTokens: usage.totalTokens,
+            },
+        });
     } catch (error) {
         if (abortController.signal.aborted) return;
 
