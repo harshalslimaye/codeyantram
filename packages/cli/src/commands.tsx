@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ThemePicker } from './components/theme-picker';
 import { ModelPicker } from './components/model-picker';
+import { EffortPicker } from './components/effort-picker';
 import { AgentPicker } from './components/agent-picker';
 import { ConnectFlow } from './components/connect-flow';
 import type { ToastContextValue } from './providers/toast';
@@ -34,6 +35,11 @@ export const SLASH_COMMANDS: Command[] = [
         name: 'models',
         description: 'Switch model',
         action: args => args.overlay('Models', <ModelPicker />)
+    },
+    {
+        name: 'effort',
+        description: 'Switch effort level',
+        action: args => args.overlay('Effort', <EffortPicker />)
     },
     {
         name: 'connect',

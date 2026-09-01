@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { testRender } from '@opentui/react/test-utils';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
+import { EffortProvider } from '../../src/providers/effort';
 import { AgentProvider } from '../../src/providers/agent';
 import { KeyboardProvider } from '../../src/providers/keyboard';
 import { OverlayProvider } from '../../src/providers/overlay';
@@ -17,11 +18,12 @@ import { createLayerStack } from '../../src/keyboard';
  * Mirrors how Root and InputBar wrap Autocomplete in the real app, including
  * the KeyboardProvider that layer-claiming components now require, the
  * OverlayProvider that CommandMenu now reads (its `/themes`, `/models`, and
- * `/agents` commands each open one), the ThemeProvider, ModelProvider, and
- * AgentProvider those overlays' contents read from, the ToastProvider that
- * overlay content can reach via `useToast()`, and the ChatProvider that
- * CommandMenu now reads for `/new`. Hands back the layer stack it created so
- * a test can assert on ownership.
+ * `/agents` commands each open one), the ThemeProvider, ModelProvider,
+ * EffortProvider, and AgentProvider those overlays' contents read from, the
+ * ToastProvider that overlay content can reach via `useToast()`, and the
+ * ChatProvider that CommandMenu now reads for `/new` (and which itself reads
+ * EffortProvider to build a request). Hands back the layer stack it created
+ * so a test can assert on ownership.
  */
 // @opentui/core destroys the renderer on any ctrl+c by default
 // (`exitOnCtrlC`), independent of whatever key handlers a component
@@ -40,22 +42,24 @@ export function mountDropup(node: ReactNode, options?: { width?: number; height?
         <KeyboardProvider layers={layers}>
             <ThemeProvider>
                 <ModelProvider>
-                    <AgentProvider>
-                        <ToastProvider>
-                            <ChatProvider>
-                                <OverlayProvider>
-                                    <box paddingTop={15} width={width}>
-                                        <box position="relative" width={width}>
-                                            {node}
-                                            <box height={3}>
-                                                <text>anchor</text>
+                    <EffortProvider>
+                        <AgentProvider>
+                            <ToastProvider>
+                                <ChatProvider>
+                                    <OverlayProvider>
+                                        <box paddingTop={15} width={width}>
+                                            <box position="relative" width={width}>
+                                                {node}
+                                                <box height={3}>
+                                                    <text>anchor</text>
+                                                </box>
                                             </box>
                                         </box>
-                                    </box>
-                                </OverlayProvider>
-                            </ChatProvider>
-                        </ToastProvider>
-                    </AgentProvider>
+                                    </OverlayProvider>
+                                </ChatProvider>
+                            </ToastProvider>
+                        </AgentProvider>
+                    </EffortProvider>
                 </ModelProvider>
             </ThemeProvider>
         </KeyboardProvider>,

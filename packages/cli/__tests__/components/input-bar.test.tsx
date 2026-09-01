@@ -4,6 +4,7 @@ import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel } from '@codeyantram/shar
 import { InputBar } from '../../src/components/input-bar';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
+import { EffortProvider } from '../../src/providers/effort';
 import { AgentProvider } from '../../src/providers/agent';
 import { KeyboardProvider } from '../../src/providers/keyboard';
 import { OverlayProvider } from '../../src/providers/overlay';
@@ -14,11 +15,16 @@ import { DEFAULT_AGENT } from '../../src/agents';
 import { NO_BUILTIN_CTRL_C, tick, settleEscape } from '../support/mount';
 
 const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
+// The catalog guarantees a model with any supportedEffortLevels also has a
+// defaultEffortLevel (see models.test.ts), but the union type can't express
+// that here.
+const DEFAULT_EFFORT = "defaultEffortLevel" in DEFAULT_MODEL ? DEFAULT_MODEL.defaultEffortLevel : undefined;
 
 // Mirrors how Root and Home actually wrap InputBar: a KeyboardProvider for
 // the layer stack InputBar now claims/reads, a ModelProvider and
 // AgentProvider since InputBar reads the active model and agent for its
-// footer, a ToastProvider and OverlayProvider since InputBar renders
+// footer, an EffortProvider since ChatProvider reads it to build a request,
+// a ToastProvider and OverlayProvider since InputBar renders
 // CommandMenu which now reads both (its `/themes`, `/models`, and `/agents`
 // commands each open an overlay), a ChatProvider since InputBar now sends
 // through it on Enter and reads isStreaming, and headroom above so the
@@ -33,17 +39,19 @@ function mount(props?: { placeholder?: string }) {
         <KeyboardProvider layers={layers}>
             <ThemeProvider>
                 <ModelProvider>
-                    <AgentProvider>
-                        <ToastProvider>
-                            <ChatProvider>
-                                <OverlayProvider>
-                                    <box paddingTop={15} width={40}>
-                                        <InputBar {...props} />
-                                    </box>
-                                </OverlayProvider>
-                            </ChatProvider>
-                        </ToastProvider>
-                    </AgentProvider>
+                    <EffortProvider>
+                        <AgentProvider>
+                            <ToastProvider>
+                                <ChatProvider>
+                                    <OverlayProvider>
+                                        <box paddingTop={15} width={40}>
+                                            <InputBar {...props} />
+                                        </box>
+                                    </OverlayProvider>
+                                </ChatProvider>
+                            </ToastProvider>
+                        </AgentProvider>
+                    </EffortProvider>
                 </ModelProvider>
             </ThemeProvider>
         </KeyboardProvider>,
@@ -76,6 +84,16 @@ describe('rendering', () => {
         expect(frame).toContain(DEFAULT_AGENT.name);
         expect(frame).toContain(DEFAULT_MODEL.id);
         expect(frame).toContain('send');
+        rendered.renderer.destroy();
+    });
+
+    test("shows the default model's effort level next to it", async () => {
+        // claude-sonnet-5's defaultEffortLevel ("high") is what EffortProvider
+        // resolves to with nothing persisted (preferences no-op under NODE_ENV=test).
+        const rendered = await mount();
+        const frame = await rendered.waitForFrame(f => f.includes(DEFAULT_MODEL.id));
+
+        expect(frame).toContain(String(DEFAULT_EFFORT));
         rendered.renderer.destroy();
     });
 });

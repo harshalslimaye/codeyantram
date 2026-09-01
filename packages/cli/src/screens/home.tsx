@@ -20,8 +20,9 @@ export function Home() {
             </box>
             <box flexDirection="row" width={60} justifyContent="space-between" marginTop={1}>
                 <box flexDirection="row" gap={1}>
-                    <box><text>{rootFolderName}</text></box>
-                    <box><text attributes={TextAttributes.DIM}>git:{branch}</text></box>                    
+                    <box><text attributes={TextAttributes.DIM}>~/{rootFolderName}</text></box>
+                    <text attributes={TextAttributes.DIM}>·</text>
+                    <box><text attributes={TextAttributes.DIM}>git:{branch}</text></box>                  
                 </box>
                 <box>
                     <text attributes={TextAttributes.DIM}>v1.0.0</text>

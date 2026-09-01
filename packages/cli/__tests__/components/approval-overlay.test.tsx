@@ -3,6 +3,7 @@ import { useKeyboard } from '@opentui/react';
 import { testRender } from '@opentui/react/test-utils';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
+import { EffortProvider } from '../../src/providers/effort';
 import { AgentProvider } from '../../src/providers/agent';
 import { ToastProvider } from '../../src/providers/toast';
 import { ChatProvider, useChat } from '../../src/providers/chat';
@@ -39,14 +40,16 @@ function mount() {
         <KeyboardProvider layers={layers}>
             <ThemeProvider>
                 <ModelProvider>
-                    <AgentProvider>
-                        <ToastProvider>
-                            <ChatProvider>
-                                <Harness />
-                                <ApprovalOverlay />
-                            </ChatProvider>
-                        </ToastProvider>
-                    </AgentProvider>
+                    <EffortProvider>
+                        <AgentProvider>
+                            <ToastProvider>
+                                <ChatProvider>
+                                    <Harness />
+                                    <ApprovalOverlay />
+                                </ChatProvider>
+                            </ToastProvider>
+                        </AgentProvider>
+                    </EffortProvider>
                 </ModelProvider>
             </ThemeProvider>
         </KeyboardProvider>,

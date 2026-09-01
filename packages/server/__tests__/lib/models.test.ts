@@ -67,4 +67,20 @@ describe('resolveChatModel', () => {
 
         expect(resolved.providerOptions).toEqual({ google: { thinkingLevel: 'low' } });
     });
+
+    test('maps effort to providerOptions.deepseek.reasoningEffort for a DeepSeek model', () => {
+        process.env[PROVIDER_ENV_VARS.deepseek] = 'test-key';
+
+        const resolved = resolveChatModel('deepseek-v4-pro', 'max');
+
+        expect(resolved.providerOptions).toEqual({ deepseek: { reasoningEffort: 'max' } });
+    });
+
+    test('maps "none" effort to providerOptions.deepseek.thinking.type "disabled", not reasoningEffort', () => {
+        process.env[PROVIDER_ENV_VARS.deepseek] = 'test-key';
+
+        const resolved = resolveChatModel('deepseek-v4-flash', 'none');
+
+        expect(resolved.providerOptions).toEqual({ deepseek: { thinking: { type: 'disabled' } } });
+    });
 });

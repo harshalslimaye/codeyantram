@@ -1,13 +1,21 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { useKeyboard } from '@opentui/react';
 import { testRender } from '@opentui/react/test-utils';
+import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel } from '@codeyantram/shared';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
+import { EffortProvider } from '../../src/providers/effort';
 import { AgentProvider } from '../../src/providers/agent';
 import { ToastProvider } from '../../src/providers/toast';
 import { ChatProvider, useChat } from '../../src/providers/chat';
 import { NO_BUILTIN_CTRL_C, tick } from '../support/mount';
 import { mockFetch, pendingSseResponse, sseResponse } from '../support/sse';
+
+const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
+// The catalog guarantees a model with any supportedEffortLevels also has a
+// defaultEffortLevel (see shared's models.test.ts), but the union type can't
+// express that here.
+const DEFAULT_EFFORT = "defaultEffortLevel" in DEFAULT_MODEL ? DEFAULT_MODEL.defaultEffortLevel : undefined;
 
 const originalFetch = global.fetch;
 
@@ -53,13 +61,15 @@ function mount() {
     return testRender(
         <ThemeProvider>
             <ModelProvider>
-                <AgentProvider>
-                    <ToastProvider>
-                        <ChatProvider>
-                            <Harness />
-                        </ChatProvider>
-                    </ToastProvider>
-                </AgentProvider>
+                <EffortProvider>
+                    <AgentProvider>
+                        <ToastProvider>
+                            <ChatProvider>
+                                <Harness />
+                            </ChatProvider>
+                        </ToastProvider>
+                    </AgentProvider>
+                </EffortProvider>
             </ModelProvider>
         </ThemeProvider>,
         { width: 60, height: 20, ...NO_BUILTIN_CTRL_C },
@@ -88,6 +98,29 @@ describe('sendMessage', () => {
             { id: expect.any(String), role: 'user', parts: [{ type: 'text', text: 'hello' }] },
             { id: 'm1', role: 'assistant', parts: [{ type: 'text', text: 'Hi there' }] },
         ]);
+
+        rendered.renderer.destroy();
+    });
+
+    test('includes the current effort level in the request payload', async () => {
+        const requests: unknown[] = [];
+        mockFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        // The default model resolves to its own defaultEffortLevel with
+        // nothing persisted in test env.
+        expect(requests).toEqual([expect.objectContaining({ effort: DEFAULT_EFFORT })]);
 
         rendered.renderer.destroy();
     });

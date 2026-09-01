@@ -4,6 +4,7 @@ import type { TextareaRenderable } from '@opentui/core';
 import { useKeyboard, useRenderer } from '@opentui/react';
 import { useTheme } from '../providers/theme';
 import { useModel } from '../providers/model';
+import { useEffort } from '../providers/effort';
 import { useAgent } from '../providers/agent';
 import { getNextAgent } from '../agents';
 import { useChat } from '../providers/chat';
@@ -31,6 +32,7 @@ const textareaKeyBindings = [
 export function InputBar({ placeholder = "ask anything ... 'fix the socket handshake'", paddingBottom = 0 }: InputBarProps) {
     const { colors } = useTheme();
     const { model } = useModel();
+    const { effort } = useEffort();
     const { agent, setAgent } = useAgent();
     const chat = useChat();
     const [value, setValue] = useState('');
@@ -116,6 +118,12 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
                         <text fg={colors.accent}>{agent.name}</text>
                         <text attributes={TextAttributes.DIM}>›</text>
                         <text>{model.id}</text>
+                        {effort !== undefined && (
+                            <>
+                                <text attributes={TextAttributes.DIM}>·</text>
+                                <text attributes={TextAttributes.DIM}>{effort}</text>
+                            </>
+                        )}
                     </box>
                     <box>
                         <text attributes={TextAttributes.DIM}>↵ send</text>
