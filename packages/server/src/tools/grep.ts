@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
 import { rgPath } from '@vscode/ripgrep';
-import { BASH_TIMEOUT_MS, resolveInProject, truncate } from './shared';
+import { BASH_TIMEOUT_MS, NOISE_DIRS_GLOB, resolveInProject, truncate } from './shared';
 
 // Belt-and-suspenders on top of ripgrep's own .gitignore handling (which already
 // skips .git and anything gitignored) - guarantees these are excluded even in a
-// repo without a .gitignore entry for them. Must be unanchored (leading `**/`) so it
-// still matches when the search target is a subdirectory, not just the search root.
-const DEFAULT_EXCLUDE_GLOB = '!**/{node_modules,.git,dist,build}/**';
+// repo without a .gitignore entry for them. The `!` negates the pattern into an
+// exclusion, per ripgrep's --glob convention.
+const DEFAULT_EXCLUDE_GLOB = `!${NOISE_DIRS_GLOB}`;
 const DEFAULT_MAX_RESULTS = 100;
 
 type GrepInput = {

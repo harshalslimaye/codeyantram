@@ -16,9 +16,24 @@ export const TOOL_CATALOG = [
     },
     {
         name: "list_dir",
-        description: "List files and directories at a path relative to the project root.",
+        description:
+            "List files and directories at a path relative to the project root. Marks directories with a trailing slash, resolving symlinks to their real type. Hides dotfiles/dotdirs unless includeHidden is set. Pass recursive (or depth) to descend into subdirectories instead of just the top level - node_modules, .git, dist, and build are skipped while descending, same as grep. Pass withMetadata for a tab-separated path/type/size/mtime line per entry instead of just the name, e.g. to tell a symlink apart from a real file or directory.",
         inputSchema: z.object({
             path: z.string().min(1).default("."),
+            maxResults: z.number().int().min(1).max(5000).default(500).describe("Cap on the number of entries returned."),
+            includeHidden: z.boolean().optional().describe("Include dotfiles and dotdirs, which are hidden by default."),
+            recursive: z.boolean().optional().describe("List subdirectories recursively instead of just the top level."),
+            depth: z
+                .number()
+                .int()
+                .min(1)
+                .max(20)
+                .optional()
+                .describe("Limit recursion to this many directory levels; implies recursive. Defaults to a depth of 20 when recursive is set without one."),
+            withMetadata: z
+                .boolean()
+                .optional()
+                .describe("Return each entry as a tab-separated \"path\\ttype\\tsize\\tmtime\" line instead of just its name (type is file, dir, or symlink)."),
         }),
     },
     {
