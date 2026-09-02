@@ -151,6 +151,21 @@ describe('bash', () => {
 
     test('captures a non-zero exit as part of the returned output rather than throwing', async () => {
         const result = await run(projectDir, 'bash', { command: 'exit 1' });
+        expect(result).toBe('Error (exit 1): (no output)');
+    });
+
+    test('reports a command killed by a signal', async () => {
+        const result = await run(projectDir, 'bash', { command: 'kill -TERM $$' });
+        expect(result).toBe('Error (killed by SIGTERM): (no output)');
+    });
+
+    test('blocks an obviously destructive command before running it', async () => {
+        const result = await run(projectDir, 'bash', { command: 'rm -rf /' });
+        expect(result).toContain('Error: command blocked by safety policy');
+    });
+
+    test('does not inherit stdin, so a command waiting on input does not hang', async () => {
+        const result = await run(projectDir, 'bash', { command: 'cat' });
         expect(result).toBe('(no output)');
     });
 
