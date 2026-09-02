@@ -1,7 +1,7 @@
 import { tool, type ToolSet } from 'ai';
 import { TOOL_CATALOG, isReadOnlyTool, type ToolName } from '@codeyantram/shared';
 import { execute as bash } from './bash';
-import { execute as editFile } from './edit-file';
+import { execute as editFile, undo as undoEdit } from './edit-file';
 import { execute as glob } from './glob';
 import { execute as grep } from './grep';
 import { execute as listDir } from './list-dir';
@@ -16,6 +16,7 @@ const TOOL_EXECUTORS: Record<ToolName, (input: any, cwd: string) => Promise<stri
     glob,
     grep,
     edit_file: editFile,
+    undo_edit: undoEdit,
     write_file: writeFile,
     bash,
 };

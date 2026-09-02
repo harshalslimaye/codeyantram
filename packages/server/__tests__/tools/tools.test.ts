@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOOL_CATALOG, isReadOnlyTool } from '@codeyantram/shared';
 import { buildProjectTools } from '../../src/tools';
+import { MAX_EDIT_FILE_BYTES } from '../../src/tools/shared';
 
 let projectDir: string;
 
@@ -329,24 +330,287 @@ describe('write_file', () => {
 describe('edit_file', () => {
     test('replaces a unique snippet', async () => {
         await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
-        const result = await run(projectDir, 'edit_file', { path: 'a.txt', oldText: 'bar', newText: 'qux' });
+        const result = await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'bar', newText: 'qux' }] });
         expect(result).toBe('Edited a.txt');
         expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo qux baz');
     });
 
     test('errors, without writing, when oldText is not found', async () => {
         await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
-        const result = await run(projectDir, 'edit_file', { path: 'a.txt', oldText: 'nope', newText: 'x' });
+        const result = await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'nope', newText: 'x' }] });
         expect(result).toContain('Error:');
         expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo bar baz');
     });
 
     test('errors, without writing, when oldText matches more than once', async () => {
         await Bun.write(join(projectDir, 'a.txt'), 'foo foo foo');
-        const result = await run(projectDir, 'edit_file', { path: 'a.txt', oldText: 'foo', newText: 'x' });
+        const result = await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'foo', newText: 'x' }] });
         expect(result).toContain('Error:');
         expect(result).toContain('3 locations');
         expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo foo foo');
+    });
+
+    test('multi-match error lists each match line as path:line', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo\nbar\nfoo\nbaz\nfoo');
+        const result = await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'foo', newText: 'x' }] });
+
+        expect(result).toContain('a.txt:1');
+        expect(result).toContain('a.txt:3');
+        expect(result).toContain('a.txt:5');
+    });
+
+    test('multi-match error truncates past MAX_MATCH_LOCATIONS_SHOWN and reports the remainder', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo\n'.repeat(7));
+        const result = await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'foo', newText: 'x' }] });
+
+        expect(result).toContain('7 locations');
+        expect(result).toContain('a.txt:1');
+        expect(result).toContain('a.txt:5');
+        expect(result).not.toContain('a.txt:6');
+        expect(result).toContain('and 2 more');
+    });
+
+    test('treats $ in newText as a literal, not a String.replace pattern token', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
+        const result = await run(projectDir, 'edit_file', {
+            path: 'a.txt',
+            edits: [{ oldText: 'bar', newText: 'price: $1.99 ($&)' }],
+        });
+        expect(result).toBe('Edited a.txt');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo price: $1.99 ($&) baz');
+    });
+
+    test('hints at a line-ending mismatch when oldText is CRLF but the file is LF', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo\nbar\nbaz');
+        const result = await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'foo\r\nbar', newText: 'x' }] });
+
+        expect(result).toContain('Error:');
+        expect(result).toContain('file uses LF line endings but oldText uses CRLF');
+    });
+
+    test('rejects a file over MAX_EDIT_FILE_BYTES without reading or writing it', async () => {
+        const target = join(projectDir, 'big.txt');
+        await Bun.write(target, Buffer.alloc(MAX_EDIT_FILE_BYTES + 1, 'x'));
+
+        const result = await run(projectDir, 'edit_file', { path: 'big.txt', edits: [{ oldText: 'x', newText: 'y' }] });
+
+        expect(result).toContain('Error:');
+        expect(result).toContain('over the');
+        expect((await stat(target)).size).toBe(MAX_EDIT_FILE_BYTES + 1);
+    });
+
+    test('applies multiple edits to distinct spots atomically', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
+        const result = await run(projectDir, 'edit_file', {
+            path: 'a.txt',
+            edits: [
+                { oldText: 'foo', newText: 'FOO' },
+                { oldText: 'baz', newText: 'BAZ' },
+            ],
+        });
+
+        expect(result).toBe('Applied 2 edits to a.txt');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('FOO bar BAZ');
+    });
+
+    test('rejects a batch where a later edit targets text only an earlier edit would create - each oldText must match the original content, not a chained intermediate', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo');
+        const result = await run(projectDir, 'edit_file', {
+            path: 'a.txt',
+            edits: [
+                { oldText: 'foo', newText: 'foobar' },
+                { oldText: 'foobar', newText: 'foobarbaz' },
+            ],
+        });
+
+        expect(result).toContain('Error:');
+        expect(result).toContain('edit 2/2');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo');
+    });
+
+    test('when one edit in a batch fails up front, none of them are written', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
+        const result = await run(projectDir, 'edit_file', {
+            path: 'a.txt',
+            edits: [
+                { oldText: 'foo', newText: 'FOO' },
+                { oldText: 'missing', newText: 'X' },
+            ],
+        });
+
+        expect(result).toContain('Error:');
+        expect(result).toContain('edit 2/2');
+        expect(result).toContain('oldText not found');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo bar baz');
+    });
+
+    test('reports every failing edit in a batch, not just the first', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
+        const result = await run(projectDir, 'edit_file', {
+            path: 'a.txt',
+            edits: [
+                { oldText: 'nope', newText: 'X' },
+                { oldText: 'also-nope', newText: 'Y' },
+            ],
+        });
+
+        expect(result).toContain('edit 1/2');
+        expect(result).toContain('edit 2/2');
+    });
+
+    test('aborts without writing when an earlier edit invalidates a later one', async () => {
+        // Both 'foo' and 'bar' are independently unique against the original content, but
+        // rewriting 'foo' to 'bar' makes the second edit's oldText match twice.
+        await Bun.write(join(projectDir, 'a.txt'), 'foo bar');
+        const result = await run(projectDir, 'edit_file', {
+            path: 'a.txt',
+            edits: [
+                { oldText: 'foo', newText: 'bar' },
+                { oldText: 'bar', newText: 'baz' },
+            ],
+        });
+
+        expect(result).toContain('Error:');
+        expect(result).toContain('caused by an earlier edit in this batch');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo bar');
+    });
+
+    describe('dryRun', () => {
+        test('returns a diff without writing the file', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
+            const result = await run(projectDir, 'edit_file', {
+                path: 'a.txt',
+                edits: [{ oldText: 'bar', newText: 'qux' }],
+                dryRun: true,
+            });
+
+            expect(result).toContain('Dry run - no changes written to a.txt');
+            expect(result).toContain('@@ a.txt:1 (edit) @@');
+            expect(result).toContain('-foo bar baz');
+            expect(result).toContain('+foo qux baz');
+            expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo bar baz');
+        });
+
+        test('expands a mid-line match to the full line, at the correct line number', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'line1\nline2\nline3');
+            const result = await run(projectDir, 'edit_file', {
+                path: 'a.txt',
+                edits: [{ oldText: 'line2', newText: 'LINE2' }],
+                dryRun: true,
+            });
+
+            expect(result).toContain('@@ a.txt:2 (edit) @@');
+            expect(result).toContain('-line2');
+            expect(result).toContain('+LINE2');
+            expect(result).not.toContain('line1\n-'); // the untouched lines aren't part of the hunk
+        });
+
+        test('renders one hunk per edit, in order, for a multi-edit batch', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
+            const result = await run(projectDir, 'edit_file', {
+                path: 'a.txt',
+                edits: [
+                    { oldText: 'foo', newText: 'FOO' },
+                    { oldText: 'baz', newText: 'BAZ' },
+                ],
+                dryRun: true,
+            });
+
+            expect(result).toContain('@@ a.txt:1 (edit 1/2) @@');
+            expect(result).toContain('@@ a.txt:1 (edit 2/2) @@');
+            expect(result.indexOf('edit 1/2')).toBeLessThan(result.indexOf('edit 2/2'));
+            expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo bar baz');
+        });
+
+        test('still reports a validation error instead of a diff when oldText is not found', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
+            const result = await run(projectDir, 'edit_file', {
+                path: 'a.txt',
+                edits: [{ oldText: 'nope', newText: 'x' }],
+                dryRun: true,
+            });
+
+            expect(result).toContain('Error:');
+            expect(result).not.toContain('Dry run');
+        });
+
+        test('still catches an in-batch overlap and writes nothing', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'foo bar');
+            const result = await run(projectDir, 'edit_file', {
+                path: 'a.txt',
+                edits: [
+                    { oldText: 'foo', newText: 'bar' },
+                    { oldText: 'bar', newText: 'baz' },
+                ],
+                dryRun: true,
+            });
+
+            expect(result).toContain('Error:');
+            expect(result).toContain('caused by an earlier edit in this batch');
+            expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo bar');
+        });
+    });
+});
+
+describe('undo_edit', () => {
+    test('restores the state from immediately before the last edit_file write', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo bar baz');
+        await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'bar', newText: 'qux' }] });
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo qux baz');
+
+        const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
+
+        expect(result).toContain('Reverted a.txt');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('foo bar baz');
+    });
+
+    test('steps back one edit at a time across multiple edit_file writes', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'v1');
+        await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'v1', newText: 'v2' }] });
+        await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'v2', newText: 'v3' }] });
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('v3');
+
+        await run(projectDir, 'undo_edit', { path: 'a.txt' });
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('v2');
+
+        await run(projectDir, 'undo_edit', { path: 'a.txt' });
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('v1');
+    });
+
+    test('errors when there is no backup for the path', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'untouched');
+        const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
+
+        expect(result).toContain('Error:');
+        expect(result).toContain('no edit_file backup available');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('untouched');
+    });
+
+    test('errors once the backup stack for a path is exhausted', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo');
+        await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'foo', newText: 'bar' }] });
+        await run(projectDir, 'undo_edit', { path: 'a.txt' });
+
+        const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
+        expect(result).toContain('Error:');
+        expect(result).toContain('no edit_file backup available');
+    });
+
+    test('a dryRun edit_file call does not create a backup to undo', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'foo bar');
+        await run(projectDir, 'edit_file', { path: 'a.txt', edits: [{ oldText: 'foo', newText: 'FOO' }], dryRun: true });
+
+        const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
+        expect(result).toContain('Error:');
+        expect(result).toContain('no edit_file backup available');
+    });
+
+    test('does not cover a write_file write', async () => {
+        await run(projectDir, 'write_file', { path: 'a.txt', content: 'from write_file' });
+        const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
+
+        expect(result).toContain('Error:');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('from write_file');
     });
 });
 

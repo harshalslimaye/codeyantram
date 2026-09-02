@@ -3,6 +3,10 @@ import { resolve, sep } from 'node:path';
 
 export const BASH_TIMEOUT_MS = 30_000;
 export const MAX_OUTPUT_CHARS = 20_000;
+// edit_file loads the whole file into memory and writes it back out for even a
+// one-line change, so it needs its own ceiling well below what read_file/write_file
+// would otherwise allow through.
+export const MAX_EDIT_FILE_BYTES = 5 * 1024 * 1024;
 
 /** Directories skipped even without a .gitignore entry for them - shared by grep (as a
  * ripgrep `!`-prefixed --glob exclusion) and list_dir (as a fast-glob `ignore` pattern).

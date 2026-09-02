@@ -59,11 +59,28 @@ export const TOOL_CATALOG = [
     },
     {
         name: "edit_file",
-        description: "Replace one exact snippet of text in a file with new text.",
+        description:
+            "Replace one or more exact snippets of text in a file with new text. Pass multiple edits to change several distinct spots in the same file in one call - they're applied atomically (all or none). Each edit's oldText must be an exact, unique match against the file's original content; don't target text that only an earlier edit in the same call would create.",
         inputSchema: z.object({
             path: z.string().min(1),
-            oldText: z.string().min(1),
-            newText: z.string(),
+            edits: z
+                .array(
+                    z.object({
+                        oldText: z.string().min(1),
+                        newText: z.string(),
+                    }),
+                )
+                .min(1)
+                .describe("Edits for distinct, non-overlapping spots in the file. Each oldText is matched against the file's original content, not against the result of earlier edits in this same array."),
+            dryRun: z.boolean().optional().describe("Preview the resulting diff instead of writing the file - use this to check a risky or unfamiliar edit before committing it."),
+        }),
+    },
+    {
+        name: "undo_edit",
+        description:
+            "Revert a file to its state immediately before the most recent edit_file call that wrote to it, one step per call. Only covers edit_file writes made earlier in this session, not write_file or bash - and only while the server process has stayed up since that write.",
+        inputSchema: z.object({
+            path: z.string().min(1),
         }),
     },
     {
@@ -85,7 +102,7 @@ export const TOOL_CATALOG = [
 
 export type ToolName = (typeof TOOL_CATALOG)[number]["name"];
 
-// Tools that only read state. Everything else (edit_file, write_file, bash)
+// Tools that only read state. Everything else (edit_file, undo_edit, write_file, bash)
 // mutates the project or the machine and needs approval before it runs.
 export const READ_ONLY_TOOLS: readonly ToolName[] = ["read_file", "list_dir", "glob", "grep"];
 
