@@ -4,6 +4,12 @@ import { resolve, sep } from 'node:path';
 export const BASH_TIMEOUT_MS = 30_000;
 export const MAX_OUTPUT_CHARS = 20_000;
 
+/** Directories skipped even without a .gitignore entry for them - shared by grep (as a
+ * ripgrep `!`-prefixed --glob exclusion) and list_dir (as a fast-glob `ignore` pattern).
+ * Must be unanchored (leading `**\/`) so it still matches when the search/list target is
+ * a subdirectory, not just the project root. */
+export const NOISE_DIRS_GLOB = '**/{node_modules,.git,dist,build}/**';
+
 /** Every tool's path input is relative to `cwd` - this is what keeps a tool call from reaching outside the project it was invoked in. */
 export function resolveInProject(cwd: string, relativePath: string): string {
     const root = resolve(cwd);

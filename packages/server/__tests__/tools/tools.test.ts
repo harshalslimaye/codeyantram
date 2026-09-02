@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -77,6 +77,146 @@ describe('list_dir', () => {
 
         const result = await run(projectDir, 'list_dir', { path: '.' });
         expect(result.split('\n').sort()).toEqual(['a.txt', 'sub/']);
+    });
+
+    test('truncates past maxResults entries', async () => {
+        for (let i = 0; i < 10; i++) {
+            await Bun.write(join(projectDir, `file${i}.txt`), '');
+        }
+
+        const result = await run(projectDir, 'list_dir', { path: '.', maxResults: 5 });
+        const lines = result.split('\n');
+        expect(lines.filter(line => line.endsWith('.txt'))).toHaveLength(5);
+        expect(result).toContain('… 5 more entries truncated (maxResults=5)');
+    });
+
+    test('hides dotfiles and dotdirs by default, shows them with includeHidden', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), '');
+        await Bun.write(join(projectDir, '.env'), '');
+        mkdirSync(join(projectDir, '.git'));
+
+        const hidden = await run(projectDir, 'list_dir', { path: '.' });
+        expect(hidden.split('\n').sort()).toEqual(['a.txt']);
+
+        const shown = await run(projectDir, 'list_dir', { path: '.', includeHidden: true });
+        expect(shown.split('\n').sort()).toEqual(['.env', '.git/', 'a.txt']);
+    });
+
+    test('errors cleanly when the path is a file, not a directory', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), '');
+        const result = await run(projectDir, 'list_dir', { path: 'a.txt' });
+        expect(result).toContain('Error:');
+        expect(result).toContain('is not a directory');
+    });
+
+    test('errors cleanly when the path does not exist', async () => {
+        const result = await run(projectDir, 'list_dir', { path: 'missing' });
+        expect(result).toContain('Error:');
+        expect(result).toContain('does not exist');
+    });
+
+    test('marks a symlink to a directory with a trailing slash, not just a symlink to a file', async () => {
+        mkdirSync(join(projectDir, 'realdir'));
+        await Bun.write(join(projectDir, 'realfile.txt'), '');
+        symlinkSync(join(projectDir, 'realdir'), join(projectDir, 'linktodir'));
+        symlinkSync(join(projectDir, 'realfile.txt'), join(projectDir, 'linktofile'));
+
+        const result = await run(projectDir, 'list_dir', { path: '.' });
+        expect(result.split('\n').sort()).toEqual(['linktodir/', 'linktofile', 'realdir/', 'realfile.txt']);
+    });
+
+    test('lists a broken symlink as a plain name instead of erroring', async () => {
+        symlinkSync(join(projectDir, 'does-not-exist'), join(projectDir, 'broken-link'));
+
+        const result = await run(projectDir, 'list_dir', { path: '.' });
+        expect(result).toBe('broken-link');
+    });
+
+    test('is not recursive by default', async () => {
+        await Bun.write(join(projectDir, 'sub/nested.txt'), '');
+
+        const result = await run(projectDir, 'list_dir', { path: '.' });
+        expect(result.split('\n').sort()).toEqual(['sub/']);
+    });
+
+    test('recursive descends into subdirectories', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), '');
+        await Bun.write(join(projectDir, 'sub/nested.txt'), '');
+        await Bun.write(join(projectDir, 'sub/deeper/leaf.txt'), '');
+
+        const result = await run(projectDir, 'list_dir', { path: '.', recursive: true });
+        expect(result.split('\n').sort()).toEqual(['a.txt', 'sub/', 'sub/deeper/', 'sub/deeper/leaf.txt', 'sub/nested.txt']);
+    });
+
+    test('depth limits recursion and implies recursive', async () => {
+        await Bun.write(join(projectDir, 'sub/nested.txt'), '');
+        await Bun.write(join(projectDir, 'sub/deeper/leaf.txt'), '');
+
+        const result = await run(projectDir, 'list_dir', { path: '.', depth: 1 });
+        expect(result.split('\n').sort()).toEqual(['sub/']);
+    });
+
+    test('recursive skips descending into node_modules, .git, dist, and build', async () => {
+        await Bun.write(join(projectDir, 'real.js'), '');
+        await Bun.write(join(projectDir, 'node_modules/pkg/index.js'), '');
+        await Bun.write(join(projectDir, '.git/config'), '');
+        await Bun.write(join(projectDir, 'dist/bundle.js'), '');
+        await Bun.write(join(projectDir, 'build/output.js'), '');
+
+        const result = await run(projectDir, 'list_dir', { path: '.', recursive: true });
+
+        expect(result).toContain('real.js');
+        expect(result).not.toContain('pkg');
+        expect(result).not.toContain('.git/config');
+        expect(result).not.toContain('dist/bundle.js');
+        expect(result).not.toContain('build/output.js');
+    });
+
+    test('a flat top-level listing still shows node_modules itself as one entry', async () => {
+        await Bun.write(join(projectDir, 'node_modules/pkg/index.js'), '');
+
+        const result = await run(projectDir, 'list_dir', { path: '.' });
+        expect(result.split('\n')).toEqual(['node_modules/']);
+    });
+
+    test('does not hang on a circular symlink when recursing without an explicit depth', async () => {
+        mkdirSync(join(projectDir, 'sub'));
+        symlinkSync(projectDir, join(projectDir, 'sub', 'loop'));
+
+        // The DEFAULT_MAX_DEPTH safety ceiling is what keeps this from recursing
+        // forever - if this test hangs, that ceiling has regressed.
+        const result = await run(projectDir, 'list_dir', { path: '.', recursive: true });
+        expect(result).toContain('sub/');
+    });
+
+    test('withMetadata reports type, size, and mtime as tab-separated fields', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'hello');
+        mkdirSync(join(projectDir, 'sub'));
+
+        const result = await run(projectDir, 'list_dir', { path: '.', withMetadata: true });
+        const lines = result.split('\n').sort();
+
+        const [fileName, fileType, fileSize] = lines[0]!.split('\t');
+        expect(fileName).toBe('a.txt');
+        expect(fileType).toBe('file');
+        expect(fileSize).toBe('5');
+
+        const [dirName, dirType] = lines[1]!.split('\t');
+        expect(dirName).toBe('sub/');
+        expect(dirType).toBe('dir');
+    });
+
+    test('withMetadata reports a symlink as its own type, distinct from file or dir', async () => {
+        mkdirSync(join(projectDir, 'realdir'));
+        symlinkSync(join(projectDir, 'realdir'), join(projectDir, 'linktodir'));
+        symlinkSync(join(projectDir, 'does-not-exist'), join(projectDir, 'broken-link'));
+
+        const result = await run(projectDir, 'list_dir', { path: '.', withMetadata: true });
+        const types = Object.fromEntries(result.split('\n').map(line => line.split('\t').slice(0, 2)));
+
+        expect(types['realdir/']).toBe('dir');
+        expect(types['linktodir/']).toBe('symlink');
+        expect(types['broken-link']).toBe('symlink');
     });
 });
 
