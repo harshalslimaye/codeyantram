@@ -9,9 +9,18 @@ type ToolDefinition = {
 export const TOOL_CATALOG = [
     {
         name: "read_file",
-        description: "Read the contents of a file, given a path relative to the project root.",
+        description:
+            "Read the contents of a file, given a path relative to the project root. Output is line-numbered (\"<line>\\t<content>\") like grep -n, so a line can be quoted straight back to edit_file. Reads return a bounded window of the file - pass offset/limit to page through a large one; whenever output is cut short it says which offset to pass next.",
         inputSchema: z.object({
             path: z.string().min(1),
+            offset: z.number().int().min(1).optional().describe("1-based line number to start reading at. Defaults to the first line."),
+            limit: z
+                .number()
+                .int()
+                .min(1)
+                .max(10000)
+                .optional()
+                .describe("Maximum number of lines to return, starting at offset. Defaults to 2000; output is also capped by an overall character limit."),
         }),
     },
     {

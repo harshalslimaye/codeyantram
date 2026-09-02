@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOOL_CATALOG, isReadOnlyTool } from '@codeyantram/shared';
 import { buildProjectTools } from '../../src/tools';
-import { MAX_EDIT_FILE_BYTES } from '../../src/tools/shared';
+import { MAX_EDIT_FILE_BYTES, MAX_OUTPUT_CHARS, MAX_READ_FILE_BYTES } from '../../src/tools/shared';
 
 let projectDir: string;
 
@@ -45,15 +45,53 @@ describe('buildProjectTools', () => {
 });
 
 describe('read_file', () => {
-    test('reads a file relative to the project root', async () => {
-        await Bun.write(join(projectDir, 'hello.txt'), 'hi there');
-        expect(await run(projectDir, 'read_file', { path: 'hello.txt' })).toBe('hi there');
+    test('reads a file relative to the project root, numbering every line', async () => {
+        await Bun.write(join(projectDir, 'hello.txt'), 'hi there\nsecond line\n');
+        expect(await run(projectDir, 'read_file', { path: 'hello.txt' })).toBe('1\thi there\n2\tsecond line');
+    });
+
+    test('keeps a final line that has no trailing newline', async () => {
+        await Bun.write(join(projectDir, 'hello.txt'), 'a\nb');
+        expect(await run(projectDir, 'read_file', { path: 'hello.txt' })).toBe('1\ta\n2\tb');
     });
 
     test('rejects a path that escapes the project root', async () => {
         const result = await run(projectDir, 'read_file', { path: '../outside.txt' });
         expect(result).toContain('Error:');
         expect(result).toContain('outside the project root');
+    });
+
+    test('rejects a symlink pointing outside the project root', async () => {
+        const outside = mkdtempSync(join(tmpdir(), 'codeyantram-outside-'));
+        try {
+            await Bun.write(join(outside, 'secret.txt'), 'secret');
+            symlinkSync(join(outside, 'secret.txt'), join(projectDir, 'escape.txt'));
+
+            const result = await run(projectDir, 'read_file', { path: 'escape.txt' });
+            expect(result).toContain('Error:');
+            expect(result).toContain('outside the project root through a symlink');
+            expect(result).not.toContain('secret');
+        } finally {
+            rmSync(outside, { recursive: true, force: true });
+        }
+    });
+
+    test('follows a symlink that stays inside the project root', async () => {
+        await Bun.write(join(projectDir, 'real.txt'), 'inside');
+        symlinkSync(join(projectDir, 'real.txt'), join(projectDir, 'link.txt'));
+        expect(await run(projectDir, 'read_file', { path: 'link.txt' })).toBe('1\tinside');
+    });
+
+    test('reports a missing file and a directory in plain language', async () => {
+        mkdirSync(join(projectDir, 'sub'));
+
+        expect(await run(projectDir, 'read_file', { path: 'nope.txt' })).toContain('does not exist');
+        expect(await run(projectDir, 'read_file', { path: 'sub' })).toContain('is a directory');
+    });
+
+    test('reports an empty file rather than returning nothing', async () => {
+        await Bun.write(join(projectDir, 'empty.txt'), '');
+        expect(await run(projectDir, 'read_file', { path: 'empty.txt' })).toContain('is empty');
     });
 
     test('rejects a binary file instead of returning garbled text', async () => {
@@ -63,11 +101,80 @@ describe('read_file', () => {
         expect(result).toContain('Cannot read binary file');
     });
 
-    test('truncates output past MAX_OUTPUT_CHARS', async () => {
-        await Bun.write(join(projectDir, 'big.txt'), 'x'.repeat(25_000));
-        const result = await run(projectDir, 'read_file', { path: 'big.txt' });
-        expect(result.length).toBeLessThan(25_000);
-        expect(result).toContain('truncated');
+    describe('offset and limit', () => {
+        const numbered = (count: number) => Array.from({ length: count }, (_, i) => `line ${i + 1}`).join('\n');
+
+        test('returns only the requested window, keeping the real line numbers', async () => {
+            await Bun.write(join(projectDir, 'many.txt'), numbered(50));
+            const result = await run(projectDir, 'read_file', { path: 'many.txt', offset: 10, limit: 3 });
+            expect(result.split('\n').slice(0, 3)).toEqual(['10\tline 10', '11\tline 11', '12\tline 12']);
+        });
+
+        test('notes the next offset when more lines follow', async () => {
+            await Bun.write(join(projectDir, 'many.txt'), numbered(50));
+            const result = await run(projectDir, 'read_file', { path: 'many.txt', limit: 5 });
+            expect(result).toContain('showed lines 1-5, truncated at limit=5');
+            expect(result).toContain('pass offset=6 to continue');
+        });
+
+        test('adds no truncation note when the window reaches the end of the file', async () => {
+            await Bun.write(join(projectDir, 'many.txt'), numbered(5));
+            const result = await run(projectDir, 'read_file', { path: 'many.txt', limit: 5 });
+            expect(result).toBe('1\tline 1\n2\tline 2\n3\tline 3\n4\tline 4\n5\tline 5');
+        });
+
+        test('reports the line count when offset is past the end of the file', async () => {
+            await Bun.write(join(projectDir, 'many.txt'), numbered(5));
+            const result = await run(projectDir, 'read_file', { path: 'many.txt', offset: 99 });
+            expect(result).toContain('Error:');
+            expect(result).toContain('offset 99 is past the end of many.txt, which has 5 lines');
+        });
+    });
+
+    describe('truncation', () => {
+        test('stops at MAX_OUTPUT_CHARS and says where to resume', async () => {
+            await Bun.write(join(projectDir, 'big.txt'), `${'y'.repeat(500)}\n`.repeat(200));
+            const result = await run(projectDir, 'read_file', { path: 'big.txt' });
+
+            expect(result.length).toBeLessThan(MAX_OUTPUT_CHARS + 500);
+            expect(result).toContain(`truncated at the ${MAX_OUTPUT_CHARS}-char output limit`);
+            expect(result).toContain('pass offset=');
+        });
+
+        test('shortens an over-long line instead of letting it fill the output', async () => {
+            await Bun.write(join(projectDir, 'minified.js'), 'x'.repeat(25_000));
+            const result = await run(projectDir, 'read_file', { path: 'minified.js' });
+
+            expect(result.length).toBeLessThan(3_000);
+            expect(result).toContain('1 line(s) longer than 2000 chars truncated');
+        });
+
+        test('stops at MAX_READ_FILE_BYTES rather than scanning an oversized file for a deep offset', async () => {
+            const line = `${'z'.repeat(99)}\n`;
+            await Bun.write(join(projectDir, 'huge.log'), line.repeat(Math.ceil(MAX_READ_FILE_BYTES / line.length) + 100));
+
+            const result = await run(projectDir, 'read_file', { path: 'huge.log', offset: 200_000 });
+            expect(result).toContain('Error:');
+            expect(result).toContain(`reached the ${MAX_READ_FILE_BYTES}-byte scan limit`);
+            expect(result).toContain('sed -n');
+        });
+    });
+
+    describe('encoding', () => {
+        test('reads a UTF-8 file with multi-byte characters intact', async () => {
+            await Bun.write(join(projectDir, 'utf8.txt'), 'héllo — 世界');
+            expect(await run(projectDir, 'read_file', { path: 'utf8.txt' })).toBe('1\théllo — 世界');
+        });
+
+        test('falls back to Latin-1 and says so when the file is not valid UTF-8', async () => {
+            // 0xE9 is é in Latin-1, but an invalid lead byte on its own in UTF-8.
+            await Bun.write(join(projectDir, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9]));
+            const result = await run(projectDir, 'read_file', { path: 'latin1.txt' });
+
+            expect(result).toContain('1\tcafé');
+            expect(result).toContain('decoded as windows-1252');
+            expect(result).not.toContain('�');
+        });
     });
 });
 
