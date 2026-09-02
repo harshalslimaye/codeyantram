@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { realpath } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 
 export const BASH_TIMEOUT_MS = 30_000;
@@ -7,6 +8,10 @@ export const MAX_OUTPUT_CHARS = 20_000;
 // one-line change, so it needs its own ceiling well below what read_file/write_file
 // would otherwise allow through.
 export const MAX_EDIT_FILE_BYTES = 5 * 1024 * 1024;
+// read_file streams a file in chunks instead of buffering it, so this is a budget on
+// how far it will scan looking for the requested lines - not a limit on how big a file
+// it can open. Reaching a line past this much data belongs in bash (sed -n) instead.
+export const MAX_READ_FILE_BYTES = 16 * 1024 * 1024;
 
 /** Directories skipped even without a .gitignore entry for them - shared by grep (as a
  * ripgrep `!`-prefixed --glob exclusion) and list_dir (as a fast-glob `ignore` pattern).
@@ -24,6 +29,27 @@ export function resolveInProject(cwd: string, relativePath: string): string {
     }
 
     return resolved;
+}
+
+/** resolveInProject only compares path strings, so a symlink *inside* the project that
+ * points outside it (project/link -> /etc/passwd) clears that check and still reads out
+ * of the jail. This resolves both sides with realpath and re-runs the containment check
+ * against the real paths. The root has to be resolved too, since it can itself sit under
+ * a symlinked ancestor (on macOS /var -> /private/var) - comparing a real target against
+ * a lexical root would otherwise reject every path on such a machine. */
+export async function resolveRealInProject(cwd: string, relativePath: string): Promise<string> {
+    const target = resolveInProject(cwd, relativePath);
+    const realRoot = await realpath(resolve(cwd));
+    // A path that won't resolve doesn't exist (or isn't reachable), which is the
+    // caller's own stat/open to report - with a message naming the path it was given,
+    // rather than whatever realpath's errno says.
+    const realTarget = await realpath(target).catch(() => null);
+
+    if (realTarget !== null && realTarget !== realRoot && !realTarget.startsWith(realRoot + sep)) {
+        throw new Error(`"${relativePath}" resolves outside the project root through a symlink`);
+    }
+
+    return target;
 }
 
 export function truncate(output: string): string {

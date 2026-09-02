@@ -37,7 +37,20 @@ function toolArgsSummary(part: ToolCallPart): string | null {
     const args = part.args;
 
     switch (part.toolName) {
-        case 'read_file':
+        case 'read_file': {
+            const path = stringArg(args, 'path');
+            if (path === null) return null;
+
+            // Only worth showing when the model asked for a window - a plain whole-file
+            // read is the common case and doesn't need "(from line 1)" hung off it.
+            const offset = typeof args.offset === 'number' ? args.offset : null;
+            const limit = typeof args.limit === 'number' ? args.limit : null;
+            if (offset === null && limit === null) return path;
+
+            const from = offset ?? 1;
+            return limit === null ? `${path} (from line ${from})` : `${path} (lines ${from}-${from + limit - 1})`;
+        }
+
         case 'write_file':
         case 'list_dir':
         case 'undo_edit':
