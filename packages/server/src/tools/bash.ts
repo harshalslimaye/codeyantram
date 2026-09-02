@@ -11,10 +11,19 @@ const SIGKILL_GRACE_MS = 3_000;
 // because V8 (node/bun) reserves large virtual address space up front
 // regardless of actual usage - a tight cap here aborts tsc/bun with an
 // OOM crash on a completely healthy command.
+//
+// -v and -u are skipped on macOS: Darwin's kernel rejects RLIMIT_AS outright
+// (`ulimit -v` errors on every call), and RLIMIT_NPROC there counts all
+// processes owned by the user across the whole machine, not this process
+// tree - a desktop routinely has 500+ already, so a 256 cap makes every
+// subsequent fork() in the shell fail immediately with EAGAIN, breaking
+// `which`, `git`, and everything else. -t and -f are per-process and safe
+// on both platforms.
 const ULIMIT_PREFIX = [
-    'ulimit -v 4194304', // 4 GB virtual memory
+    ...(process.platform === 'darwin'
+        ? []
+        : ['ulimit -v 4194304', 'ulimit -u 256']), // 4 GB virtual memory; cap concurrent processes
     'ulimit -t 30', // 30s CPU time
-    'ulimit -u 256', // cap concurrent processes without breaking normal build tooling
     'ulimit -f 102400', // ~100MB max file size written
 ].join('; ');
 
