@@ -39,9 +39,17 @@ function toolArgsSummary(part: ToolCallPart): string | null {
     switch (part.toolName) {
         case 'read_file':
         case 'write_file':
-        case 'edit_file':
         case 'list_dir':
+        case 'undo_edit':
             return stringArg(args, 'path');
+
+        case 'edit_file': {
+            const path = stringArg(args, 'path');
+            if (path === null) return null;
+            const edits = args.edits;
+            const editCount = Array.isArray(edits) ? edits.length : 1;
+            return editCount > 1 ? `${path} (${editCount} edits)` : path;
+        }
 
         case 'glob':
             return stringArg(args, 'pattern');
