@@ -232,6 +232,97 @@ describe('glob', () => {
     test('reports no matches rather than an empty string', async () => {
         expect(await run(projectDir, 'glob', { pattern: '*.rs' })).toBe('No matches.');
     });
+
+    test('returns matches in sorted order', async () => {
+        await Bun.write(join(projectDir, 'c.ts'), '');
+        await Bun.write(join(projectDir, 'a.ts'), '');
+        await Bun.write(join(projectDir, 'b.ts'), '');
+
+        expect(await run(projectDir, 'glob', { pattern: '*.ts' })).toBe('a.ts\nb.ts\nc.ts');
+    });
+
+    test('rejects a pattern with a ".." segment', async () => {
+        const result = await run(projectDir, 'glob', { pattern: '../../etc/**' });
+        expect(result).toContain('Error:');
+        expect(result).toContain('must not contain ".." segments');
+    });
+
+    test('rejects an absolute pattern', async () => {
+        const result = await run(projectDir, 'glob', { pattern: '/etc/**' });
+        expect(result).toContain('Error:');
+        expect(result).toContain('must be relative to the project root');
+    });
+
+    test('excludes node_modules, .git, dist, and build even without a .gitignore', async () => {
+        await Bun.write(join(projectDir, 'real.js'), '');
+        await Bun.write(join(projectDir, 'node_modules/pkg/index.js'), '');
+        await Bun.write(join(projectDir, '.git/config'), '');
+        await Bun.write(join(projectDir, 'dist/bundle.js'), '');
+        await Bun.write(join(projectDir, 'build/output.js'), '');
+
+        const result = await run(projectDir, 'glob', { pattern: '**/*.js' });
+
+        expect(result).toContain('real.js');
+        expect(result).not.toContain('node_modules');
+        expect(result).not.toContain('.git');
+        expect(result).not.toContain('dist/bundle.js');
+        expect(result).not.toContain('build/output.js');
+    });
+
+    test('excludes files matched by the project .gitignore', async () => {
+        await Bun.write(join(projectDir, '.gitignore'), 'coverage\n*.log\n');
+        await Bun.write(join(projectDir, 'keep.txt'), '');
+        await Bun.write(join(projectDir, 'coverage/report.txt'), '');
+        await Bun.write(join(projectDir, 'debug.log'), '');
+
+        const result = await run(projectDir, 'glob', { pattern: '**/*' });
+
+        expect(result).toContain('keep.txt');
+        expect(result).not.toContain('coverage');
+        expect(result).not.toContain('debug.log');
+    });
+
+    test('works normally when there is no .gitignore', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), '');
+        expect(await run(projectDir, 'glob', { pattern: '*.txt' })).toBe('a.txt');
+    });
+
+    test('hides dotfiles and dotdirs by default, shows them with dot', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), '');
+        await Bun.write(join(projectDir, '.env.local'), '');
+
+        const hidden = await run(projectDir, 'glob', { pattern: '**/*' });
+        expect(hidden).not.toContain('.env.local');
+
+        const shown = await run(projectDir, 'glob', { pattern: '**/*', dot: true });
+        expect(shown).toContain('.env.local');
+    });
+
+    test('maxResults caps matches and reports truncation', async () => {
+        for (let i = 0; i < 10; i++) {
+            await Bun.write(join(projectDir, `file${i}.txt`), '');
+        }
+
+        const result = await run(projectDir, 'glob', { pattern: '*.txt', maxResults: 5 });
+        const lines = result.split('\n');
+
+        expect(lines.filter(line => line.endsWith('.txt'))).toHaveLength(5);
+        expect(result).toContain('… 5 more matches truncated (maxResults=5)');
+    });
+
+    test('rejects an empty pattern at the schema level rather than reaching execute()', () => {
+        const globDef = TOOL_CATALOG.find(definition => definition.name === 'glob');
+        expect(globDef?.inputSchema.safeParse({ pattern: '' }).success).toBe(false);
+    });
+
+    test('surfaces a clean error instead of fast-glob\'s raw wording for a malformed pattern', async () => {
+        // Exceeds picomatch's own internal length guard, a real (not hypothetical)
+        // fast-glob throw - safeGlob normalizes it rather than letting it leak through.
+        const result = await run(projectDir, 'glob', { pattern: 'a{'.repeat(50_000) });
+
+        expect(result).toContain('Error:');
+        expect(result).toContain('Invalid glob pattern');
+    });
 });
 
 describe('grep', () => {

@@ -38,9 +38,12 @@ export const TOOL_CATALOG = [
     },
     {
         name: "glob",
-        description: "Find files matching a glob pattern, relative to the project root.",
+        description:
+            "Find files matching a glob pattern, relative to the project root. Automatically skips node_modules, .git, dist, build, and gitignored paths. Hides dotfiles/dotdirs unless dot is set.",
         inputSchema: z.object({
             pattern: z.string().min(1),
+            dot: z.boolean().optional().describe("Include dotfiles and dotdirs, which are hidden by default."),
+            maxResults: z.number().int().min(1).max(500).default(100).describe("Cap on the number of matches returned."),
         }),
     },
     {
