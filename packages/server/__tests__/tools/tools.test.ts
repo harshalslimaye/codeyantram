@@ -104,6 +104,72 @@ describe('grep', () => {
         await Bun.write(join(projectDir, 'a.txt'), 'nothing here');
         expect(await run(projectDir, 'grep', { pattern: 'needle', path: '.' })).toBe('No matches.');
     });
+
+    test('excludes node_modules, .git, dist, and build even without a .gitignore', async () => {
+        await Bun.write(join(projectDir, 'real.js'), 'needle');
+        await Bun.write(join(projectDir, 'node_modules/pkg/index.js'), 'needle');
+        await Bun.write(join(projectDir, '.git/config'), 'needle');
+        await Bun.write(join(projectDir, 'dist/bundle.js'), 'needle');
+        await Bun.write(join(projectDir, 'build/output.js'), 'needle');
+
+        const result = await run(projectDir, 'grep', { pattern: 'needle', path: '.' });
+
+        expect(result).toContain('real.js');
+        expect(result).not.toContain('node_modules');
+        expect(result).not.toContain('.git/config');
+        expect(result).not.toContain('dist/bundle.js');
+        expect(result).not.toContain('build/output.js');
+    });
+
+    test('ignoreCase finds a differently-cased match', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'NEEDLE');
+        expect(await run(projectDir, 'grep', { pattern: 'needle', path: '.', ignoreCase: true })).toContain('NEEDLE');
+    });
+
+    test('glob restricts matches to the given file set', async () => {
+        await Bun.write(join(projectDir, 'a.ts'), 'needle');
+        await Bun.write(join(projectDir, 'b.md'), 'needle');
+
+        const result = await run(projectDir, 'grep', { pattern: 'needle', path: '.', glob: '*.ts' });
+
+        expect(result).toContain('a.ts');
+        expect(result).not.toContain('b.md');
+    });
+
+    test('contextLines includes surrounding lines', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'before\nneedle\nafter');
+        const result = await run(projectDir, 'grep', { pattern: 'needle', path: '.', contextLines: 1 });
+
+        expect(result).toContain('before');
+        expect(result).toContain('needle');
+        expect(result).toContain('after');
+    });
+
+    test('filesOnly returns filenames without line content', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'needle');
+        const result = await run(projectDir, 'grep', { pattern: 'needle', path: '.', filesOnly: true });
+
+        expect(result.trim()).toBe('a.txt');
+    });
+
+    test('maxResults caps matches and reports truncation', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'needle\n'.repeat(5));
+        const result = await run(projectDir, 'grep', { pattern: 'needle', path: '.', maxResults: 2 });
+
+        expect(result.match(/needle/g)?.length).toBe(2);
+        expect(result).toContain('truncated');
+    });
+
+    test('surfaces a real error distinctly from "No matches."', async () => {
+        const result = await run(projectDir, 'grep', { pattern: '(unclosed', path: '.' });
+        expect(result).toContain('Error:');
+        expect(result).not.toBe('No matches.');
+    });
+
+    test('skips binary file contents', async () => {
+        await Bun.write(join(projectDir, 'binary.dat'), Buffer.from([0, 1, 2, 3, 255, 254, ...Buffer.from('needle')]));
+        expect(await run(projectDir, 'grep', { pattern: 'needle', path: '.' })).toBe('No matches.');
+    });
 });
 
 describe('write_file', () => {

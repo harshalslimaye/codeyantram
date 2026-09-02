@@ -31,10 +31,15 @@ export const TOOL_CATALOG = [
     {
         name: "grep",
         description:
-            "Search file contents for a regular expression pattern, relative to the project root. Prefer read_file/glob for known paths - use this to search across files.",
+            "Search file contents for a regex pattern, relative to the project root, using ripgrep. Automatically skips node_modules, .git, dist, build, gitignored paths, and binary files. Pattern syntax is Rust regex, not POSIX ERE - no backreferences or lookaround. Use the ignoreCase, glob, contextLines, filesOnly, and maxResults options to filter and shape results instead of chaining separate glob+grep calls. Prefer read_file/glob for known paths - use this to search across files.",
         inputSchema: z.object({
             pattern: z.string().min(1),
             path: z.string().min(1).default("."),
+            ignoreCase: z.boolean().optional().describe("Case-insensitive match."),
+            glob: z.string().optional().describe("Restrict the search to files matching this glob, e.g. \"*.ts\"."),
+            contextLines: z.number().int().min(0).max(20).optional().describe("Include this many lines of surrounding context before and after each match."),
+            filesOnly: z.boolean().optional().describe("Return only the matching file paths, not line content."),
+            maxResults: z.number().int().min(1).max(500).default(100).describe("Cap on the number of matches (or files, with filesOnly) returned."),
         }),
     },
     {
