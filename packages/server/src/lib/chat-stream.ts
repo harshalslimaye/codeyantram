@@ -10,7 +10,8 @@ import {
     type ToolCallPart,
 } from '@codeyantram/shared';
 import { MissingCredentialsError, resolveChatModel } from './models';
-import { getSystemMessage } from './system-prompt';
+import { loadPromptInstructions, type PromptInstructions } from './project-instructions';
+import { getSystemMessages } from './system-prompt';
 import { buildProjectTools } from '../tools';
 
 // Caps how many tool-call/response round trips streamText will run within
@@ -124,7 +125,28 @@ export async function streamChatResponse(
     { request, abortController }: { request: ChatRequest; abortController: AbortController },
 ): Promise<void> {
     const messageId = crypto.randomUUID();
-    await send(stream, { type: 'start', messageId });
+
+    // Off-switch (see /instructions in the CLI) controls every instruction source
+    // uniformly - global, project root, and nested (read_file's own attachment below) -
+    // one on/off idea rather than a per-source toggle the user would have to reason about.
+    const includeInstructions = request.useProjectInstructions !== false;
+
+    // Re-read per turn rather than once per session, so an edit to either instruction
+    // file - by the user or by the Build agent itself - applies to the very next message.
+    // Loaded before "start" (and before model resolution) so the project file's metadata
+    // rides on that event even when the turn fails before ever reaching streamText - the
+    // CLI's off-switch and truncation warning need it regardless of how the turn ends.
+    const instructions: PromptInstructions = includeInstructions
+        ? await loadPromptInstructions(request.cwd)
+        : { global: null, project: null };
+
+    await send(stream, {
+        type: 'start',
+        messageId,
+        projectInstructions: instructions.project
+            ? { filename: instructions.project.filename, bytes: instructions.project.bytes, truncated: instructions.project.truncated }
+            : undefined,
+    });
 
     let resolved;
     try {
@@ -141,7 +163,7 @@ export async function streamChatResponse(
         throw error;
     }
 
-    const { languageModel, providerOptions } = resolved;
+    const { model, languageModel, providerOptions } = resolved;
     const startedAt = Date.now();
 
     const toolsEnabled = agentHasTools(request.agent);
@@ -149,12 +171,12 @@ export async function streamChatResponse(
     try {
         const result = streamText({
             model: languageModel,
-            system: getSystemMessage(request.agent),
+            system: getSystemMessages(request.agent, instructions, model.provider === 'anthropic'),
             messages: toModelMessages(request.messages),
             providerOptions,
             abortSignal: abortController.signal,
             tools: toolsEnabled
-                ? buildProjectTools(request.cwd, !agentHasFullToolAccess(request.agent))
+                ? buildProjectTools(request.cwd, !agentHasFullToolAccess(request.agent), includeInstructions)
                 : undefined,
             stopWhen: toolsEnabled ? stepCountIs(MAX_TOOL_STEPS) : undefined,
         });

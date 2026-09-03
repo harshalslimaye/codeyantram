@@ -18,4 +18,10 @@ describe('test-environment guard', () => {
         // read right after still comes back empty rather than reflecting the write.
         expect(getEffortForModel('claude-sonnet-5')).toBeUndefined();
     });
+
+    test('projectInstructionsEnabled does not touch the real file', () => {
+        expect(readPreferences().projectInstructionsEnabled).toBeUndefined();
+        expect(() => writePreferences({ projectInstructionsEnabled: false })).not.toThrow();
+        expect(readPreferences().projectInstructionsEnabled).toBeUndefined();
+    });
 });

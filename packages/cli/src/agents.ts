@@ -12,6 +12,9 @@ export const AGENTS: Agent[] = [
 // Named explicitly (not AGENTS[0]) so reordering the list above can't silently change the default.
 export const DEFAULT_AGENT = AGENTS.find(agent => agent.name === 'Talk') as Agent;
 
+// The agent /init runs as - it needs write_file, which only Build has.
+export const BUILD_AGENT = AGENTS.find(agent => agent.name === 'Build') as Agent;
+
 export function getNextAgent(current: Agent): Agent {
     const index = AGENTS.findIndex(agent => agent.name === current.name);
     return AGENTS[(index + 1) % AGENTS.length] as Agent;

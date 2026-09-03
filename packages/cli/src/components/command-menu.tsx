@@ -4,9 +4,12 @@ import { useRenderer } from '@opentui/react';
 
 import { Autocomplete } from './autocomplete';
 import { SLASH_COMMANDS, type Command } from '../commands';
+import { BUILD_AGENT } from '../agents';
+import { INIT_PROMPT } from '../prompts/init';
 import { useOverlay } from '../providers/overlay';
 import { useToast } from '../providers/toast';
 import { useChat } from '../providers/chat';
+import { useAgent } from '../providers/agent';
 
 type Trigger = {
     char: string;
@@ -32,7 +35,8 @@ export function CommandMenu({ value, onSelect }: CommandMenuProps) {
     const renderer = useRenderer();
     const { show } = useOverlay();
     const toast = useToast();
-    const { newSession } = useChat();
+    const { sendMessage, newSession, projectInstructionsEnabled, setProjectInstructionsEnabled } = useChat();
+    const { setAgent } = useAgent();
 
     useEffect(() => {
         setOpen(true);
@@ -77,6 +81,25 @@ export function CommandMenu({ value, onSelect }: CommandMenuProps) {
             },
             toast,
             newSession,
+            // /init needs write_file, so it always runs as Build - setAgent
+            // persists that for the rest of the session (same as pressing
+            // tab first), while the explicit override on sendMessage makes
+            // sure this specific turn uses Build even though the state
+            // update hasn't re-rendered yet.
+            startInit: () => {
+                onSelect('');
+                setAgent(BUILD_AGENT);
+                sendMessage(INIT_PROMPT, {
+                    agent: BUILD_AGENT.name,
+                    onDone: () => toast.info('Init finished'),
+                });
+            },
+            toggleProjectInstructions: () => {
+                onSelect('');
+                const next = !projectInstructionsEnabled;
+                setProjectInstructionsEnabled(next);
+                toast.info(next ? 'Project instructions enabled' : 'Project instructions disabled');
+            },
         });
     };
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { useKeyboard } from '@opentui/react';
 import { testRender } from '@opentui/react/test-utils';
 import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel } from '@codeyantram/shared';
@@ -125,6 +125,52 @@ describe('sendMessage', () => {
         rendered.renderer.destroy();
     });
 
+    test('an agent override in options wins over the currently selected agent, without waiting for a setAgent() re-render', async () => {
+        const requests: unknown[] = [];
+        mockFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        // Nothing in this test ever calls setAgent - the override alone
+        // must be what lands in the request, proving sendMessage doesn't
+        // fall back to reading `agent.name` from context.
+        captured?.sendMessage('hello', { agent: 'Build' });
+        await tick(50);
+
+        expect(requests).toEqual([expect.objectContaining({ agent: 'Build' })]);
+
+        rendered.renderer.destroy();
+    });
+
+    test('omitting the override sends the currently selected agent, as before', async () => {
+        const requests: unknown[] = [];
+        mockFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        // Test env starts on the default agent (Talk) with nothing persisted.
+        expect(requests).toEqual([expect.objectContaining({ agent: 'Talk' })]);
+
+        rendered.renderer.destroy();
+    });
+
     test('a blank message is ignored', async () => {
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('streaming:false'));
@@ -165,6 +211,121 @@ describe('sendMessage', () => {
         await tick(50);
 
         expect(captured?.isStreaming).toBe(false);
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('project instructions', () => {
+    test('sends useProjectInstructions: true by default', async () => {
+        const requests: unknown[] = [];
+        mockFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        expect(requests).toEqual([expect.objectContaining({ useProjectInstructions: true })]);
+
+        rendered.renderer.destroy();
+    });
+
+    test('setProjectInstructionsEnabled(false) turns useProjectInstructions off for the next request', async () => {
+        const requests: unknown[] = [];
+        mockFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        captured?.setProjectInstructionsEnabled(false);
+        await tick(20);
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        expect(captured?.projectInstructionsEnabled).toBe(false);
+        expect(requests).toEqual([expect.objectContaining({ useProjectInstructions: false })]);
+
+        rendered.renderer.destroy();
+    });
+
+    test("travels with the message its own turn produced, not just whichever turn is most recent", async () => {
+        mockFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1","projectInstructions":{"filename":"AGENTS.md","bytes":42,"truncated":false}}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        const first = captured?.messages.find(m => m.id === 'm1');
+        expect(first?.role === 'assistant' && first.projectInstructions).toEqual({
+            filename: 'AGENTS.md',
+            bytes: 42,
+            truncated: false,
+        });
+
+        mockFetch(async () =>
+            sseResponse(['data: {"type":"start","messageId":"m2"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']),
+        );
+
+        captured?.sendMessage('again');
+        await tick(50);
+
+        // The second message reports none of its own, but the first still carries what its
+        // own turn actually reported - it isn't overwritten by a later, unrelated turn.
+        const second = captured?.messages.find(m => m.id === 'm2');
+        expect(second?.role === 'assistant' && second.projectInstructions).toBeUndefined();
+        expect(first?.role === 'assistant' && first.projectInstructions).toEqual({
+            filename: 'AGENTS.md',
+            bytes: 42,
+            truncated: false,
+        });
+
+        rendered.renderer.destroy();
+    });
+
+    test('warns once when the instruction file is truncated, not again on a later turn', async () => {
+        mockFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1","projectInstructions":{"filename":"AGENTS.md","bytes":99999,"truncated":true}}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]),
+        );
+
+        const countOccurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        expect(countOccurrences(rendered.captureCharFrame(), 'was cut off')).toBe(1);
+
+        captured?.sendMessage('again');
+        await tick(50);
+
+        expect(countOccurrences(rendered.captureCharFrame(), 'was cut off')).toBe(1);
 
         rendered.renderer.destroy();
     });
@@ -314,6 +475,133 @@ describe('tool approval', () => {
             .find((part): part is Extract<typeof part, { type: 'tool-call' }> => part.type === 'tool-call');
         expect(resolvedCall?.approvalStatus).toBe('denied');
         expect(resolvedCall?.result).toBe('Denied by user.');
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('sendMessage onDone', () => {
+    test('fires once the turn completes with nothing pending', async () => {
+        mockFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"text-delta","text":"hi"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        const onDone = mock(() => {});
+        captured?.sendMessage('hello', { onDone });
+        await tick(50);
+
+        expect(onDone).toHaveBeenCalledTimes(1);
+
+        rendered.renderer.destroy();
+    });
+
+    test('does not fire while a tool call from this turn is still awaiting approval', async () => {
+        mockFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"tool-call","toolCallId":"c1","toolName":"bash","args":{}}\n\n',
+                'data: {"type":"tool-approval-request","toolCallId":"c1","approvalId":"a1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        const onDone = mock(() => {});
+        captured?.sendMessage('hello', { onDone });
+        await rendered.waitForFrame(f => f.includes('pending:bash'));
+
+        expect(onDone).not.toHaveBeenCalled();
+
+        rendered.renderer.destroy();
+    });
+
+    test('fires once a later turn - after the approval is resolved - finally has nothing pending', async () => {
+        let call = 0;
+        mockFetch(async () => {
+            call++;
+            return call === 1
+                ? sseResponse([
+                      'data: {"type":"start","messageId":"m1"}\n\n',
+                      'data: {"type":"tool-call","toolCallId":"c1","toolName":"bash","args":{}}\n\n',
+                      'data: {"type":"tool-approval-request","toolCallId":"c1","approvalId":"a1"}\n\n',
+                      'data: {"type":"done","durationMs":5}\n\n',
+                  ])
+                : sseResponse([
+                      'data: {"type":"start","messageId":"m2"}\n\n',
+                      'data: {"type":"tool-result","toolCallId":"c1","result":"done"}\n\n',
+                      'data: {"type":"done","durationMs":5}\n\n',
+                  ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        const onDone = mock(() => {});
+        captured?.sendMessage('hello', { onDone });
+        await rendered.waitForFrame(f => f.includes('pending:bash'));
+        expect(onDone).not.toHaveBeenCalled();
+
+        // respondToApproval's own runTurn call carries no onDone of its own - the callback
+        // queued by the original sendMessage must still be the one that fires here.
+        rendered.mockInput.pressKey('y');
+        await tick(50);
+
+        expect(onDone).toHaveBeenCalledTimes(1);
+
+        rendered.renderer.destroy();
+    });
+
+    test('does not fire on error - the error toast is the completion signal there', async () => {
+        mockFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"error","code":"provider_error","message":"boom"}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        const onDone = mock(() => {});
+        captured?.sendMessage('hello', { onDone });
+        await tick(50);
+
+        expect(onDone).not.toHaveBeenCalled();
+
+        rendered.renderer.destroy();
+    });
+
+    test('a later plain sendMessage does not inherit an earlier chain\'s callback', async () => {
+        mockFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"error","code":"provider_error","message":"boom"}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        const onDone = mock(() => {});
+        captured?.sendMessage('hello', { onDone });
+        await tick(50);
+
+        mockFetch(async () =>
+            sseResponse(['data: {"type":"start","messageId":"m2"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']),
+        );
+        captured?.sendMessage('a plain follow-up, no onDone');
+        await tick(50);
+
+        expect(onDone).not.toHaveBeenCalled();
 
         rendered.renderer.destroy();
     });

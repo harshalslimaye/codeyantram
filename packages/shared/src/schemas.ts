@@ -102,6 +102,17 @@ export const userMessageSchema = z.object({
     parts: z.array(textPartSchema).min(1),
 });
 
+// Metadata about the instruction file (if any) loaded for a turn - never the file's own
+// text, just enough for the CLI to show what's active and warn once if it got cut. See
+// project-instructions.ts on the server for what produces this.
+export const projectInstructionsMetaSchema = z.object({
+    filename: z.string().min(1),
+    bytes: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+});
+
+export type ProjectInstructionsMeta = z.infer<typeof projectInstructionsMetaSchema>;
+
 // Assistant parts may legitimately be empty while a response is still
 // streaming, so no .min() here.
 export const assistantMessageSchema = z.object({
@@ -111,6 +122,11 @@ export const assistantMessageSchema = z.object({
     // Filled in once the matching "done" event arrives, so usage travels
     // with the message it belongs to rather than living only on the wire.
     usage: tokenUsageSchema.optional(),
+    // Filled in from the "start" event that opened this message's turn - absent if that
+    // turn had none. Travels with the message (like usage above) so a per-turn cost
+    // summary can show both together, rather than only reflecting whichever turn is most
+    // recent.
+    projectInstructions: projectInstructionsMetaSchema.optional(),
 });
 
 export const chatMessageSchema = z.discriminatedUnion("role", [
@@ -169,6 +185,12 @@ export const chatRequestSchema = z
         effort: effortLevelSchema.optional(),
         agent: agentNameSchema,
         cwd: z.string().min(1),
+        // Off-switch for the project's AGENTS.md/CLAUDE.md (see
+        // project-instructions.ts on the server). Omitted or true loads it as
+        // usual; false skips the read entirely for this turn without the user
+        // having to rename or delete the file. Defaults to enabled so a client
+        // that doesn't send this field sees no change in behavior.
+        useProjectInstructions: z.boolean().optional(),
     })
     .refine(
         request => {
@@ -217,6 +239,9 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
         // message it is about to render into rather than learning it at the end.
         type: z.literal("start"),
         messageId: z.string().min(1),
+        // Present only when a project instruction file was actually loaded for this
+        // turn - absent if there was none, or useProjectInstructions was false.
+        projectInstructions: projectInstructionsMetaSchema.optional(),
     }),
     z.object({
         type: z.literal("text-delta"),

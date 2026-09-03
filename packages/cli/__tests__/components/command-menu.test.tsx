@@ -1,6 +1,14 @@
-import { describe, test, expect, mock, spyOn } from 'bun:test';
+import { afterEach, describe, test, expect, mock, spyOn } from 'bun:test';
 import { CommandMenu } from '../../src/components/command-menu';
-import { mountDropup, settleEscape } from '../support/mount';
+import { mountDropup, settleEscape, tick } from '../support/mount';
+import { mockFetch, sseResponse } from '../support/sse';
+import { INIT_PROMPT } from '../../src/prompts/init';
+
+const originalFetch = global.fetch;
+
+afterEach(() => {
+    global.fetch = originalFetch;
+});
 
 // See autocomplete.test.tsx for why each test mounts fresh, performs one
 // interaction arc with real yields between key presses, and ends in a
@@ -14,8 +22,12 @@ import { mountDropup, settleEscape } from '../support/mount';
 // agent-picker.test.tsx), so the "generic toast placeholder" tests below use
 // 'sessions' instead.
 
-function mountWithValue(value: string, onSelect = mock((_v: string) => {})) {
-    const setup = mountDropup(<CommandMenu value={value} onSelect={onSelect} />);
+function mountWithValue(
+    value: string,
+    onSelect = mock((_v: string) => {}),
+    options?: { width?: number; height?: number },
+) {
+    const setup = mountDropup(<CommandMenu value={value} onSelect={onSelect} />, options);
     return { setup, onSelect };
 }
 
@@ -238,6 +250,63 @@ describe('layer ownership', () => {
         await rendered.waitFor(() => onSelect.mock.calls.length > 0);
 
         expect(onSelect).toHaveBeenCalledWith('');
+        rendered.renderer.destroy();
+    });
+});
+
+describe('selecting /init', () => {
+    test('sends INIT_PROMPT as agent Build, regardless of the currently selected agent', async () => {
+        const requests: unknown[] = [];
+        mockFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const { setup, onSelect } = mountWithValue('/init');
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('init'));
+
+        rendered.mockInput.pressEnter();
+        await tick(50);
+
+        expect(onSelect).toHaveBeenCalledWith('');
+        expect(requests).toEqual([
+            expect.objectContaining({
+                agent: 'Build',
+                messages: [expect.objectContaining({ parts: [{ type: 'text', text: INIT_PROMPT }] })],
+            }),
+        ]);
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('selecting /instructions', () => {
+    test('toggles the preference and confirms via toast, without sending a message', async () => {
+        let fetchCalls = 0;
+        mockFetch(async () => {
+            fetchCalls += 1;
+            return sseResponse(['data: {"type":"start","messageId":"m1"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']);
+        });
+
+        // Wider than the default 40 - the toast box itself is 40 wide plus
+        // padding, which overflows (and gets clipped from the captured
+        // frame) at the default width used by every other test here.
+        const { setup, onSelect } = mountWithValue('/instructions', undefined, { width: 60 });
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('instructions'));
+
+        rendered.mockInput.pressEnter();
+        await rendered.waitFor(() => onSelect.mock.calls.length > 0);
+
+        expect(onSelect).toHaveBeenCalledWith('');
+        await rendered.waitForFrame(f => f.includes('Project instructions disabled'));
+
+        expect(fetchCalls).toBe(0);
+
         rendered.renderer.destroy();
     });
 });

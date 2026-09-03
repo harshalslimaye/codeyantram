@@ -2,20 +2,38 @@ import { createContext, useCallback, useContext, useRef, useState, type ReactNod
 import {
     applyStreamEvent,
     toRequestMessage,
+    type AgentName,
     type ChatMessage,
     type ChatRequest,
     type ToolCallPart,
 } from '@codeyantram/shared';
 import { streamChat } from '../api/chat';
+import { readPreferences, writePreferences } from '../utils/preferences';
 import { useAgent } from './agent';
 import { useModel } from './model';
 import { useEffort } from './effort';
 import { useToast } from './toast';
 
+export type SendMessageOptions = {
+    // Sends this turn as a different agent than the one currently selected,
+    // without waiting for a setAgent() state update to land first - useful
+    // for a command (e.g. /init) that both switches the agent and sends a
+    // message in the same handler, where reading `agent.name` straight from
+    // context would still see the pre-switch value (see sendMessage below).
+    agent?: AgentName;
+    // Fires once this turn's approval chain - however many tool-approval
+    // round trips it takes - finally reaches a "done" with nothing left
+    // pending, not on every intermediate "done" along the way, and not on
+    // error or cancel (see the pendingOnDoneRef comment below). Lets a
+    // command like /init confirm real completion without every ordinary
+    // chat turn getting the same treatment.
+    onDone?: () => void;
+};
+
 type ChatContextValue = {
     messages: ChatMessage[];
     isStreaming: boolean;
-    sendMessage: (text: string) => void;
+    sendMessage: (text: string, options?: SendMessageOptions) => void;
     cancel: () => void;
     newSession: () => void;
     // The oldest tool call in the latest assistant message still awaiting a
@@ -23,6 +41,10 @@ type ChatContextValue = {
     // pending. Only ever set for a mutating tool (see isReadOnlyTool).
     pendingApproval: ToolCallPart | null;
     respondToApproval: (approved: boolean) => void;
+    // The off-switch for loading the project's AGENTS.md/CLAUDE.md, persisted
+    // across restarts (see preferences.ts). Defaults to enabled.
+    projectInstructionsEnabled: boolean;
+    setProjectInstructionsEnabled: (enabled: boolean) => void;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -57,12 +79,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isStreaming, setIsStreaming] = useState(false);
+    const [projectInstructionsEnabled, setProjectInstructionsEnabledState] = useState(
+        () => readPreferences().projectInstructionsEnabled ?? true,
+    );
 
     // Mirrors `messages` synchronously so sendMessage/respondToApproval can
     // read the latest history (to build the next request) without depending
     // on - and being recreated by - `messages` itself.
     const messagesRef = useRef<ChatMessage[]>([]);
     const abortControllerRef = useRef<AbortController | null>(null);
+    // Fires the truncation warning once per session rather than once per
+    // turn - a large AGENTS.md doesn't shrink between messages, so repeating
+    // it every turn would just be noise.
+    const hasWarnedTruncationRef = useRef(false);
+    // Set by sendMessage from its options.onDone (or cleared to null when none is given),
+    // and left untouched by respondToApproval's own runTurn call - so it survives however
+    // many approval round trips a single sendMessage-initiated chain takes, firing once the
+    // chain finally reaches a "done" with no pending approval left, wherever in that chain
+    // that turns out to be. Cleared without firing on "error" - that already gets its own
+    // toast, and a completion toast on top of it would be misleading.
+    const pendingOnDoneRef = useRef<(() => void) | null>(null);
+
+    const setProjectInstructionsEnabled = useCallback((enabled: boolean) => {
+        setProjectInstructionsEnabledState(enabled);
+        writePreferences({ projectInstructionsEnabled: enabled });
+    }, []);
 
     const updateMessages = useCallback((updater: (current: ChatMessage[]) => ChatMessage[]) => {
         setMessages(current => {
@@ -88,7 +129,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // add one at all - it just replays the decision that's already in
     // `history`) and folds the response back into `messages` as it streams.
     const runTurn = useCallback(
-        (history: ChatMessage[]) => {
+        (history: ChatMessage[], agentOverride?: AgentName) => {
             // Single-flight: a turn already in progress must finish or be
             // cancelled before another can start.
             if (abortControllerRef.current !== null) return;
@@ -96,9 +137,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
             const request: ChatRequest = {
                 model: model.id,
                 messages: history.map(toRequestMessage),
-                agent: agent.name,
+                agent: agentOverride ?? agent.name,
                 cwd: process.cwd(),
                 effort,
+                useProjectInstructions: projectInstructionsEnabled,
             };
 
             const abortController = new AbortController();
@@ -107,6 +149,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             void (async () => {
                 let assistantMessageId: string | null = null;
+                // Tracked locally (plain JS, not React state) rather than derived from
+                // `messages`/`messagesRef` at "done" time - setMessages' updater isn't
+                // guaranteed to have actually run yet by the time a later event in this
+                // same synchronous burst is processed, so a ref read right after queuing
+                // an update can still see stale state. A toolCallId a "tool-result" can
+                // never arrive for within the same turn (resolving it always takes a new
+                // turn - see respondToApproval), so "any request without a same-turn
+                // result" is exactly "still pending" for this turn's own purposes.
+                const pendingApprovalIds = new Set<string>();
 
                 try {
                     for await (const event of streamChat({ request, signal: abortController.signal })) {
@@ -115,8 +166,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
                                 assistantMessageId = event.messageId;
                                 updateMessages(current => [
                                     ...current,
-                                    { id: event.messageId, role: 'assistant', parts: [] },
+                                    {
+                                        id: event.messageId,
+                                        role: 'assistant',
+                                        parts: [],
+                                        // Travels with the message it belongs to (like usage
+                                        // below), rather than only reflecting whichever turn
+                                        // is most recent - see message-list.tsx, which shows
+                                        // it next to that message's own token usage.
+                                        projectInstructions: event.projectInstructions,
+                                    },
                                 ]);
+                                if (event.projectInstructions?.truncated && !hasWarnedTruncationRef.current) {
+                                    hasWarnedTruncationRef.current = true;
+                                    toast.warn(
+                                        `${event.projectInstructions.filename} is larger than the limit and was cut off - see the file directly for the rest.`,
+                                    );
+                                }
                                 break;
 
                             case 'text-delta':
@@ -142,6 +208,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
                             // earlier one.
                             case 'tool-result':
                             case 'tool-approval-request':
+                                if (event.type === 'tool-approval-request') pendingApprovalIds.add(event.toolCallId);
+                                else pendingApprovalIds.delete(event.toolCallId);
+
                                 updateMessages(current =>
                                     current.map(message =>
                                         message.role === 'assistant' &&
@@ -157,6 +226,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
                             case 'error': {
                                 const notify = event.code === 'missing_credentials' ? toast.warn : toast.error;
                                 notify(event.message);
+                                // The error toast above is the completion signal here -
+                                // don't also fire a queued onDone on top of it.
+                                pendingOnDoneRef.current = null;
 
                                 // A turn that failed before any content arrived leaves
                                 // nothing worth showing - drop the empty assistant bubble
@@ -179,15 +251,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
                             case 'done': {
                                 const id = assistantMessageId;
-                                if (id === null || event.usage === undefined) break;
-                                const usage = event.usage;
-                                updateMessages(current =>
-                                    current.map(message =>
-                                        message.id === id && message.role === 'assistant'
-                                            ? { ...message, usage }
-                                            : message,
-                                    ),
-                                );
+                                if (id === null) break;
+
+                                if (event.usage !== undefined) {
+                                    const usage = event.usage;
+                                    updateMessages(current =>
+                                        current.map(message =>
+                                            message.id === id && message.role === 'assistant'
+                                                ? { ...message, usage }
+                                                : message,
+                                        ),
+                                    );
+                                }
+
+                                if (pendingApprovalIds.size === 0) {
+                                    const onDone = pendingOnDoneRef.current;
+                                    pendingOnDoneRef.current = null;
+                                    onDone?.();
+                                }
                                 break;
                             }
                         }
@@ -198,11 +279,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 }
             })();
         },
-        [agent.name, model.id, effort, toast, updateMessages],
+        [agent.name, model.id, effort, projectInstructionsEnabled, toast, updateMessages],
     );
 
     const sendMessage = useCallback(
-        (text: string) => {
+        (text: string, options?: SendMessageOptions) => {
             const trimmed = text.trim();
             if (trimmed === '' || abortControllerRef.current !== null) return;
 
@@ -214,7 +295,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             const history = [...messagesRef.current, userMessage];
             updateMessages(() => history);
-            runTurn(history);
+            // Always (re)assigned here, including to null - so a plain message sent after
+            // an earlier onDone-bearing chain never inherits a stale callback (see the
+            // pendingOnDoneRef comment above for why respondToApproval's own runTurn call
+            // must NOT do this same reassignment).
+            pendingOnDoneRef.current = options?.onDone ?? null;
+            runTurn(history, options?.agent);
         },
         [runTurn, updateMessages],
     );
@@ -254,7 +340,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     return (
         <ChatContext.Provider
-            value={{ messages, isStreaming, sendMessage, cancel, newSession, pendingApproval, respondToApproval }}
+            value={{
+                messages,
+                isStreaming,
+                sendMessage,
+                cancel,
+                newSession,
+                pendingApproval,
+                respondToApproval,
+                projectInstructionsEnabled,
+                setProjectInstructionsEnabled,
+            }}
         >
             {children}
         </ChatContext.Provider>

@@ -1,5 +1,6 @@
 import { open, stat, type FileHandle } from 'node:fs/promises';
 import { BINARY_SAMPLE_BYTES, MAX_OUTPUT_CHARS, MAX_READ_FILE_BYTES, isBinary, pickEncoding, resolveRealInProject, type TextEncodingLabel } from './shared';
+import { formatNestedInstructions, loadNestedInstructions } from '../lib/project-instructions';
 
 const CHUNK_BYTES = 64 * 1024;
 const DEFAULT_LIMIT = 2000;
@@ -154,8 +155,14 @@ async function statForRead(target: string, displayPath: string): Promise<number>
 /** Reads a window of lines, numbered like `grep -n` so the model can hand a line straight
  * back to edit_file. Every read is bounded three ways - lines returned, characters
  * returned, and bytes scanned - and each of those says in the output how to fetch the
- * rest, rather than cutting off silently. */
-export async function execute(input: ReadFileInput, cwd: string): Promise<string> {
+ * rest, rather than cutting off silently.
+ *
+ * `seen` opts into nested-instructions discovery (see project-instructions.ts): when
+ * provided, any AGENTS.md/CLAUDE.md between this file and the project root that hasn't
+ * already surfaced this turn is appended to the output. Passing nothing (the toggle is
+ * off, or a caller that doesn't care about this) skips the walk entirely - it's not just
+ * an empty dedup set, since even an empty Set would still search on every call. */
+export async function execute(input: ReadFileInput, cwd: string, seen?: Set<string>): Promise<string> {
     const target = await resolveRealInProject(cwd, input.path);
     const offset = input.offset ?? 1;
     const limit = input.limit ?? DEFAULT_LIMIT;
@@ -206,7 +213,12 @@ export async function execute(input: ReadFileInput, cwd: string): Promise<string
             );
         }
 
-        return [...collected.lines, ...notes].join('\n');
+        const content = [...collected.lines, ...notes].join('\n');
+        if (seen === undefined) return content;
+
+        const nested = await loadNestedInstructions(cwd, input.path, seen);
+        const block = formatNestedInstructions(nested);
+        return block === '' ? content : `${content}\n\n${block}`;
     } finally {
         await handle.close();
     }

@@ -220,6 +220,88 @@ describe('read_file', () => {
             expect(result).not.toContain('�');
         });
     });
+
+    describe('nested instructions', () => {
+        test('leaves the output unchanged when no ancestor directory has an instruction file', async () => {
+            mkdirSync(join(projectDir, 'packages'), { recursive: true });
+            await Bun.write(join(projectDir, 'packages', 'a.ts'), 'export {}');
+
+            expect(await run(projectDir, 'read_file', { path: 'packages/a.ts' })).toBe('1\texport {}');
+        });
+
+        test('appends a nested AGENTS.md found between the file and the project root', async () => {
+            mkdirSync(join(projectDir, 'packages'), { recursive: true });
+            await Bun.write(join(projectDir, 'packages', 'AGENTS.md'), 'packages-level rules');
+            await Bun.write(join(projectDir, 'packages', 'a.ts'), 'export {}');
+
+            const result = await run(projectDir, 'read_file', { path: 'packages/a.ts' });
+
+            expect(result).toContain('1\texport {}');
+            expect(result).toContain('Instructions from: packages/AGENTS.md');
+            expect(result).toContain('packages-level rules');
+        });
+
+        test('a read at the project root never triggers the walk - already covered by the system prompt', async () => {
+            await Bun.write(join(projectDir, 'AGENTS.md'), 'root rules');
+            await Bun.write(join(projectDir, 'a.ts'), 'export {}');
+
+            const result = await run(projectDir, 'read_file', { path: 'a.ts' });
+
+            expect(result).toBe('1\texport {}');
+        });
+
+        test('surfaces a directory once per built tool set, not on every read under it', async () => {
+            mkdirSync(join(projectDir, 'packages'), { recursive: true });
+            await Bun.write(join(projectDir, 'packages', 'AGENTS.md'), 'packages-level rules');
+            await Bun.write(join(projectDir, 'packages', 'a.ts'), 'a');
+            await Bun.write(join(projectDir, 'packages', 'b.ts'), 'b');
+
+            // One buildProjectTools call = one turn - both reads share its dedup set.
+            const tools = buildProjectTools(projectDir);
+            const readFile = tools.read_file?.execute;
+            if (readFile === undefined) throw new Error('no read_file tool');
+            const first = (await readFile({ path: 'packages/a.ts' }, NO_OPTIONS)) as string;
+            const second = (await readFile({ path: 'packages/b.ts' }, NO_OPTIONS)) as string;
+
+            expect(first).toContain('Instructions from: packages/AGENTS.md');
+            expect(second).not.toContain('Instructions from:');
+        });
+
+        test('a fresh buildProjectTools call (a new turn) surfaces it again', async () => {
+            mkdirSync(join(projectDir, 'packages'), { recursive: true });
+            await Bun.write(join(projectDir, 'packages', 'AGENTS.md'), 'packages-level rules');
+            await Bun.write(join(projectDir, 'packages', 'a.ts'), 'a');
+
+            expect(await run(projectDir, 'read_file', { path: 'packages/a.ts' })).toContain('Instructions from:');
+            expect(await run(projectDir, 'read_file', { path: 'packages/a.ts' })).toContain('Instructions from:');
+        });
+
+        test('includeProjectInstructions: false on buildProjectTools disables nested discovery entirely', async () => {
+            mkdirSync(join(projectDir, 'packages'), { recursive: true });
+            await Bun.write(join(projectDir, 'packages', 'AGENTS.md'), 'packages-level rules');
+            await Bun.write(join(projectDir, 'packages', 'a.ts'), 'export {}');
+
+            const tools = buildProjectTools(projectDir, false, false);
+            const readFile = tools.read_file?.execute;
+            if (readFile === undefined) throw new Error('no read_file tool');
+            const result = (await readFile({ path: 'packages/a.ts' }, NO_OPTIONS)) as string;
+
+            expect(result).toBe('1\texport {}');
+        });
+
+        test('still works for the Talk (restricted) agent', async () => {
+            mkdirSync(join(projectDir, 'packages'), { recursive: true });
+            await Bun.write(join(projectDir, 'packages', 'AGENTS.md'), 'packages-level rules');
+            await Bun.write(join(projectDir, 'packages', 'a.ts'), 'export {}');
+
+            const tools = buildProjectTools(projectDir, true);
+            const readFile = tools.read_file?.execute;
+            if (readFile === undefined) throw new Error('no read_file tool');
+            const result = (await readFile({ path: 'packages/a.ts' }, NO_OPTIONS)) as string;
+
+            expect(result).toContain('Instructions from: packages/AGENTS.md');
+        });
+    });
 });
 
 describe('list_dir', () => {

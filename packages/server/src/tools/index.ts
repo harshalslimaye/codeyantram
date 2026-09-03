@@ -32,14 +32,27 @@ const TOOL_EXECUTORS: Record<ToolName, (input: any, cwd: string) => Promise<stri
  * as "runs without approval" (see toolNeedsApproval): a network tool is
  * Talk-visible but still needs approval, since it leaves the machine even
  * though it doesn't write to disk.
+ *
+ * `includeProjectInstructions` (default on) additionally controls read_file's own
+ * nested-instructions discovery (see project-instructions.ts) - the same off-switch that
+ * disables the global/project files in the system prompt turns this off too, one on/off
+ * idea rather than a per-source toggle. The dedup Set lives here, in a fresh
+ * buildProjectTools call per turn, so a nested file surfaces once per directory per turn
+ * without any state outliving the request.
  */
-export function buildProjectTools(cwd: string, restricted = false): ToolSet {
+export function buildProjectTools(cwd: string, restricted = false, includeProjectInstructions = true): ToolSet {
     const tools: ToolSet = {};
+    const seenNestedInstructions = includeProjectInstructions ? new Set<string>() : undefined;
+
+    const executors: Record<ToolName, (input: any, cwd: string) => Promise<string>> = {
+        ...TOOL_EXECUTORS,
+        read_file: (input: any, toolCwd: string) => readFile(input, toolCwd, seenNestedInstructions),
+    };
 
     for (const definition of TOOL_CATALOG) {
         if (restricted && !isTalkTool(definition.name)) continue;
 
-        const executor = TOOL_EXECUTORS[definition.name];
+        const executor = executors[definition.name];
         tools[definition.name] = tool<any, string, Record<string, unknown>>({
             description: definition.description,
             inputSchema: definition.inputSchema,

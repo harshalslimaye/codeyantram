@@ -12,6 +12,7 @@ Built with **Bun**, **OpenTUI** (a React-based TUI renderer), **Hono**, and the 
 - **Two agents with graduated tool access**:
   - **Talk** — read-only tools (`read_file`, `list_dir`, `glob`, `grep`) plus `web_fetch` to read a URL — the one Talk tool that still asks for approval, since it leaves the machine.
   - **Build** — the full tool catalog, including mutating tools (`edit_file`, `write_file`, `bash`).
+- **Project instructions** — an `AGENTS.md` (or `CLAUDE.md`) at the project root is loaded into the system prompt on every turn, so the project's own conventions travel with each request.
 - **Tool approval gate** — every mutating tool pauses mid-turn and asks for explicit approval (`y`/`n`) before it runs.
 - **Streaming SSE protocol** — one wire format for success *and* failure; cancel is just closing the connection.
 - **Local persistence** — API keys (`auth.json`, `0600`) and preferences (`preferences.json`) under `~/.codeyantram/`.
@@ -100,6 +101,8 @@ Type `/` in the input bar for an autocompleting menu:
 | `/agents` | Switch agent (Talk / Build) |
 | `/models` | Switch model |
 | `/connect` | Connect a provider with an API key (or clear one) |
+| `/init` | Generate or refine this project's `AGENTS.md` (switches to Build) |
+| `/instructions` | Toggle project instructions on/off for the session |
 | `/sessions` | Switch session |
 | `/themes` | Switch theme |
 | `/upgrade` | Upgrade CodeYantram |
@@ -125,6 +128,30 @@ The catalog is defined in `packages/shared/src/models.ts`:
 | DeepSeek | `deepseek-v4-flash`, `deepseek-v4-pro` | — |
 
 Default: `claude-sonnet-5` with `high` effort. A model is only offered in `/models` if its provider has a key configured.
+
+### Project instructions
+
+If the project root has an [`AGENTS.md`](https://agents.md) (or, as a fallback, a `CLAUDE.md`), CodeYantram appends it to the system prompt for both agents — conventions, build/test commands, things to avoid. Nothing to enable and no restart needed: the file is re-read on every turn, so an edit applies to your next message.
+
+| Behaviour | Detail |
+| --- | --- |
+| Location | `AGENTS.md`, then `CLAUDE.md`, at the project root (the `cwd` the CLI was started in) — first match wins, never both |
+| Size cap | 32 KB, cut at a line boundary with a note saying it was cut |
+| Missing / empty / binary | Treated as "no instructions" — never an error |
+| Symlinks | Followed only while they stay inside the project root |
+| Precedence | Below your messages: it shapes *how* work is done, and cannot approve a tool call, widen an agent's tool access, or override what you ask for in the conversation |
+
+The contents are framed by `--- BEGIN/END PROJECT INSTRUCTIONS ---` markers, and a file that tries to write those markers itself has them stripped — so a repository you didn't author can't close the block early and speak as the system prompt.
+
+Don't have one yet? Run `/init` to generate one — it surveys the project (README, manifests, build/test/lint config, CI) and writes a concise `AGENTS.md`, or refines an existing one in place. It switches you to the Build agent (it needs `write_file`), and the write itself still goes through the normal approval prompt like any other Build edit. A toast confirms once it's actually finished — including after any approval prompts along the way, not just the first response.
+
+**Visibility and the off-switch.** Below a reply that loaded the project's instruction file, the usual token-count line also shows its filename and size (e.g. `1.2k in · 340 out · AGENTS.md 2.0KB`, `(cut)` appended if it hit the 32 KB cap) — so the cost is legible per turn, not just inferred. If it got cut off, you also get a one-time warning toast the first turn that happens, rather than silent truncation. Run `/instructions` to toggle instructions off or back on for the rest of the session, without renaming or deleting any file — useful for an A/B comparison of the model's behavior with and without them. The toggle covers every source below uniformly; there's no persistent status-bar indicator for the global or nested sources specifically, only the per-turn line above for the project file.
+
+**A user-level file.** `~/.codeyantram/AGENTS.md` (or `CLAUDE.md`) applies across every project — conventions you want everywhere without repeating them into each repo's own file. It's composed above the project file in the same block, and the project's file wins wherever the two disagree. Together they're capped at 48 KB combined (each still capped at 32 KB on its own) — if both are large enough to exceed that, the user-level file gives way for that turn rather than either being cut down further.
+
+**Nested instructions.** A subdirectory's own `AGENTS.md`/`CLAUDE.md` — say, `packages/server/AGENTS.md` in a monorepo — isn't loaded up front. It's picked up lazily: the first time `read_file` opens a file under that subtree, every ancestor instruction file between it and the project root (whose own file is already covered above) is appended to that tool call's result, framed the same way and once per directory per turn. Nothing elsewhere in the tree costs anything until the agent actually reads something under it.
+
+**Prompt caching (Anthropic only).** The system prompt is sent as two separate blocks — the static per-agent prompt, and the instructions block — each with its own Anthropic `cache_control` breakpoint, so editing `AGENTS.md` only invalidates the smaller, instructions-specific cache entry rather than the whole system prompt. In practice CodeYantram's own static prompt (~500 tokens) sits under Anthropic's 1024-token minimum-cacheable-length for Sonnet/Opus, so it doesn't yet get its own independent cache hit — the split still costs nothing when that's true, and pays off automatically once either block grows past the threshold. The combined prompt still caches and gets reused turn-to-turn whenever the instructions are unchanged, which is the common case. Non-Anthropic providers never see the cache marker.
 
 ### Themes
 
@@ -274,6 +301,8 @@ packages/
 │   ├── index.ts           # Hono app, routes, port
 │   ├── lib/chat-stream.ts # streamText → SSE bridge, tool loops, approval
 │   ├── lib/models.ts      # model resolution + provider options
+│   ├── lib/system-prompt.ts        # per-agent prompts as cache-breakpointed system messages
+│   ├── lib/project-instructions.ts # global/project/nested AGENTS.md discovery, caps, framing, sandboxing
 │   ├── providers/         # one builder per provider (AI SDK)
 │   ├── routers/           # /chat and /providers Hono routers
 │   └── tools/             # one executor per tool + path sandboxing
@@ -294,5 +323,8 @@ packages/
 
 - **Single path for success and failure** — the CLI consumes only parsed SSE events; a missing key, a network error, or a provider error all arrive as `error` events.
 - **Shared contracts, single source of truth** — catalogs, schemas, and stream folding live in `shared` and are tested exactly once there.
+- **Project instructions are input, not authority** — every source (`~/.codeyantram/AGENTS.md`, the project root's, a subdirectory's own) is folded in with explicit limits (no approval bypass, no tool-access widening) and its framing markers neutralized, on the assumption the repo may not be one the user wrote.
+- **Nested instructions ride on the tool that touches them, not the prompt** — a subdirectory's `AGENTS.md` costs nothing until `read_file` actually opens something under it, then attaches to that call's own result instead of growing the system prompt for the whole session.
+- **Cache breakpoints follow content that actually varies together** — the static per-agent prompt and the instructions block are separate system messages precisely so an `AGENTS.md` edit invalidates only the smaller, variable one, not the whole prompt.
 - **Sandboxed by design** — every tool path resolves against `cwd` and rejects anything escaping the project root; mutating tools are gated behind user approval.
 - **Keyboard ownership via a layer stack** — root, autocomplete, and overlay each claim the keyboard in turn, so only the topmost UI reacts to a keypress (and `ctrl+c` exits only when nothing else owns it).
