@@ -51,10 +51,19 @@ function toolArgsSummary(part: ToolCallPart): string | null {
             return limit === null ? `${path} (from line ${from})` : `${path} (lines ${from}-${from + limit - 1})`;
         }
 
-        case 'write_file':
         case 'list_dir':
         case 'undo_edit':
             return stringArg(args, 'path');
+
+        case 'write_file': {
+            const path = stringArg(args, 'path');
+            if (path === null) return null;
+
+            // A dry run writes nothing and a base64 write isn't text - both change what
+            // approving this call actually does, so neither should be read off the path alone.
+            const notes = [args.dryRun === true ? 'dry run' : null, args.encoding === 'base64' ? 'base64' : null].filter(note => note !== null);
+            return notes.length > 0 ? `${path} (${notes.join(', ')})` : path;
+        }
 
         case 'edit_file': {
             const path = stringArg(args, 'path');

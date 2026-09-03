@@ -1,5 +1,5 @@
 import { readFile, stat, writeFile } from 'node:fs/promises';
-import { popBackup, pushBackup } from './edit-backups';
+import { popBackup, pushBackup } from './file-backups';
 import { MAX_EDIT_FILE_BYTES, resolveInProject } from './shared';
 
 function lineEndingStyle(text: string): 'CRLF' | 'LF' | null {
@@ -140,19 +140,20 @@ export async function execute(input: { path: string; edits: Edit[]; dryRun?: boo
 
     // Recorded after validation succeeds but before the write, so undo_edit can restore
     // exactly what was on disk immediately before this call - never a partially-applied state.
-    pushBackup(target, originalContent);
+    pushBackup(target, Buffer.from(originalContent, 'utf-8'));
 
     await writeFile(target, content, 'utf-8');
     return input.edits.length > 1 ? `Applied ${input.edits.length} edits to ${input.path}` : `Edited ${input.path}`;
 }
 
-/** Reverts the most recent edit_file write to `path`, going back one step per call. */
+/** Reverts the most recent edit_file or write_file write to `path`, going back one step per call. */
 export async function undo(input: { path: string }, cwd: string): Promise<string> {
     const target = resolveInProject(cwd, input.path);
     const previous = popBackup(target);
 
-    if (previous === undefined) return `Error: no edit_file backup available for ${input.path}`;
+    if (previous === undefined) return `Error: no backup available for ${input.path}`;
 
-    await writeFile(target, previous, 'utf-8');
-    return `Reverted ${input.path} to its state before the last edit_file change`;
+    // Written as raw bytes: the backup may hold content that isn't valid UTF-8.
+    await writeFile(target, previous);
+    return `Reverted ${input.path} to its state before the last edit_file or write_file change`;
 }
