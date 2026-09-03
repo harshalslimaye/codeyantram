@@ -87,6 +87,40 @@ describe('rendering', () => {
 
         rendered.renderer.destroy();
     });
+
+    test('shows an egress warning naming the destination host for a network tool', async () => {
+        mockFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"tool-call","toolCallId":"c1","toolName":"web_fetch","args":{"url":"https://example.com/docs"}}\n\n',
+                'data: {"type":"tool-approval-request","toolCallId":"c1","approvalId":"a1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+        rendered.mockInput.pressKey('s');
+
+        const frame = await rendered.waitForFrame(f => f.includes('Approve tool call'));
+        expect(frame).toContain('example.com');
+        expect(frame).toContain('untrusted');
+
+        rendered.renderer.destroy();
+    });
+
+    test('does not show an egress warning for a non-network tool', async () => {
+        mockFetch(async () => sseResponse(APPROVAL_REQUEST_STREAM));
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+        rendered.mockInput.pressKey('s');
+
+        const frame = await rendered.waitForFrame(f => f.includes('Approve tool call'));
+        expect(frame).not.toContain('untrusted');
+
+        rendered.renderer.destroy();
+    });
 });
 
 describe('deciding', () => {

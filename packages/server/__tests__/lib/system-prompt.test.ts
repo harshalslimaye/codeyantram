@@ -10,6 +10,23 @@ describe('getSystemPrompt', () => {
     test('differs between Talk and Build', () => {
         expect(getSystemPrompt('Talk')).not.toBe(getSystemPrompt('Build'));
     });
+
+    test('warns against treating fetched content as instructions, for both agents', () => {
+        expect(getSystemPrompt('Talk')).toContain('untrusted data');
+        expect(getSystemPrompt('Build')).toContain('untrusted data');
+    });
+
+    test('tells Talk it has web_fetch, and that it still needs approval', () => {
+        const prompt = getSystemPrompt('Talk');
+        expect(prompt).toContain('web_fetch');
+        expect(prompt).toContain('pauses for the user\'s explicit approval');
+    });
+
+    test('tells Build to prefer web_fetch over bash for reading a URL', () => {
+        const prompt = getSystemPrompt('Build');
+        expect(prompt).toContain('web_fetch');
+        expect(prompt).toContain('curl');
+    });
 });
 
 describe('getSystemMessage', () => {

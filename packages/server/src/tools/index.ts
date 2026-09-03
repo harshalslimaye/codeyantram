@@ -1,11 +1,12 @@
 import { tool, type ToolSet } from 'ai';
-import { TOOL_CATALOG, isReadOnlyTool, type ToolName } from '@codeyantram/shared';
+import { TOOL_CATALOG, isTalkTool, toolNeedsApproval, type ToolName } from '@codeyantram/shared';
 import { execute as bash } from './bash';
 import { execute as editFile, undo as undoEdit } from './edit-file';
 import { execute as glob } from './glob';
 import { execute as grep } from './grep';
 import { execute as listDir } from './list-dir';
 import { execute as readFile } from './read-file';
+import { execute as webFetch } from './web-fetch';
 import { execute as writeFile } from './write-file';
 
 // Each executor's parameter type already matches its own catalog entry's
@@ -19,26 +20,33 @@ const TOOL_EXECUTORS: Record<ToolName, (input: any, cwd: string) => Promise<stri
     undo_edit: undoEdit,
     write_file: writeFile,
     bash,
+    // web_fetch ignores the cwd argument every other executor uses - a fetch has no
+    // project-relative path to resolve.
+    web_fetch: webFetch,
 };
 
 /**
  * Builds the tool set streamText attaches for a tool-capable request, every
- * execute() resolved against the request's own `cwd`. Pass `readOnly: true`
- * (Talk mode) to expose only the read-only tools from the catalog.
+ * execute() resolved against the request's own `cwd`. Pass `restricted: true`
+ * (Talk mode) to expose only the tools isTalkTool allows - not the same set
+ * as "runs without approval" (see toolNeedsApproval): a network tool is
+ * Talk-visible but still needs approval, since it leaves the machine even
+ * though it doesn't write to disk.
  */
-export function buildProjectTools(cwd: string, readOnly = false): ToolSet {
+export function buildProjectTools(cwd: string, restricted = false): ToolSet {
     const tools: ToolSet = {};
 
     for (const definition of TOOL_CATALOG) {
-        if (readOnly && !isReadOnlyTool(definition.name)) continue;
+        if (restricted && !isTalkTool(definition.name)) continue;
 
         const executor = TOOL_EXECUTORS[definition.name];
         tools[definition.name] = tool<any, string, Record<string, unknown>>({
             description: definition.description,
             inputSchema: definition.inputSchema,
-            // Read-only tools run immediately; everything else pauses the
-            // turn until the CLI approves or denies it (see chat-stream.ts).
-            needsApproval: !isReadOnlyTool(definition.name),
+            // Tools that only read state run immediately; everything else
+            // pauses the turn until the CLI approves or denies it (see
+            // chat-stream.ts and toolNeedsApproval).
+            needsApproval: toolNeedsApproval(definition.name),
             execute: async (input: any) => {
                 try {
                     return await executor(input, cwd);
