@@ -1,5 +1,5 @@
 import { TextAttributes, type SyntaxStyle, type TreeSitterClient } from '@opentui/core';
-import type { ChatMessage, MessagePart, ToolCallPart, TokenUsage } from '@codeyantram/shared';
+import type { AssistantMessage, ChatMessage, MessagePart, ToolCallPart } from '@codeyantram/shared';
 import { useTheme } from '../providers/theme';
 import { getAppTreeSitterClient } from '../tree-sitter-client';
 import type { ThemeColors } from '../theme';
@@ -8,16 +8,25 @@ function formatTokenCount(count: number): string {
     return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 }
 
-function usageSummary(usage: TokenUsage | undefined): string | null {
-    if (usage === undefined) return null;
+function formatBytes(bytes: number): string {
+    return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)}KB` : `${bytes}B`;
+}
 
-    const { inputTokens, outputTokens } = usage;
-    if (inputTokens === undefined && outputTokens === undefined) return null;
-
+/** Per-turn cost summary: token usage and, when that turn's own AGENTS.md/CLAUDE.md rode
+ * along, its size - both travel with the message they belong to (see chat.tsx's "start"
+ * and "done" handling), so this always reflects that specific turn, not just the latest. */
+function usageSummary(message: AssistantMessage): string | null {
     const parts: string[] = [];
-    if (inputTokens !== undefined) parts.push(`${formatTokenCount(inputTokens)} in`);
-    if (outputTokens !== undefined) parts.push(`${formatTokenCount(outputTokens)} out`);
-    return parts.join(' · ');
+
+    if (message.usage?.inputTokens !== undefined) parts.push(`${formatTokenCount(message.usage.inputTokens)} in`);
+    if (message.usage?.outputTokens !== undefined) parts.push(`${formatTokenCount(message.usage.outputTokens)} out`);
+
+    if (message.projectInstructions !== undefined) {
+        const { filename, bytes, truncated } = message.projectInstructions;
+        parts.push(`${filename} ${formatBytes(bytes)}${truncated ? ' (cut)' : ''}`);
+    }
+
+    return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 function toolStatusLabel(part: ToolCallPart): string {
@@ -206,7 +215,7 @@ function MessageRow({
     streaming: boolean,
 }) {
     const isUser = message.role === 'user';
-    const usage = message.role === 'assistant' ? usageSummary(message.usage) : null;
+    const usage = message.role === 'assistant' ? usageSummary(message) : null;
 
     return (
         <box flexDirection="column" marginBottom={1}>

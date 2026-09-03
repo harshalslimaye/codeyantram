@@ -242,4 +242,90 @@ describe('MessageList', () => {
 
         rendered.renderer.destroy();
     });
+
+    describe('per-turn cost summary', () => {
+        test('shows input/output token counts under a reply', async () => {
+            const messages: ChatMessage[] = [
+                {
+                    id: '1',
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: 'hi' }],
+                    usage: { inputTokens: 1200, outputTokens: 45 },
+                },
+            ];
+
+            const rendered = await mount(messages);
+            const frame = await rendered.waitForFrame(f => f.includes('1.2k in'));
+
+            expect(frame).toContain('1.2k in');
+            expect(frame).toContain('45 out');
+            rendered.renderer.destroy();
+        });
+
+        test('shows the instruction filename and size alongside token usage when that turn loaded one', async () => {
+            const messages: ChatMessage[] = [
+                {
+                    id: '1',
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: 'hi' }],
+                    usage: { inputTokens: 100, outputTokens: 10 },
+                    projectInstructions: { filename: 'AGENTS.md', bytes: 2048, truncated: false },
+                },
+            ];
+
+            const rendered = await mount(messages);
+            const frame = await rendered.waitForFrame(f => f.includes('AGENTS.md'));
+
+            expect(frame).toContain('100 in');
+            expect(frame).toContain('AGENTS.md 2.0KB');
+            expect(frame).not.toContain('(cut)');
+            rendered.renderer.destroy();
+        });
+
+        test('flags a truncated instruction file', async () => {
+            const messages: ChatMessage[] = [
+                {
+                    id: '1',
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: 'hi' }],
+                    projectInstructions: { filename: 'AGENTS.md', bytes: 32000, truncated: true },
+                },
+            ];
+
+            const rendered = await mount(messages);
+            const frame = await rendered.waitForFrame(f => f.includes('(cut)'));
+
+            expect(frame).toContain('AGENTS.md');
+            expect(frame).toContain('(cut)');
+            rendered.renderer.destroy();
+        });
+
+        test('shows bytes under a kilobyte without the KB suffix', async () => {
+            const messages: ChatMessage[] = [
+                {
+                    id: '1',
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: 'hi' }],
+                    projectInstructions: { filename: 'AGENTS.md', bytes: 42, truncated: false },
+                },
+            ];
+
+            const rendered = await mount(messages);
+            const frame = await rendered.waitForFrame(f => f.includes('AGENTS.md'));
+
+            expect(frame).toContain('AGENTS.md 42B');
+            rendered.renderer.destroy();
+        });
+
+        test('shows nothing when a turn has neither usage nor instructions', async () => {
+            const messages: ChatMessage[] = [{ id: '1', role: 'assistant', parts: [{ type: 'text', text: 'hi' }] }];
+
+            const rendered = await mount(messages);
+            const frame = await rendered.waitForFrame(f => f.includes('hi'));
+
+            expect(frame).not.toContain('in ·');
+            expect(frame).not.toContain('AGENTS.md');
+            rendered.renderer.destroy();
+        });
+    });
 });

@@ -8,6 +8,9 @@ export type Preferences = {
     agentName?: string;
     // Keyed by model id so switching models remembers each one's own effort choice.
     effortByModel?: Record<string, EffortLevel>;
+    // Off-switch for loading the project's AGENTS.md/CLAUDE.md into every turn - undefined
+    // (nothing ever saved) means enabled, the default.
+    projectInstructionsEnabled?: boolean;
 };
 
 export function readPreferences(): Preferences {

@@ -186,6 +186,21 @@ describe("chatMessageSchema", () => {
         expect(chatMessageSchema.safeParse({ id: "m2", role: "assistant", parts: [] }).success).toBe(true);
     });
 
+    test("accepts an assistant message carrying projectInstructions metadata", () => {
+        const result = chatMessageSchema.safeParse({
+            id: "m2",
+            role: "assistant",
+            parts: [],
+            projectInstructions: { filename: "AGENTS.md", bytes: 42, truncated: false },
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("accepts an assistant message with no projectInstructions field at all", () => {
+        expect(chatMessageSchema.safeParse({ id: "m2", role: "assistant", parts: [], usage: { inputTokens: 1 } }).success).toBe(true);
+    });
+
     test("rejects an unknown role", () => {
         expect(chatMessageSchema.safeParse({ id: "m1", role: "system", parts: [] }).success).toBe(false);
     });
@@ -323,6 +338,27 @@ describe("chatRequestSchema", () => {
 
         expect(result.success).toBe(false);
     });
+
+    test("accepts a request with no useProjectInstructions (defaults to enabled)", () => {
+        const result = chatRequestSchema.safeParse({
+            ...baseRequest,
+            model: "claude-sonnet-5",
+            messages: [userMessage],
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("accepts useProjectInstructions: false, the off-switch", () => {
+        const result = chatRequestSchema.safeParse({
+            ...baseRequest,
+            model: "claude-sonnet-5",
+            messages: [userMessage],
+            useProjectInstructions: false,
+        });
+
+        expect(result.success).toBe(true);
+    });
 });
 
 describe("chatStreamEventSchema", () => {
@@ -332,6 +368,26 @@ describe("chatStreamEventSchema", () => {
 
     test("rejects a start event with an empty messageId", () => {
         expect(chatStreamEventSchema.safeParse({ type: "start", messageId: "" }).success).toBe(false);
+    });
+
+    test("accepts a start event carrying project instructions metadata", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "start",
+            messageId: "m2",
+            projectInstructions: { filename: "AGENTS.md", bytes: 42, truncated: false },
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("rejects project instructions metadata with a negative byte count", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "start",
+            messageId: "m2",
+            projectInstructions: { filename: "AGENTS.md", bytes: -1, truncated: false },
+        });
+
+        expect(result.success).toBe(false);
     });
 
     test("accepts each delta event", () => {

@@ -12,6 +12,13 @@ export type ActionArgs = {
     overlay: (title: string, body: ReactNode) => void;
     toast: ToastContextValue;
     newSession: () => void;
+    // Switches to the Build agent (/init needs write_file) and sends the
+    // INIT_PROMPT as a normal user message - the write itself still goes
+    // through the ordinary approval gate.
+    startInit: () => void;
+    // Flips whether the project's AGENTS.md/CLAUDE.md is loaded on the next
+    // turn, without the user having to rename or delete the file.
+    toggleProjectInstructions: () => void;
 };
 
 export type Command = {
@@ -45,6 +52,16 @@ export const SLASH_COMMANDS: Command[] = [
         name: 'connect',
         description: 'Connect a provider with an API key',
         action: args => args.overlay('Connect', <ConnectFlow />)
+    },
+    {
+        name: 'init',
+        description: 'Generate or refine this project\'s AGENTS.md',
+        action: args => args.startInit()
+    },
+    {
+        name: 'instructions',
+        description: 'Toggle project instructions (AGENTS.md/CLAUDE.md) on or off',
+        action: args => args.toggleProjectInstructions()
     },
     {
         name: 'sessions',

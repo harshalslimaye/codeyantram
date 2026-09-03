@@ -7,6 +7,8 @@ function stubArgs(): ActionArgs & {
     overlay: ReturnType<typeof mock>;
     toast: { info: ReturnType<typeof mock>; warn: ReturnType<typeof mock>; error: ReturnType<typeof mock>; dismiss: ReturnType<typeof mock> };
     newSession: ReturnType<typeof mock>;
+    startInit: ReturnType<typeof mock>;
+    toggleProjectInstructions: ReturnType<typeof mock>;
 } {
     return {
         exit: mock(() => {}),
@@ -19,13 +21,15 @@ function stubArgs(): ActionArgs & {
             dismiss: mock(() => {}),
         },
         newSession: mock(() => {}),
+        startInit: mock(() => {}),
+        toggleProjectInstructions: mock(() => {}),
     };
 }
 
 // Commands with real behavior beyond the generic "show an info toast"
 // placeholder — excluded from the blanket "shows a toast" check below, and
 // covered by their own assertions instead.
-const IMPLEMENTED_COMMANDS = ['new', 'exit', 'themes', 'models', 'effort', 'agents', 'connect'];
+const IMPLEMENTED_COMMANDS = ['new', 'exit', 'themes', 'models', 'effort', 'agents', 'connect', 'init', 'instructions'];
 
 describe('SLASH_COMMANDS', () => {
     test('every command has a name and description', () => {
@@ -48,9 +52,11 @@ describe('SLASH_COMMANDS', () => {
         }
     });
 
-    test('menu order matches the finalized New/Agents/Models/Effort/Connect/Sessions/Themes/Upgrade/Support/Exit list', () => {
+    test('menu order matches the finalized New/Agents/Models/Effort/Connect/Init/Instructions/Sessions/Themes/Upgrade/Support/Exit list', () => {
         const names = SLASH_COMMANDS.map(command => command.name);
-        expect(names).toEqual(['new', 'agents', 'models', 'effort', 'connect', 'sessions', 'themes', 'upgrade', 'support', 'exit']);
+        expect(names).toEqual([
+            'new', 'agents', 'models', 'effort', 'connect', 'init', 'instructions', 'sessions', 'themes', 'upgrade', 'support', 'exit',
+        ]);
     });
 });
 
@@ -176,5 +182,49 @@ describe('command actions', () => {
         expect(args.overlay.mock.calls[0]?.[0]).toBe('Connect');
         expect(args.populate).not.toHaveBeenCalled();
         expect(args.exit).not.toHaveBeenCalled();
+    });
+
+    test('init starts the init flow instead of populating, exiting, or toasting', () => {
+        const initCommand = SLASH_COMMANDS.find(command => command.name === 'init');
+        expect(initCommand).toBeDefined();
+
+        const args = stubArgs();
+        initCommand!.action(args);
+
+        expect(args.startInit).toHaveBeenCalledTimes(1);
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.overlay).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
+        expect(args.toast.info).not.toHaveBeenCalled();
+    });
+
+    test('no other command starts the init flow', () => {
+        for (const command of SLASH_COMMANDS.filter(c => c.name !== 'init')) {
+            const args = stubArgs();
+            command.action(args);
+            expect(args.startInit).not.toHaveBeenCalled();
+        }
+    });
+
+    test('instructions toggles project instructions instead of populating, exiting, or toasting', () => {
+        const instructionsCommand = SLASH_COMMANDS.find(command => command.name === 'instructions');
+        expect(instructionsCommand).toBeDefined();
+
+        const args = stubArgs();
+        instructionsCommand!.action(args);
+
+        expect(args.toggleProjectInstructions).toHaveBeenCalledTimes(1);
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.overlay).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
+        expect(args.toast.info).not.toHaveBeenCalled();
+    });
+
+    test('no other command toggles project instructions', () => {
+        for (const command of SLASH_COMMANDS.filter(c => c.name !== 'instructions')) {
+            const args = stubArgs();
+            command.action(args);
+            expect(args.toggleProjectInstructions).not.toHaveBeenCalled();
+        }
     });
 });

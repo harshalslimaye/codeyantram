@@ -96,6 +96,7 @@ describe('rendering', () => {
         expect(frame).toContain(String(DEFAULT_EFFORT));
         rendered.renderer.destroy();
     });
+
 });
 
 describe('typing', () => {

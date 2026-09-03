@@ -1,6 +1,7 @@
 import type { ProviderOptions } from '@ai-sdk/provider-utils';
 import type { SystemModelMessage } from 'ai';
 import type { AgentName } from '@codeyantram/shared';
+import { formatProjectInstructions, type PromptInstructions } from './project-instructions';
 
 const SHARED_PROMPT = `You are CodeYantram, a terminal-based AI coding assistant. You help the user understand, navigate, and work with the project in their current working directory, using your tools rather than guessing at file contents or project structure.
 
@@ -33,8 +34,22 @@ const SYSTEM_PROMPTS = {
     Build: BUILD_PROMPT,
 } satisfies Record<AgentName, string>;
 
+// Anthropic's ephemeral cache_control breakpoint. Attached per-message below (never at the
+// top-level streamText providerOptions), and only when the caller says the resolved model
+// is actually Anthropic - an unrecognized providerOptions namespace is harmless to another
+// provider's SDK, but there's no reason to send it where it means nothing.
+const CACHE_CONTROL: ProviderOptions = { anthropic: { cacheControl: { type: 'ephemeral' } } };
+
 /**
- * Returns the system prompt text for the given agent.
+ * Returns the system prompt as however many messages the request actually needs - one for
+ * the static per-agent prompt, plus a second for the instructions block when there's one to
+ * send (see loadPromptInstructions). Two messages rather than one concatenated string so
+ * each can carry its own Anthropic cache breakpoint (`cacheable: true`): the static prompt
+ * never changes, so it can stay cached across every turn of every conversation with this
+ * agent, while the instructions block gets its own breakpoint that only invalidates when
+ * AGENTS.md/CLAUDE.md actually change - without that split, editing the instructions file
+ * would invalidate the cache for the *entire* system prompt, static text included, on
+ * every single edit.
  *
  * Throws if `agent` isn't a recognized AgentName. The compile-time
  * exhaustiveness above only helps when callers are themselves type-checked -
@@ -42,18 +57,30 @@ const SYSTEM_PROMPTS = {
  * session file, or an API request, so this guards against a silent
  * `undefined` prompt reaching the model.
  */
-export function getSystemPrompt(agent: AgentName): string {
+export function getSystemMessages(
+    agent: AgentName,
+    instructions?: PromptInstructions | null,
+    cacheable = false,
+): SystemModelMessage[] {
     const prompt = SYSTEM_PROMPTS[agent];
     if (!prompt) {
         throw new Error(`No system prompt defined for agent "${agent}"`);
     }
-    return prompt;
+
+    const providerOptions = cacheable ? CACHE_CONTROL : undefined;
+    const messages: SystemModelMessage[] = [{ role: 'system', content: prompt, providerOptions }];
+
+    const block = instructions ? formatProjectInstructions(instructions.global, instructions.project) : '';
+    if (block !== '') messages.push({ role: 'system', content: block, providerOptions });
+
+    return messages;
 }
 
-export function getSystemMessage(agent: AgentName, providerOptions?: ProviderOptions): SystemModelMessage {
-    return {
-        role: 'system',
-        content: getSystemPrompt(agent),
-        providerOptions,
-    };
+/** Flattens getSystemMessages into the single string a model sees once its blocks are
+ * concatenated - for tests and anywhere that wants the combined text rather than the
+ * per-block structure caching needs. */
+export function getSystemPrompt(agent: AgentName, instructions?: PromptInstructions | null): string {
+    return getSystemMessages(agent, instructions)
+        .map(message => message.content)
+        .join('\n\n');
 }
