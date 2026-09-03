@@ -26,6 +26,20 @@ export const MAX_PATH_SEGMENTS = 40;
 /** How much of a file's head is enough to tell text from binary - both read_file (before
  * decoding it) and write_file (before diffing what it's about to destroy) sniff this much. */
 export const BINARY_SAMPLE_BYTES = 8192;
+// web_fetch buffers the response body in memory (there's no offset/limit into raw bytes -
+// paging happens later, over the converted text), so it gets the same 5 MB ceiling as
+// write_file/edit_file. Counted post-decompression: fetch() decompresses transparently, so
+// this is a real ceiling on decoded size, not on bytes over the wire.
+export const MAX_WEB_FETCH_BYTES = 5 * 1024 * 1024;
+// Covers connect + the whole body, same ceiling as BASH_TIMEOUT_MS - a fetch that hasn't
+// finished by then is aborted rather than left to hang the turn.
+export const WEB_FETCH_TIMEOUT_MS = 30_000;
+/** A real redirect chain is rarely more than one or two hops; five is enough headroom for a
+ * tracking/shortener/CDN chain without letting a misbehaving server bounce forever. */
+export const MAX_WEB_FETCH_REDIRECTS = 5;
+/** Identifies the tool to whoever's server it hits, since it sends no other identifying
+ * information (no cookies, no auth) - see url-policy.ts for what it refuses to reach. */
+export const WEB_FETCH_USER_AGENT = 'CodeYantram/0.1 (+https://github.com/harshalslimaye/codeyantram)';
 
 /** Directories skipped even without a .gitignore entry for them - shared by grep (as a
  * ripgrep `!`-prefixed --glob exclusion) and list_dir (as a fast-glob `ignore` pattern).
@@ -138,6 +152,43 @@ export async function resolveRealForWrite(cwd: string, relativePath: string): Pr
     assertContained(real, 'a symlink');
 
     return { target, missingDirs, viaSymlink: true };
+}
+
+// WHATWG label for Latin-1: the standard folds latin1/iso-8859-1 onto the windows-1252
+// decoder, which is the one that actually maps 0x80-0x9F to printable characters.
+export type TextEncodingLabel = 'utf-8' | 'windows-1252';
+
+/** Drops a multi-byte UTF-8 sequence left incomplete by the sample's cut-off point -
+ * those trailing bytes are only half a character, and validating them would report a
+ * perfectly good UTF-8 file as some other encoding. */
+export function trimIncompleteUtf8Tail(sample: Buffer): Buffer {
+    for (let i = sample.length - 1, available = 1; i >= 0 && available <= 4; i--, available++) {
+        const byte = sample[i]!;
+        if ((byte & 0b1100_0000) === 0b1000_0000) continue; // continuation byte - keep walking back to the lead byte
+
+        const expected =
+            byte < 0x80 ? 1 : (byte & 0b1110_0000) === 0b1100_0000 ? 2 : (byte & 0b1111_0000) === 0b1110_0000 ? 3 : (byte & 0b1111_1000) === 0b1111_0000 ? 4 : 1;
+
+        return expected > available ? sample.subarray(0, i) : sample;
+    }
+
+    return sample;
+}
+
+/** Decoding a Latin-1 response/file as UTF-8 silently fills it with replacement characters,
+ * so the encoding is decided up front from the same sample a binary sniff would use: valid
+ * UTF-8 wins, anything else falls back to latin1. Only the sample is checked - content whose
+ * first 8 KB is clean UTF-8 but turns invalid later is rare enough to not be worth scanning
+ * the whole thing for. */
+export function pickEncoding(sample: Buffer, sampleIsPartial: boolean): TextEncodingLabel {
+    const candidate = sampleIsPartial ? trimIncompleteUtf8Tail(sample) : sample;
+
+    try {
+        new TextDecoder('utf-8', { fatal: true }).decode(candidate);
+        return 'utf-8';
+    } catch {
+        return 'windows-1252';
+    }
 }
 
 export function truncate(output: string): string {

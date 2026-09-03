@@ -10,7 +10,7 @@ Built with **Bun**, **OpenTUI** (a React-based TUI renderer), **Hono**, and the 
 - **Multi-provider support** — Anthropic, OpenAI, Google, and DeepSeek from one catalog, each with its own API key.
 - **Reasoning effort control** — models that support it expose per-model effort levels (`none` → `max`), validated before a request is ever sent.
 - **Two agents with graduated tool access**:
-  - **Talk** — read-only tools (`read_file`, `list_dir`, `glob`, `grep`).
+  - **Talk** — read-only tools (`read_file`, `list_dir`, `glob`, `grep`) plus `web_fetch` to read a URL — the one Talk tool that still asks for approval, since it leaves the machine.
   - **Build** — the full tool catalog, including mutating tools (`edit_file`, `write_file`, `bash`).
 - **Tool approval gate** — every mutating tool pauses mid-turn and asks for explicit approval (`y`/`n`) before it runs.
 - **Streaming SSE protocol** — one wire format for success *and* failure; cancel is just closing the connection.
@@ -143,6 +143,7 @@ Defined in `packages/shared/src/tools.ts` and executed by the server against the
 | `edit_file` | Replace one exact, unique snippet | **Requires approval** (Build) |
 | `write_file` | Create/overwrite a file | **Requires approval** (Build) |
 | `bash` | Run a shell command (30s timeout) | **Requires approval** (Build) |
+| `web_fetch` | Fetch a URL and return its content as text | **Requires approval** (Talk + Build) |
 
 ### The approval flow
 
@@ -151,7 +152,21 @@ Defined in `packages/shared/src/tools.ts` and executed by the server against the
 3. `y` / `enter` approves, `n` denies, `escape`/`ctrl+c` counts as a denial.
 4. The CLI records the decision, then automatically starts a new turn that replays it — the server acts on it and streams back the tool result.
 
-Read-only tools run immediately with no prompt. A tool loop is capped at 15 steps to guard against a confused model looping forever.
+Read-only tools run immediately with no prompt. `web_fetch` always needs approval, even in Talk, since it's the one tool that leaves the machine. A tool loop is capped at 15 steps to guard against a confused model looping forever.
+
+### Network access
+
+`web_fetch` is the only tool that reaches outside the project — everything else in the catalog is filesystem/shell-only, sandboxed to the project root. Its policy (`packages/server/src/tools/url-policy.ts` and `web-fetch.ts`):
+
+- **https only, GET only.** No other scheme or method; the model can't set headers, cookies, or credentials — anything behind a login is unreachable.
+- **No private/internal targets.** A loopback, link-local, RFC 1918, or otherwise non-public address is refused, whether given directly or reached via DNS or a redirect. Every redirect hop (up to 5) is re-validated against the same policy, not just the original URL.
+- **Bounded like every other tool.** 5 MB response cap (post-decompression), 30s timeout, output paged and line-numbered like `read_file`. A content type this tool doesn't handle (PDF, images, archives, …) is refused before its body is even read.
+- **Untrusted by design.** Fetched content comes back wrapped in an explicit `BEGIN`/`END UNTRUSTED FETCHED CONTENT` frame with a warning — the system prompt tells the model never to treat it as instructions.
+
+Two environment variables (see `.env.example`) let you deliberately loosen the private-address check for a controlled target, e.g. an internal docs server:
+
+- `WEB_FETCH_ALLOW_PRIVATE=1` — allow fetching private/loopback/internal addresses. The https-only rule is unaffected — the target still needs a valid TLS certificate. Off by default.
+- `WEB_FETCH_DENY_HOSTS` — a comma-separated hostname blocklist, checked before anything else and enforced even with `WEB_FETCH_ALLOW_PRIVATE` set.
 
 ## How It Works
 

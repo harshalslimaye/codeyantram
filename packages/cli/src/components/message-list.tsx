@@ -86,6 +86,31 @@ function toolArgsSummary(part: ToolCallPart): string | null {
         case 'bash':
             return stringArg(args, 'command');
 
+        case 'web_fetch': {
+            const url = stringArg(args, 'url');
+            if (url === null) return null;
+
+            // Host + path is what tells a reader where this is actually going; the
+            // query string is often long and rarely the interesting part.
+            let display: string;
+            try {
+                const parsed = new URL(url);
+                display = `${parsed.host}${parsed.pathname}`;
+            } catch {
+                display = url;
+            }
+
+            const MAX_DISPLAY_LENGTH = 60;
+            if (display.length > MAX_DISPLAY_LENGTH) display = `${display.slice(0, MAX_DISPLAY_LENGTH - 1)}…`;
+
+            const offset = typeof args.offset === 'number' ? args.offset : null;
+            const limit = typeof args.limit === 'number' ? args.limit : null;
+            const pagingNote = offset === null && limit === null ? null : limit === null ? `from line ${offset ?? 1}` : `lines ${offset ?? 1}-${(offset ?? 1) + limit - 1}`;
+
+            const notes = [pagingNote, args.refresh === true ? 'refresh' : null].filter((note): note is string => note !== null);
+            return notes.length > 0 ? `${display} (${notes.join(', ')})` : display;
+        }
+
         default:
             return null;
     }

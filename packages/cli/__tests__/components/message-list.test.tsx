@@ -124,6 +124,58 @@ describe('MessageList', () => {
         rendered.renderer.destroy();
     });
 
+    test('summarizes a web_fetch call as host+path, dropping the query string', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [{ type: 'tool-call', toolCallId: 'c1', toolName: 'web_fetch', args: { url: 'https://example.com/docs/guide?query=1' } }],
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('example.com'));
+
+        expect(frame).toContain('example.com/docs/guide');
+        expect(frame).not.toContain('query=1');
+
+        rendered.renderer.destroy();
+    });
+
+    test('notes paging and refresh on a web_fetch call', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [
+                    { type: 'tool-call', toolCallId: 'c1', toolName: 'web_fetch', args: { url: 'https://example.com/page', offset: 10, limit: 5 } },
+                    { type: 'tool-call', toolCallId: 'c2', toolName: 'web_fetch', args: { url: 'https://example.com/page', refresh: true } },
+                ],
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('refresh'));
+
+        expect(frame).toContain('lines 10-14');
+        expect(frame).toContain('(refresh)');
+
+        rendered.renderer.destroy();
+    });
+
+    test('falls back to the raw string for a web_fetch call with an unparseable url', async () => {
+        const messages: ChatMessage[] = [
+            { id: '1', role: 'assistant', parts: [{ type: 'tool-call', toolCallId: 'c1', toolName: 'web_fetch', args: { url: 'not a url' } }] },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('not a url'));
+
+        expect(frame).toContain('not a url');
+
+        rendered.renderer.destroy();
+    });
+
     test('omits the summary line for a tool with no recognized argument to show', async () => {
         const messages: ChatMessage[] = [
             { id: '1', role: 'assistant', parts: [{ type: 'tool-call', toolCallId: 'c1', toolName: 'search', args: {} }] },

@@ -1,5 +1,5 @@
 import { open, stat, type FileHandle } from 'node:fs/promises';
-import { BINARY_SAMPLE_BYTES, MAX_OUTPUT_CHARS, MAX_READ_FILE_BYTES, isBinary, resolveRealInProject } from './shared';
+import { BINARY_SAMPLE_BYTES, MAX_OUTPUT_CHARS, MAX_READ_FILE_BYTES, isBinary, pickEncoding, resolveRealInProject, type TextEncodingLabel } from './shared';
 
 const CHUNK_BYTES = 64 * 1024;
 const DEFAULT_LIMIT = 2000;
@@ -9,43 +9,6 @@ const DEFAULT_LIMIT = 2000;
 const MAX_LINE_CHARS = 2000;
 
 type ReadFileInput = { path: string; offset?: number; limit?: number };
-
-// WHATWG label for Latin-1: the standard folds latin1/iso-8859-1 onto the windows-1252
-// decoder, which is the one that actually maps 0x80-0x9F to printable characters.
-type TextEncodingLabel = 'utf-8' | 'windows-1252';
-
-/** Drops a multi-byte UTF-8 sequence left incomplete by the sample's cut-off point -
- * those trailing bytes are only half a character, and validating them would report a
- * perfectly good UTF-8 file as some other encoding. */
-function trimIncompleteUtf8Tail(sample: Buffer): Buffer {
-    for (let i = sample.length - 1, available = 1; i >= 0 && available <= 4; i--, available++) {
-        const byte = sample[i]!;
-        if ((byte & 0b1100_0000) === 0b1000_0000) continue; // continuation byte - keep walking back to the lead byte
-
-        const expected =
-            byte < 0x80 ? 1 : (byte & 0b1110_0000) === 0b1100_0000 ? 2 : (byte & 0b1111_0000) === 0b1110_0000 ? 3 : (byte & 0b1111_1000) === 0b1111_0000 ? 4 : 1;
-
-        return expected > available ? sample.subarray(0, i) : sample;
-    }
-
-    return sample;
-}
-
-/** Decoding a Latin-1 file as UTF-8 silently fills it with replacement characters, so the
- * encoding is decided up front from the same sample the binary sniff used: valid UTF-8
- * wins, anything else falls back to latin1. Only the sample is checked - a file whose
- * first 8 KB is clean UTF-8 but turns invalid later is rare enough to not be worth
- * scanning the whole file for. */
-function pickEncoding(sample: Buffer, sampleIsPartial: boolean): TextEncodingLabel {
-    const candidate = sampleIsPartial ? trimIncompleteUtf8Tail(sample) : sample;
-
-    try {
-        new TextDecoder('utf-8', { fatal: true }).decode(candidate);
-        return 'utf-8';
-    } catch {
-        return 'windows-1252';
-    }
-}
 
 /** Yields the file in chunks, starting with the sample already read for the binary sniff
  * so the head isn't read from disk twice. The buffer is reused between yields, so each

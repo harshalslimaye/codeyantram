@@ -68,7 +68,7 @@ export const toolCallPartSchema = z.object({
     // Filled in once the matching "tool-result" event arrives, so a completed
     // call and its output live in one part rather than two.
     result: z.string().optional(),
-    // Only present for a mutating tool (see isReadOnlyTool). "pending" once the
+    // Only present for a tool that needs approval (see toolNeedsApproval). "pending" once the
     // server's "tool-approval-request" event arrives; the CLI sets it to
     // "approved"/"denied" once the user decides, before replaying it in the
     // next request's history.
