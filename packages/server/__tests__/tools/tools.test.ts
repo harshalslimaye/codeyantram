@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TOOL_CATALOG, isReadOnlyTool } from '@codeyantram/shared';
 import { buildProjectTools } from '../../src/tools';
-import { MAX_EDIT_FILE_BYTES, MAX_OUTPUT_CHARS, MAX_READ_FILE_BYTES } from '../../src/tools/shared';
+import { MAX_EDIT_FILE_BYTES, MAX_NEW_DIR_DEPTH, MAX_OUTPUT_CHARS, MAX_PATH_SEGMENTS, MAX_READ_FILE_BYTES, MAX_WRITE_FILE_BYTES } from '../../src/tools/shared';
 
 let projectDir: string;
 
@@ -157,6 +157,28 @@ describe('read_file', () => {
             expect(result).toContain('Error:');
             expect(result).toContain(`reached the ${MAX_READ_FILE_BYTES}-byte scan limit`);
             expect(result).toContain('sed -n');
+        });
+    });
+
+    describe('diff accuracy', () => {
+        test('counts only the lines that actually changed, not the whole changed region', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'alpha\nbeta\ngamma\ndelta\n');
+            const result = await run(projectDir, 'write_file', { path: 'a.txt', content: 'alpha\nBETA\ngamma\n' });
+
+            // beta -> BETA and delta dropped: gamma is unchanged and must not be counted twice.
+            expect(result).toContain('+1/-2 lines');
+        });
+
+        test('keeps a large rewrite bounded instead of diffing it line by line', async () => {
+            const before = Array.from({ length: 2000 }, (_, i) => `old ${i}`).join('\n');
+            const after = Array.from({ length: 2000 }, (_, i) => `new ${i}`).join('\n');
+            await Bun.write(join(projectDir, 'big.txt'), `${before}\n`);
+
+            const result = await run(projectDir, 'write_file', { path: 'big.txt', content: `${after}\n`, dryRun: true });
+
+            expect(result).toContain('@@ big.txt:1 @@');
+            expect(result).toContain('more diff line(s)');
+            expect(result.split('\n').length).toBeLessThan(90);
         });
     });
 
@@ -513,15 +535,226 @@ describe('grep', () => {
 
 describe('write_file', () => {
     test('creates a file, including its parent directories', async () => {
-        const result = await run(projectDir, 'write_file', { path: 'nested/dir/file.txt', content: 'content' });
-        expect(result).toBe('Wrote nested/dir/file.txt');
-        expect(await readFile(join(projectDir, 'nested/dir/file.txt'), 'utf-8')).toBe('content');
+        const result = await run(projectDir, 'write_file', { path: 'nested/dir/file.txt', content: 'content\n' });
+
+        expect(result).toContain('Created nested/dir/file.txt');
+        expect(result).toContain('1 line / 8 bytes');
+        expect(result).toContain('created 2 parent directories');
+        expect(await readFile(join(projectDir, 'nested/dir/file.txt'), 'utf-8')).toBe('content\n');
     });
 
-    test('overwrites an existing file entirely', async () => {
-        await Bun.write(join(projectDir, 'a.txt'), 'old');
-        await run(projectDir, 'write_file', { path: 'a.txt', content: 'new' });
-        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('new');
+    test('overwrites an existing file entirely, reporting what that changed', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'one\ntwo\nthree\n');
+        const result = await run(projectDir, 'write_file', { path: 'a.txt', content: 'one\nthree\n' });
+
+        expect(result).toContain('Overwrote a.txt');
+        expect(result).toContain('+0/-1 lines');
+        expect(result).not.toContain('+1/-2');
+        expect(result).toContain('3 lines / 14 bytes → 2 lines / 10 bytes');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('one\nthree\n');
+    });
+
+    test('says so when an overwrite changes nothing', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'same\n');
+        expect(await run(projectDir, 'write_file', { path: 'a.txt', content: 'same\n' })).toContain('content unchanged');
+    });
+
+    describe('size limit', () => {
+        test('rejects content over the write limit without touching the filesystem', async () => {
+            const content = 'x'.repeat(MAX_WRITE_FILE_BYTES + 1);
+            const result = await run(projectDir, 'write_file', { path: 'big.txt', content });
+
+            expect(result).toContain('Error:');
+            expect(result).toContain(`over the ${MAX_WRITE_FILE_BYTES}-byte limit`);
+            expect(existsSync(join(projectDir, 'big.txt'))).toBe(false);
+        });
+
+        test('leaves an existing file untouched when the new content is too big', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'keep me');
+            await run(projectDir, 'write_file', { path: 'a.txt', content: 'x'.repeat(MAX_WRITE_FILE_BYTES + 1) });
+
+            expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('keep me');
+        });
+    });
+
+    describe('target checks', () => {
+        test('refuses to write onto a directory', async () => {
+            mkdirSync(join(projectDir, 'somedir'));
+            const result = await run(projectDir, 'write_file', { path: 'somedir', content: 'nope' });
+
+            expect(result).toContain('Error:');
+            expect(result).toContain('is a directory');
+        });
+
+        test('rejects a path outside the project root', async () => {
+            const result = await run(projectDir, 'write_file', { path: '../escape.txt', content: 'nope' });
+            expect(result).toContain('resolves outside the project root');
+        });
+
+        test('rejects a path that escapes through a symlinked parent directory', async () => {
+            const outside = mkdtempSync(join(tmpdir(), 'codeyantram-outside-'));
+            try {
+                symlinkSync(outside, join(projectDir, 'link'));
+                const result = await run(projectDir, 'write_file', { path: 'link/escape.txt', content: 'nope' });
+
+                expect(result).toContain('resolves outside the project root');
+                expect(existsSync(join(outside, 'escape.txt'))).toBe(false);
+            } finally {
+                rmSync(outside, { recursive: true, force: true });
+            }
+        });
+
+        test('rejects a target that is a symlink pointing outside the project root', async () => {
+            const outside = mkdtempSync(join(tmpdir(), 'codeyantram-outside-'));
+            try {
+                await Bun.write(join(outside, 'secret.txt'), 'secret');
+                symlinkSync(join(outside, 'secret.txt'), join(projectDir, 'innocent.txt'));
+                const result = await run(projectDir, 'write_file', { path: 'innocent.txt', content: 'nope' });
+
+                expect(result).toContain('resolves outside the project root');
+                expect(await readFile(join(outside, 'secret.txt'), 'utf-8')).toBe('secret');
+            } finally {
+                rmSync(outside, { recursive: true, force: true });
+            }
+        });
+
+        test('rejects a dangling symlink pointing outside the project root', async () => {
+            const outside = mkdtempSync(join(tmpdir(), 'codeyantram-outside-'));
+            try {
+                symlinkSync(join(outside, 'not-there.txt'), join(projectDir, 'dangling.txt'));
+                const result = await run(projectDir, 'write_file', { path: 'dangling.txt', content: 'nope' });
+
+                expect(result).toContain('resolves outside the project root');
+                expect(existsSync(join(outside, 'not-there.txt'))).toBe(false);
+            } finally {
+                rmSync(outside, { recursive: true, force: true });
+            }
+        });
+
+        test('writes through a symlink that stays inside the project, and says so', async () => {
+            mkdirSync(join(projectDir, 'real'));
+            await Bun.write(join(projectDir, 'real/target.txt'), 'old');
+            symlinkSync(join(projectDir, 'real/target.txt'), join(projectDir, 'alias.txt'));
+
+            const result = await run(projectDir, 'write_file', { path: 'alias.txt', content: 'new' });
+
+            expect(result).toContain('through a symlink');
+            expect(await readFile(join(projectDir, 'real/target.txt'), 'utf-8')).toBe('new');
+        });
+
+        test('refuses to create an implausible chain of new directories', async () => {
+            const deep = 'a/b/c/d/e/f/g/file.txt';
+            const result = await run(projectDir, 'write_file', { path: deep, content: 'nope' });
+
+            expect(result).toContain('Error:');
+            expect(result).toContain(`over the ${MAX_NEW_DIR_DEPTH}-directory limit`);
+            expect(existsSync(join(projectDir, 'a'))).toBe(false);
+        });
+
+        test('rejects a pathologically deep path outright', async () => {
+            const path = `${Array.from({ length: MAX_PATH_SEGMENTS + 1 }, (_, i) => `d${i}`).join('/')}/file.txt`;
+            const result = await run(projectDir, 'write_file', { path, content: 'nope' });
+
+            expect(result).toContain('Error:');
+            expect(result).toContain(`over the ${MAX_PATH_SEGMENTS}-level path limit`);
+            expect(existsSync(join(projectDir, 'd0'))).toBe(false);
+        });
+
+        test('allows a deep path whose directories already exist', async () => {
+            mkdirSync(join(projectDir, 'a/b/c/d/e/f/g'), { recursive: true });
+            const result = await run(projectDir, 'write_file', { path: 'a/b/c/d/e/f/g/file.txt', content: 'fine' });
+
+            expect(result).toContain('Created');
+            expect(await readFile(join(projectDir, 'a/b/c/d/e/f/g/file.txt'), 'utf-8')).toBe('fine');
+        });
+    });
+
+    describe('dryRun', () => {
+        test('previews an overwrite as a diff without writing', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'keep\nold line\ntail\n');
+            const result = await run(projectDir, 'write_file', { path: 'a.txt', content: 'keep\nnew line\ntail\n', dryRun: true });
+
+            expect(result).toContain('Dry run - no changes written to a.txt');
+            expect(result).toContain('@@ a.txt:1 @@');
+            expect(result).toContain(' keep');
+            expect(result).toContain('-old line');
+            expect(result).toContain('+new line');
+            expect(result).toContain(' tail');
+            expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('keep\nold line\ntail\n');
+        });
+
+        test('reports a create without writing the file', async () => {
+            const result = await run(projectDir, 'write_file', { path: 'new.txt', content: 'hello\n', dryRun: true });
+
+            expect(result).toContain('Dry run - would create new.txt');
+            expect(result).toContain('1 line / 6 bytes');
+            expect(existsSync(join(projectDir, 'new.txt'))).toBe(false);
+        });
+
+        test('does not record a backup to undo', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'original');
+            await run(projectDir, 'write_file', { path: 'a.txt', content: 'preview', dryRun: true });
+
+            expect(await run(projectDir, 'undo_edit', { path: 'a.txt' })).toContain('no backup available');
+        });
+
+        test('notes when identical content would change nothing', async () => {
+            await Bun.write(join(projectDir, 'a.txt'), 'same\n');
+            expect(await run(projectDir, 'write_file', { path: 'a.txt', content: 'same\n', dryRun: true })).toContain('identical');
+        });
+    });
+
+    describe('binary and oversized previous content', () => {
+        test('skips the diff when the file being overwritten is binary', async () => {
+            await Bun.write(join(projectDir, 'blob.bin'), Buffer.from([0, 1, 2, 3, 255]));
+            const result = await run(projectDir, 'write_file', { path: 'blob.bin', content: 'text' });
+
+            expect(result).toContain('Overwrote blob.bin');
+            expect(result).toContain('previous content is binary - diff not shown');
+            expect(result).not.toContain('lines');
+        });
+
+        test('reports that no backup was kept for an oversized file', async () => {
+            await Bun.write(join(projectDir, 'huge.txt'), 'x'.repeat(MAX_WRITE_FILE_BYTES + 1));
+            const result = await run(projectDir, 'write_file', { path: 'huge.txt', content: 'small' });
+
+            expect(result).toContain('no undo backup');
+            expect(await readFile(join(projectDir, 'huge.txt'), 'utf-8')).toBe('small');
+            expect(await run(projectDir, 'undo_edit', { path: 'huge.txt' })).toContain('no backup available');
+        });
+    });
+
+    describe('encoding', () => {
+        test('writes base64 content as raw bytes', async () => {
+            const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
+            const result = await run(projectDir, 'write_file', { path: 'image.png', content: bytes.toString('base64'), encoding: 'base64' });
+
+            expect(result).toContain('Created image.png');
+            expect(result).toContain('6 bytes');
+            expect(result).not.toContain('line');
+            expect(await readFile(join(projectDir, 'image.png'))).toEqual(bytes);
+        });
+
+        test('rejects content that is not valid base64', async () => {
+            const result = await run(projectDir, 'write_file', { path: 'image.png', content: 'not base64!!', encoding: 'base64' });
+
+            expect(result).toContain('Error:');
+            expect(result).toContain('not valid base64');
+            expect(existsSync(join(projectDir, 'image.png'))).toBe(false);
+        });
+
+        test('applies the size limit to the decoded bytes', async () => {
+            const content = Buffer.alloc(MAX_WRITE_FILE_BYTES + 1).toString('base64');
+            const result = await run(projectDir, 'write_file', { path: 'big.bin', content, encoding: 'base64' });
+
+            expect(result).toContain(`over the ${MAX_WRITE_FILE_BYTES}-byte limit`);
+            expect(existsSync(join(projectDir, 'big.bin'))).toBe(false);
+        });
+
+        test('writes a base64-looking string as text by default', async () => {
+            await run(projectDir, 'write_file', { path: 'a.txt', content: 'aGVsbG8=' });
+            expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('aGVsbG8=');
+        });
     });
 });
 
@@ -780,7 +1013,7 @@ describe('undo_edit', () => {
         const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
 
         expect(result).toContain('Error:');
-        expect(result).toContain('no edit_file backup available');
+        expect(result).toContain('no backup available');
         expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('untouched');
     });
 
@@ -791,7 +1024,7 @@ describe('undo_edit', () => {
 
         const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
         expect(result).toContain('Error:');
-        expect(result).toContain('no edit_file backup available');
+        expect(result).toContain('no backup available');
     });
 
     test('a dryRun edit_file call does not create a backup to undo', async () => {
@@ -800,15 +1033,35 @@ describe('undo_edit', () => {
 
         const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
         expect(result).toContain('Error:');
-        expect(result).toContain('no edit_file backup available');
+        expect(result).toContain('no backup available');
     });
 
-    test('does not cover a write_file write', async () => {
+    test('covers a write_file overwrite', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'original');
         await run(projectDir, 'write_file', { path: 'a.txt', content: 'from write_file' });
+
         const result = await run(projectDir, 'undo_edit', { path: 'a.txt' });
 
+        expect(result).toContain('Reverted a.txt');
+        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('original');
+    });
+
+    test('restores bytes a write_file overwrite would have corrupted as text', async () => {
+        const original = Buffer.from([0xff, 0xfe, 0x00, 0x01, 0x80]);
+        await Bun.write(join(projectDir, 'blob.bin'), original);
+        await run(projectDir, 'write_file', { path: 'blob.bin', content: 'plain text now' });
+
+        await run(projectDir, 'undo_edit', { path: 'blob.bin' });
+
+        expect(await readFile(join(projectDir, 'blob.bin'))).toEqual(original);
+    });
+
+    test('does not cover a file write_file created from scratch', async () => {
+        await run(projectDir, 'write_file', { path: 'new.txt', content: 'from write_file' });
+        const result = await run(projectDir, 'undo_edit', { path: 'new.txt' });
+
         expect(result).toContain('Error:');
-        expect(await readFile(join(projectDir, 'a.txt'), 'utf-8')).toBe('from write_file');
+        expect(await readFile(join(projectDir, 'new.txt'), 'utf-8')).toBe('from write_file');
     });
 });
 

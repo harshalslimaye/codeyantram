@@ -90,17 +90,26 @@ export const TOOL_CATALOG = [
     {
         name: "undo_edit",
         description:
-            "Revert a file to its state immediately before the most recent edit_file call that wrote to it, one step per call. Only covers edit_file writes made earlier in this session, not write_file or bash - and only while the server process has stayed up since that write.",
+            "Revert a file to its state immediately before the most recent edit_file or write_file call that wrote to it, one step per call. Only covers writes made by those two tools earlier in this session, not bash - and only while the server process has stayed up since that write. A file that write_file created from scratch has no previous state to restore.",
         inputSchema: z.object({
             path: z.string().min(1),
         }),
     },
     {
         name: "write_file",
-        description: "Create a file, or overwrite it entirely, with the given content.",
+        description:
+            "Create a file, or overwrite it entirely, with the given content. Overwriting is total - the previous contents are gone, so prefer edit_file when only part of a file changes. The result says whether the file was created or overwritten and how many lines that added and removed; pass dryRun to see that diff without writing, which is worth doing before overwriting a file you haven't read. Content is limited to 5 MB, and undo_edit can revert an overwrite made earlier in this session.",
         inputSchema: z.object({
             path: z.string().min(1),
             content: z.string(),
+            encoding: z
+                .enum(["utf-8", "base64"])
+                .optional()
+                .describe("How to interpret content. Use base64 to write binary data; defaults to utf-8 text."),
+            dryRun: z
+                .boolean()
+                .optional()
+                .describe("Preview the diff against the file's current contents instead of writing it - use this before overwriting a file whose contents you aren't sure of."),
         }),
     },
     {

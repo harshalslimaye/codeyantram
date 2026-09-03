@@ -1,7 +1,6 @@
 import { open, stat, type FileHandle } from 'node:fs/promises';
-import { MAX_OUTPUT_CHARS, MAX_READ_FILE_BYTES, resolveRealInProject } from './shared';
+import { BINARY_SAMPLE_BYTES, MAX_OUTPUT_CHARS, MAX_READ_FILE_BYTES, isBinary, resolveRealInProject } from './shared';
 
-const BINARY_SAMPLE_BYTES = 8192;
 const CHUNK_BYTES = 64 * 1024;
 const DEFAULT_LIMIT = 2000;
 /** Per-line ceiling. Stops one pathological line - a minified bundle, a base64 blob, a
@@ -14,19 +13,6 @@ type ReadFileInput = { path: string; offset?: number; limit?: number };
 // WHATWG label for Latin-1: the standard folds latin1/iso-8859-1 onto the windows-1252
 // decoder, which is the one that actually maps 0x80-0x9F to printable characters.
 type TextEncodingLabel = 'utf-8' | 'windows-1252';
-
-/** Sniffs the first few KB for null bytes or a high ratio of non-printable bytes, the same heuristic `file(1)` and most editors use. */
-function isBinary(sample: Buffer): boolean {
-    if (sample.length === 0) return false;
-
-    let nonPrintable = 0;
-    for (const byte of sample) {
-        if (byte === 0) return true;
-        if (byte < 9 || (byte > 13 && byte < 32)) nonPrintable++;
-    }
-
-    return nonPrintable / sample.length > 0.3;
-}
 
 /** Drops a multi-byte UTF-8 sequence left incomplete by the sample's cut-off point -
  * those trailing bytes are only half a character, and validating them would report a
