@@ -86,6 +86,7 @@ Run both in the project root you want the agent to work on — the server resolv
 | --- | --- |
 | `enter` | Send message |
 | `shift+enter` | Insert a newline in the input |
+| `↑` / `↓` | Step back and forward through this run's submitted prompts (inside a multi-line prompt, only from its first/last line) |
 | `tab` | Cycle agents (Talk ⇄ Build) |
 | `escape` | Cancel an in-flight stream; otherwise clear the prompt |
 | `ctrl+c` | Clear the prompt; quit when the prompt is empty |
@@ -257,6 +258,8 @@ Everything is stored as flat JSON under `~/.codeyantram/`:
 | --- | --- |
 | `auth.json` | Provider API keys (`0600`), managed via `/connect` |
 | `preferences.json` | Saved theme, model, and agent |
+
+Prompt history (what `↑`/`↓` step through in the input) is **not** on this list - it is held in memory for the lifetime of the process and is gone when you quit.
 
 Tests run with `NODE_ENV=test`, which disables disk writes so test suites never touch real config.
 
