@@ -4,6 +4,7 @@ import { ModelProvider } from '../providers/model';
 import { EffortProvider } from '../providers/effort';
 import { AgentProvider } from '../providers/agent';
 import { KeyboardProvider } from '../providers/keyboard';
+import { HistoryProvider } from '../providers/history';
 import { OverlayProvider } from '../providers/overlay';
 import { ToastProvider } from '../providers/toast';
 import { ChatProvider } from '../providers/chat';
@@ -18,23 +19,27 @@ type RootProps = {
 export function Root({ layers, children }: RootProps) {
     return (
         <KeyboardProvider layers={layers}>
-            <ThemeProvider>
-                <ModelProvider>
-                    <EffortProvider>
-                        <AgentProvider>
-                            <ToastProvider>
-                                {/* Needs useModel/useEffort (request payload) and useToast (surfacing stream errors), so it must sit inside all three. */}
-                                <ChatProvider>
-                                    <OverlayProvider>
-                                        {children}
-                                    </OverlayProvider>
-                                    <ApprovalOverlay />
-                                </ChatProvider>
-                            </ToastProvider>
-                        </AgentProvider>
-                    </EffortProvider>
-                </ModelProvider>
-            </ThemeProvider>
+            {/* Depends on nothing else here; it sits this high because it has to be above the
+                Home/Session swap, which unmounts the InputBar that records into it. */}
+            <HistoryProvider>
+                <ThemeProvider>
+                    <ModelProvider>
+                        <EffortProvider>
+                            <AgentProvider>
+                                <ToastProvider>
+                                    {/* Needs useModel/useEffort (request payload) and useToast (surfacing stream errors), so it must sit inside all three. */}
+                                    <ChatProvider>
+                                        <OverlayProvider>
+                                            {children}
+                                        </OverlayProvider>
+                                        <ApprovalOverlay />
+                                    </ChatProvider>
+                                </ToastProvider>
+                            </AgentProvider>
+                        </EffortProvider>
+                    </ModelProvider>
+                </ThemeProvider>
+            </HistoryProvider>
         </KeyboardProvider>
     );
 }
