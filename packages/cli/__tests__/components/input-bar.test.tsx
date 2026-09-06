@@ -1,8 +1,10 @@
 import { afterEach, describe, test, expect, spyOn } from 'bun:test';
 import type { ReactNode } from 'react';
 import { testRender } from '@opentui/react/test-utils';
+import { RGBA } from '@opentui/core';
 import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel } from '@codeyantram/shared';
 import { InputBar } from '../../src/components/input-bar';
+import { DEFAULT_THEME } from '../../src/theme';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
 import { EffortProvider } from '../../src/providers/effort';
@@ -639,6 +641,193 @@ describe('history chrome and /new', () => {
         // What the user typed is theirs to recall whether or not the
         // conversation it belonged to is still around.
         expect(frame).toContain('history[alpha]');
+        rendered.renderer.destroy();
+    });
+});
+
+describe('context usage', () => {
+    const originalFetch = global.fetch;
+
+    afterEach(() => {
+        global.fetch = originalFetch;
+    });
+
+    async function settle(rendered: Awaited<ReturnType<typeof mount>>): Promise<string> {
+        await tick(50);
+        await rendered.renderOnce();
+        return rendered.captureCharFrame();
+    }
+
+    // A turn's "done" event carries usage the same way the real server does (see
+    // chat-stream.ts) - just the one field this reads, since contextUsage ignores the rest.
+    function stubServerWithUsage(inputTokens: number) {
+        mockFetch(() =>
+            Promise.resolve(
+                sseResponse([
+                    'data: {"type":"start","messageId":"m1"}\n\n',
+                    `data: {"type":"done","durationMs":5,"usage":{"inputTokens":${inputTokens}}}\n\n`,
+                ]),
+            ),
+        );
+    }
+
+    async function submitOne(rendered: Awaited<ReturnType<typeof mount>>): Promise<string> {
+        await rendered.mockInput.typeText('hello', 15);
+        rendered.mockInput.pressEnter();
+        return settle(rendered);
+    }
+
+    // DEFAULT_MODEL is claude-sonnet-5, whose contextWindow is 1,000,000 (see models.ts) -
+    // chosen so each figure below lands on a whole percentage of it.
+    const CONTEXT_WINDOW = 1_000_000;
+
+    // Finds the one span rendering "<percent>% ·" so its actual fg color can be asserted
+    // directly, rather than inferring color from the plain character frame (which drops
+    // styling entirely).
+    function percentSpan(rendered: Awaited<ReturnType<typeof mount>>) {
+        for (const line of rendered.captureSpans().lines) {
+            for (const span of line.spans) {
+                if (/^\d+% ·$/.test(span.text)) return span;
+            }
+        }
+        return undefined;
+    }
+
+    // Wide enough that the percent reading, the history hint, and the send hint all fit
+    // on the footer's right-hand line together without clipping - see the width=60 note
+    // on the 'history chrome and /new' block above for the same concern with fewer hints.
+    const FOOTER_WIDTH = 80;
+
+    test('shows nothing before any turn has completed', async () => {
+        const rendered = await mount({ width: FOOTER_WIDTH });
+        const frame = await rendered.waitForFrame(f => f.includes('send'));
+
+        expect(frame).not.toMatch(/\d+%/);
+        rendered.renderer.destroy();
+    });
+
+    test("shows the model's context-window usage once a turn's usage lands", async () => {
+        stubServerWithUsage(0.3 * CONTEXT_WINDOW);
+        const rendered = await mount({ width: FOOTER_WIDTH });
+        await rendered.waitForFrame(f => f.includes('send'));
+
+        const frame = await submitOne(rendered);
+
+        expect(frame).toContain('30%');
+        rendered.renderer.destroy();
+    });
+
+    test('colors the reading with neither threshold color under the warn threshold', async () => {
+        stubServerWithUsage(0.3 * CONTEXT_WINDOW);
+        const rendered = await mount({ width: FOOTER_WIDTH });
+        await rendered.waitForFrame(f => f.includes('send'));
+        await submitOne(rendered);
+
+        const span = percentSpan(rendered);
+        expect(span).toBeDefined();
+        expect(span!.fg.equals(RGBA.fromHex(DEFAULT_THEME.colors.focus))).toBe(false);
+        expect(span!.fg.equals(RGBA.fromHex(DEFAULT_THEME.colors.error))).toBe(false);
+        rendered.renderer.destroy();
+    });
+
+    test('colors the reading with the warn color between the two thresholds', async () => {
+        stubServerWithUsage(0.6 * CONTEXT_WINDOW);
+        const rendered = await mount({ width: FOOTER_WIDTH });
+        await rendered.waitForFrame(f => f.includes('send'));
+        await submitOne(rendered);
+
+        const span = percentSpan(rendered);
+        expect(span).toBeDefined();
+        expect(span!.fg.equals(RGBA.fromHex(DEFAULT_THEME.colors.focus))).toBe(true);
+        rendered.renderer.destroy();
+    });
+
+    test('colors the reading with the danger color past the upper threshold', async () => {
+        stubServerWithUsage(0.9 * CONTEXT_WINDOW);
+        const rendered = await mount({ width: FOOTER_WIDTH });
+        await rendered.waitForFrame(f => f.includes('send'));
+        await submitOne(rendered);
+
+        const span = percentSpan(rendered);
+        expect(span).toBeDefined();
+        expect(span!.fg.equals(RGBA.fromHex(DEFAULT_THEME.colors.error))).toBe(true);
+        rendered.renderer.destroy();
+    });
+
+    test('hides the percentage again after /new clears the conversation', async () => {
+        stubServerWithUsage(0.3 * CONTEXT_WINDOW);
+        const rendered = await mount({ width: FOOTER_WIDTH });
+        await rendered.waitForFrame(f => f.includes('send'));
+
+        const withUsage = await submitOne(rendered);
+        expect(withUsage).toContain('30%');
+
+        await rendered.mockInput.typeText('/new', 15);
+        await rendered.waitForFrame(f => f.includes('Start a new session'));
+        rendered.mockInput.pressEnter();
+        const after = await settle(rendered);
+
+        expect(after).not.toMatch(/\d+%/);
+        rendered.renderer.destroy();
+    });
+});
+
+describe('ctrl+t shortcut', () => {
+    // Same settle pattern as the 'context usage' block above - a keypress's React
+    // update isn't in a frame until it flushes, and waitForFrame's scheduler-idle
+    // check can catch the gap between the two.
+    async function settle(rendered: Awaited<ReturnType<typeof mount>>): Promise<string> {
+        await tick(50);
+        await rendered.renderOnce();
+        return rendered.captureCharFrame();
+    }
+
+    test('opens the context window overlay', async () => {
+        const rendered = await mount({ width: 70 });
+        await rendered.waitForFrame(f => f.includes('ask anything'));
+
+        rendered.mockInput.pressKey('t', { ctrl: true });
+        const frame = await settle(rendered);
+
+        expect(frame).toContain('Context window');
+        rendered.renderer.destroy();
+    });
+
+    test('is inert while the command menu owns the keyboard', async () => {
+        const rendered = await mount({ width: 70 });
+        await rendered.waitForFrame(f => f.includes('ask anything'));
+
+        await rendered.mockInput.typeText('/mo', 15);
+        await rendered.waitForFrame(f => f.includes('models'));
+
+        // The command menu (the 'autocomplete' layer) owns the keyboard here, so root's
+        // handler - the one ctrl+t is registered on - must not see this key at all.
+        rendered.mockInput.pressKey('t', { ctrl: true });
+        const frame = await settle(rendered);
+
+        expect(frame).not.toContain('Context window');
+        expect(frame).toContain('models');
+        rendered.renderer.destroy();
+    });
+
+    test('restores focus to the input once the overlay is closed', async () => {
+        const rendered = await mount({ width: 70 });
+        await rendered.waitForFrame(f => f.includes('ask anything'));
+
+        rendered.mockInput.pressKey('t', { ctrl: true });
+        await settle(rendered);
+
+        rendered.mockInput.pressEscape();
+        await settleEscape();
+        await rendered.renderOnce();
+
+        // Typing lands in the input again rather than being swallowed, which is only
+        // true once the overlay has actually released the keyboard and focus back to it.
+        await rendered.mockInput.typeText('hello', 15);
+        const frame = await settle(rendered);
+
+        expect(frame).not.toContain('Context window');
+        expect(frame).toContain('hello');
         rendered.renderer.destroy();
     });
 });

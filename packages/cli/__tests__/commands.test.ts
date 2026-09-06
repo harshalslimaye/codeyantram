@@ -29,7 +29,7 @@ function stubArgs(): ActionArgs & {
 // Commands with real behavior beyond the generic "show an info toast"
 // placeholder — excluded from the blanket "shows a toast" check below, and
 // covered by their own assertions instead.
-const IMPLEMENTED_COMMANDS = ['new', 'exit', 'themes', 'models', 'effort', 'agents', 'connect', 'init', 'instructions'];
+const IMPLEMENTED_COMMANDS = ['new', 'exit', 'themes', 'models', 'effort', 'agents', 'connect', 'init', 'instructions', 'context'];
 
 describe('SLASH_COMMANDS', () => {
     test('every command has a name and description', () => {
@@ -52,10 +52,10 @@ describe('SLASH_COMMANDS', () => {
         }
     });
 
-    test('menu order matches the finalized New/Agents/Models/Effort/Connect/Init/Instructions/Sessions/Themes/Upgrade/Support/Exit list', () => {
+    test('menu order matches the finalized New/Agents/Models/Effort/Connect/Init/Instructions/Sessions/Context/Themes/Upgrade/Support/Exit list', () => {
         const names = SLASH_COMMANDS.map(command => command.name);
         expect(names).toEqual([
-            'new', 'agents', 'models', 'effort', 'connect', 'init', 'instructions', 'sessions', 'themes', 'upgrade', 'support', 'exit',
+            'new', 'agents', 'models', 'effort', 'connect', 'init', 'instructions', 'sessions', 'context', 'themes', 'upgrade', 'support', 'exit',
         ]);
     });
 });
@@ -167,6 +167,19 @@ describe('command actions', () => {
 
         expect(args.overlay).toHaveBeenCalledTimes(1);
         expect(args.overlay.mock.calls[0]?.[0]).toBe('Agents');
+        expect(args.populate).not.toHaveBeenCalled();
+        expect(args.exit).not.toHaveBeenCalled();
+    });
+
+    test('context opens an overlay instead of populating or exiting', () => {
+        const contextCommand = SLASH_COMMANDS.find(command => command.name === 'context');
+        expect(contextCommand).toBeDefined();
+
+        const args = stubArgs();
+        contextCommand!.action(args);
+
+        expect(args.overlay).toHaveBeenCalledTimes(1);
+        expect(args.overlay.mock.calls[0]?.[0]).toBe('Context window');
         expect(args.populate).not.toHaveBeenCalled();
         expect(args.exit).not.toHaveBeenCalled();
     });

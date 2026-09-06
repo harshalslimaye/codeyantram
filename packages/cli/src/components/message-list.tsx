@@ -3,10 +3,7 @@ import type { AssistantMessage, ChatMessage, MessagePart, TokenUsage, ToolCallPa
 import { useTheme } from '../providers/theme';
 import { getAppTreeSitterClient } from '../tree-sitter-client';
 import type { ThemeColors } from '../theme';
-
-function formatTokenCount(count: number): string {
-    return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
-}
+import { formatTokenCount } from '../utils/format';
 
 function formatBytes(bytes: number): string {
     return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)}KB` : `${bytes}B`;

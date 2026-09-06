@@ -33,6 +33,13 @@ type SupportedChatModelDefinition = {
     supportedEffortLevels: readonly EffortLevel[];
     // What the provider applies when no effort is sent. Omitted when the model takes no effort.
     defaultEffortLevel?: EffortLevel;
+    // The provider's own input ceiling, in tokens - system prompt, tool schemas, and every
+    // message in the conversation must fit under this. Required (not optional) so the
+    // catalog's `satisfies` check forces every model to carry a real figure rather than
+    // letting one silently fall back to `undefined` and break the context-usage
+    // calculation for just that model. Sourced from each provider's own docs, not
+    // measured - a provider can move this number without notice.
+    contextWindow: number;
 };
 
 export const SUPPORTED_CHAT_MODELS = [
@@ -41,53 +48,74 @@ export const SUPPORTED_CHAT_MODELS = [
         provider: "anthropic",
         supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
         defaultEffortLevel: "high",
+        // 1M tokens, standard - no beta header required. platform.claude.com/docs/en/build-with-claude/context-windows
+        contextWindow: 1_000_000,
     },
     {
         id: "claude-opus-5",
         provider: "anthropic",
         supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
         defaultEffortLevel: "high",
+        // 1M tokens, standard - no beta header required. platform.claude.com/docs/en/build-with-claude/context-windows
+        contextWindow: 1_000_000,
     },
     {
         id: "claude-haiku-4-5",
         provider: "anthropic",
         supportedEffortLevels: [],
+        // platform.claude.com/docs/en/build-with-claude/context-windows
+        contextWindow: 200_000,
     },
     {
         id: "gpt-5.4",
         provider: "openai",
         supportedEffortLevels: ["none", "low", "medium", "high", "xhigh"],
         defaultEffortLevel: "none",
+        // developers.openai.com/api/docs/models/gpt-5.4
+        contextWindow: 1_050_000,
     },
     {
         id: "gpt-5.4-mini",
         provider: "openai",
         supportedEffortLevels: ["none", "low", "medium", "high", "xhigh"],
         defaultEffortLevel: "none",
+        // developers.openai.com/api/docs/models/gpt-5.4-mini
+        contextWindow: 400_000,
     },
     {
         id: "gpt-5.4-nano",
         provider: "openai",
         supportedEffortLevels: ["none", "low", "medium", "high", "xhigh"],
         defaultEffortLevel: "none",
+        // developers.openai.com/api/docs/models/gpt-5.4-nano
+        contextWindow: 400_000,
     },
     {
         id: "gemini-3.5-flash",
         provider: "google",
         supportedEffortLevels: ["minimal", "low", "medium", "high"],
         defaultEffortLevel: "medium",
+        // 1,048,576 tokens (2^20). deepmind.google/models/model-cards/gemini-3-5-flash
+        contextWindow: 1_048_576,
     },
     {
         id: "deepseek-v4-flash",
         provider: "deepseek",
         supportedEffortLevels: ["none", "low", "high", "max"],
         defaultEffortLevel: "high",
+        // 1M tokens, default across official DeepSeek services - not independently verified
+        // against a DeepSeek-owned page (their docs weren't reachable at lookup time);
+        // corroborated by multiple third-party model cards. Re-check before relying on it
+        // for anything more consequential than an approximate display.
+        contextWindow: 1_048_576,
     },
     {
         id: "deepseek-v4-pro",
         provider: "deepseek",
         supportedEffortLevels: ["none", "low", "high", "max"],
         defaultEffortLevel: "high",
+        // Same figure and same caveat as deepseek-v4-flash above.
+        contextWindow: 1_048_576,
     },
 ] as const satisfies SupportedChatModelDefinition[];
 

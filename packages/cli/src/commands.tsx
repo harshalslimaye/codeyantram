@@ -4,6 +4,7 @@ import { ModelPicker } from './components/model-picker';
 import { EffortPicker } from './components/effort-picker';
 import { AgentPicker } from './components/agent-picker';
 import { ConnectFlow } from './components/connect-flow';
+import { ContextOverlay } from './components/context-overlay';
 import type { ToastContextValue } from './providers/toast';
 
 export type ActionArgs = {
@@ -67,6 +68,13 @@ export const SLASH_COMMANDS: Command[] = [
         name: 'sessions',
         description: 'Switch session',
         action: args => args.toast.info('Switch session command selected')
+    },
+    {
+        // Same overlay as the ctrl+t shortcut in input-bar.tsx - this is the
+        // discoverable/typed path to it, not a second implementation.
+        name: 'context',
+        description: 'Show context window usage',
+        action: args => args.overlay('Context window', <ContextOverlay />)
     },
     {
         name: 'themes',

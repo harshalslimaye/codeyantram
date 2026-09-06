@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { TextAttributes } from '@opentui/core';
 import type { TextareaRenderable } from '@opentui/core';
 import { useKeyboard, useRenderer } from '@opentui/react';
+import { contextUsage } from '@codeyantram/shared';
 import { useTheme } from '../providers/theme';
 import { useModel } from '../providers/model';
 import { useEffort } from '../providers/effort';
@@ -10,8 +11,18 @@ import { getNextAgent } from '../agents';
 import { useChat } from '../providers/chat';
 import { useLayerStack } from '../providers/keyboard';
 import { useHistory } from '../providers/history';
+import { useOverlay } from '../providers/overlay';
 import { ROOT_LAYER } from '../keyboard';
 import { CommandMenu } from './command-menu';
+import { ContextOverlay } from './context-overlay';
+
+// Below this, the reading blends into the rest of the footer's dim chrome - there is
+// nothing worth flagging yet. Between the two, it's worth a glance; past the upper one,
+// worth a color the user notices without reading it. Percent, not token count: the raw
+// count means little without the model's own ceiling next to it, which only the overlay
+// (not this one-line footer) has room to show.
+const CONTEXT_WARN_PERCENT = 50;
+const CONTEXT_DANGER_PERCENT = 80;
 
 type InputBarProps = {
     placeholder?: string;
@@ -37,6 +48,7 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
     const { agent, setAgent } = useAgent();
     const chat = useChat();
     const history = useHistory();
+    const overlay = useOverlay();
     const [value, setValue] = useState('');
     const layers = useLayerStack();
     const renderer = useRenderer();
@@ -157,6 +169,12 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
             return;
         }
 
+        if (key.ctrl && key.name === 't') {
+            key.preventDefault();
+            overlay.show('Context window', <ContextOverlay />);
+            return;
+        }
+
         if (!(key.ctrl && key.name === 'c')) return;
 
         key.preventDefault();
@@ -166,6 +184,19 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
             renderer.destroy();
         }
     });
+
+    // Only ever reads what the provider has already reported (see contextUsage's own
+    // comment on why) - null until the first turn's "done" event lands, and left showing
+    // its last reading through a cancelled/errored turn rather than reverting to nothing.
+    const usage = contextUsage(chat.messages, model);
+    const contextColor =
+        usage === null
+            ? undefined
+            : usage.percent >= CONTEXT_DANGER_PERCENT
+                ? colors.error
+                : usage.percent >= CONTEXT_WARN_PERCENT
+                    ? colors.focus
+                    : undefined; // under the warn threshold blends in with the rest of the footer's dim text
 
     const handleSubmit = () => {
         if (chat.isStreaming) return;
@@ -213,6 +244,13 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
                         )}
                     </box>
                     <box flexDirection="row" gap={1}>
+                        {/* Absent until the first turn's usage lands - a percentage with
+                            nothing behind it yet would just be a confusing "0%". */}
+                        {usage !== null && (
+                            <text fg={contextColor} attributes={contextColor === undefined ? TextAttributes.DIM : undefined}>
+                                {Math.round(usage.percent)}% ·
+                            </text>
+                        )}
                         {/* Only once there is something to recall - on a fresh session the
                             hint would just be crowding the footer with an unusable key. */}
                         {history.entries.length > 0 && (
