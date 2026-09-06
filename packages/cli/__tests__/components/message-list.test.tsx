@@ -262,6 +262,44 @@ describe('MessageList', () => {
             rendered.renderer.destroy();
         });
 
+        test('breaks the input count down into cache reads and writes when the provider reports them', async () => {
+            const messages: ChatMessage[] = [
+                {
+                    id: '1',
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: 'hi' }],
+                    usage: { inputTokens: 1200, outputTokens: 45, cacheReadTokens: 1100, cacheWriteTokens: 90 },
+                },
+            ];
+
+            const rendered = await mount(messages);
+            const frame = await rendered.waitForFrame(f => f.includes('cached'));
+
+            expect(frame).toContain('1.2k in');
+            expect(frame).toContain('1.1k cached');
+            expect(frame).toContain('+90 write');
+            rendered.renderer.destroy();
+        });
+
+        test('leaves the input count alone for a provider that reports no cache activity', async () => {
+            const messages: ChatMessage[] = [
+                {
+                    id: '1',
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: 'hi' }],
+                    usage: { inputTokens: 1200, outputTokens: 45, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                },
+            ];
+
+            const rendered = await mount(messages);
+            const frame = await rendered.waitForFrame(f => f.includes('1.2k in'));
+
+            expect(frame).toContain('1.2k in');
+            expect(frame).not.toContain('cached');
+            expect(frame).not.toContain('write');
+            rendered.renderer.destroy();
+        });
+
         test('shows the instruction filename and size alongside token usage when that turn loaded one', async () => {
             const messages: ChatMessage[] = [
                 {

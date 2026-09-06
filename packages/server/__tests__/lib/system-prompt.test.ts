@@ -3,7 +3,9 @@ import type { ProjectInstructions, PromptInstructions } from '../../src/lib/proj
 import { PROJECT_INSTRUCTIONS_BEGIN, PROJECT_INSTRUCTIONS_END, formatProjectInstructions } from '../../src/lib/project-instructions';
 import { getSystemMessages, getSystemPrompt } from '../../src/lib/system-prompt';
 
-const CACHE_CONTROL = { anthropic: { cacheControl: { type: 'ephemeral' as const } } };
+// The system prefix is cached for an hour, not the default five minutes - see
+// SYSTEM_CACHE_CONTROL in prompt-cache.ts for why the two halves differ.
+const CACHE_CONTROL = { anthropic: { cacheControl: { type: 'ephemeral' as const, ttl: '1h' as const } } };
 
 function file(text: string, filename = 'AGENTS.md'): ProjectInstructions {
     return { filename, text, bytes: Buffer.byteLength(text, 'utf-8'), truncated: false };

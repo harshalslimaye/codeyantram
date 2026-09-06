@@ -51,9 +51,21 @@ export type ToolApprovalStatus = z.infer<typeof toolApprovalStatusSchema>;
 // stream finishes. Fields are optional because not every provider reports
 // every count (e.g. totalTokens isn't always broken out).
 export const tokenUsageSchema = z.object({
+    // The whole prompt, cached or not: inputTokens = uncached + cacheReadTokens +
+    // cacheWriteTokens. The cache fields below are a breakdown of this number, never
+    // an addition to it - don't sum them with it.
     inputTokens: z.number().optional(),
     outputTokens: z.number().optional(),
     totalTokens: z.number().optional(),
+    // Prompt-cache activity for this turn: tokens served from cache (billed at a
+    // fraction of the input rate) and tokens written into it. Every supported provider
+    // reports this under its own name - Anthropic cache_read_input_tokens, OpenAI
+    // prompt_tokens_details.cached_tokens, Google cachedContentTokenCount, DeepSeek
+    // prompt_cache_hit_tokens - which the AI SDK normalizes into one shape for the
+    // server to forward (see chat-stream.ts). Optional like the rest: a provider that
+    // reports neither simply omits them.
+    cacheReadTokens: z.number().optional(),
+    cacheWriteTokens: z.number().optional(),
 });
 
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
