@@ -10,7 +10,7 @@ Built with **Bun**, **OpenTUI** (a React-based TUI renderer), **Hono**, and the 
 - **Multi-provider support** — Anthropic, OpenAI, Google, and DeepSeek from one catalog, each with its own API key.
 - **Reasoning effort control** — models that support it expose per-model effort levels (`none` → `max`), validated before a request is ever sent.
 - **Two agents with graduated tool access**:
-  - **Talk** — read-only tools (`read_file`, `list_dir`, `glob`, `grep`) plus `web_fetch` to read a URL — the one Talk tool that still asks for approval, since it leaves the machine.
+  - **Talk** — read-only tools (`read_file`, `list_dir`, `glob`, `grep`, `git`) plus `web_fetch` to read a URL — the one Talk tool that still asks for approval, since it leaves the machine.
   - **Build** — the full tool catalog, including mutating tools (`edit_file`, `write_file`, `bash`).
 - **Project instructions** — an `AGENTS.md` (or `CLAUDE.md`) at the project root is loaded into the system prompt on every turn, so the project's own conventions travel with each request.
 - **Tool approval gate** — every mutating tool pauses mid-turn and asks for explicit approval (`y`/`n`) before it runs.
@@ -18,6 +18,7 @@ Built with **Bun**, **OpenTUI** (a React-based TUI renderer), **Hono**, and the 
 - **Local persistence** — API keys (`auth.json`, `0600`) and preferences (`preferences.json`) under `~/.codeyantram/`.
 - **12 hand-tuned themes** and tree-sitter syntax highlighting across 17+ languages.
 - **Slash-command menu** with autocomplete (`/new`, `/agents`, `/models`, `/connect`, `/themes`, `/exit`, …).
+- **Read-only git without the shell** — a dedicated `git` tool runs ten inspection subcommands as argv (no shell, no pipes), so reading history, diffs, and blame costs no approval prompt and works in Talk too. Branches and tags are *arguments* here (`diff main...HEAD`, `show v1.2.0:src/config.ts`), not subcommands; every git command that writes still goes through `bash`.
 - **Sandboxed tool paths** — every tool path is resolved against the project root and can never escape it.
 - **Single-flight turns** — one response in flight at a time; escape/ctrl+c cancels cleanly.
 
@@ -168,6 +169,7 @@ Defined in `packages/shared/src/tools.ts` and executed by the server against the
 | `list_dir` | List a directory's entries | Read-only |
 | `glob` | Find files matching a glob | Read-only |
 | `grep` | Regex-search file contents | Read-only |
+| `git` | Read the repository — `status`, `log`, `diff`, `show`, `blame`, `describe`, `shortlog`, `rev-parse`, `ls-files`, `show-ref` | Read-only (Talk + Build) |
 | `edit_file` | Replace one exact, unique snippet | **Requires approval** (Build) |
 | `write_file` | Create/overwrite a file | **Requires approval** (Build) |
 | `bash` | Run a shell command (30s timeout) | **Requires approval** (Build) |

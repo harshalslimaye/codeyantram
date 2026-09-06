@@ -110,6 +110,7 @@ describe('MessageList', () => {
                     { type: 'tool-call', toolCallId: 'c1', toolName: 'read_file', args: { path: 'src/a.ts' } },
                     { type: 'tool-call', toolCallId: 'c2', toolName: 'grep', args: { pattern: 'TODO', path: 'src' } },
                     { type: 'tool-call', toolCallId: 'c3', toolName: 'bash', args: { command: 'ls -la' } },
+                    { type: 'tool-call', toolCallId: 'c4', toolName: 'git', args: { command: 'log', args: ['-n', '5', '--oneline'] } },
                 ],
             },
         ];
@@ -120,6 +121,8 @@ describe('MessageList', () => {
         expect(frame).toContain('src/a.ts');
         expect(frame).toContain('TODO in src');
         expect(frame).toContain('ls -la');
+        // A git call reads back the way it would be typed, arguments included.
+        expect(frame).toContain('git log -n 5 --oneline');
 
         rendered.renderer.destroy();
     });

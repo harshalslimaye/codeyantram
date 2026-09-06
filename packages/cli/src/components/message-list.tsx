@@ -111,6 +111,17 @@ function toolArgsSummary(part: ToolCallPart): string | null {
         case 'bash':
             return stringArg(args, 'command');
 
+        case 'git': {
+            const command = stringArg(args, 'command');
+            if (command === null) return null;
+
+            // Shown the way it would be typed - `git log -n 5 --oneline` - rather than as
+            // the subcommand alone, since the arguments are what say whether this is one
+            // commit or the whole history.
+            const gitArgs = Array.isArray(args.args) ? args.args.filter((arg): arg is string => typeof arg === 'string') : [];
+            return [`git ${command}`, ...gitArgs].join(' ');
+        }
+
         case 'web_fetch': {
             const url = stringArg(args, 'url');
             if (url === null) return null;
