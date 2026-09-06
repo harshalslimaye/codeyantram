@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+    GIT_READ_ONLY_SUBCOMMANDS,
     NETWORK_TOOLS,
     READ_ONLY_TOOLS,
     TOOL_CATALOG,
@@ -104,6 +105,54 @@ describe("toolNeedsApproval", () => {
         expect(toolNeedsApproval("write_file")).toBe(true);
         expect(toolNeedsApproval("edit_file")).toBe(true);
         expect(toolNeedsApproval("undo_edit")).toBe(true);
+    });
+});
+
+describe("the git tool", () => {
+    const inputSchema = findToolDefinition("git")!.inputSchema;
+
+    test("is classified read-only, so it runs unprompted and Talk can see it", () => {
+        expect(isReadOnlyTool("git")).toBe(true);
+        expect(toolNeedsApproval("git")).toBe(false);
+        expect(isTalkTool("git")).toBe(true);
+    });
+
+    test("accepts every subcommand on the allowlist", () => {
+        for (const command of GIT_READ_ONLY_SUBCOMMANDS) {
+            expect(inputSchema.safeParse({ command }).success).toBe(true);
+        }
+    });
+
+    test("rejects a writing subcommand at the schema, before any executor sees it", () => {
+        for (const command of ["commit", "add", "checkout", "push", "merge", "reset", "rebase"]) {
+            expect(inputSchema.safeParse({ command }).success).toBe(false);
+        }
+    });
+
+    // These list refs, but each also *writes* under the same name (`git stash` alone
+    // pushes a stash, `git branch <name>` creates one), so they're off the allowlist
+    // rather than being allowed with per-subcommand exceptions.
+    test("rejects the ref-listing subcommands that double as writing ones", () => {
+        for (const command of ["branch", "tag", "stash", "remote", "reflog"]) {
+            expect(inputSchema.safeParse({ command }).success).toBe(false);
+        }
+    });
+
+    test("takes arguments as separate entries rather than one shell-style string", () => {
+        expect(inputSchema.safeParse({ command: "log", args: ["-n", "5", "--oneline"] }).success).toBe(true);
+        expect(inputSchema.safeParse({ command: "log", args: "-n 5 --oneline" }).success).toBe(false);
+    });
+
+    test("names every subcommand it allows in its description, so the model needn't guess", () => {
+        const description = findToolDefinition("git")?.description ?? "";
+        for (const command of GIT_READ_ONLY_SUBCOMMANDS) {
+            expect(description).toContain(command);
+        }
+    });
+
+    test("tells the model that refs are arguments, since no subcommand lists them", () => {
+        const description = findToolDefinition("git")?.description ?? "";
+        expect(description).toContain("--decorate");
     });
 });
 

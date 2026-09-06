@@ -35,7 +35,7 @@ The `server` package hardcodes `--env-file=../../.env` in its `dev` and `test` s
 - `packages/cli/src/index.tsx` — CLI entry; `packages/server/src/index.ts` — Hono app entry.
 - **Cross-package imports use workspace source directly** (`@codeyantram/shared`, `@codeyantram/server` resolve to their `src/` via `module`), not built artifacts — no `dist`/build output exists. Editing `shared` changes behavior for the other two with no build step.
 - Everything that crosses the CLI/server boundary — message shapes, tool/agent/model catalogs, stream-event folding (`applyStreamEvent`), API route constants — is defined **once** in `shared` and tested there (`packages/shared/src/{schemas,stream,tools,agents,models,routes}.ts`). Keep contracts in `shared`, not inlined per package.
-- Tool definitions live in `shared/src/tools.ts`; tool *executors* and path sandboxing live in `packages/server/src/tools/`; `web_fetch`'s network policy is `server/src/tools/{url-policy,web-fetch}.ts`.
+- Tool definitions live in `shared/src/tools.ts`; tool *executors* and path sandboxing live in `packages/server/src/tools/`; `web_fetch`'s network policy is `server/src/tools/{url-policy,web-fetch}.ts`, and the `git` tool's read-only guarantee is its subcommand allowlist (`GIT_READ_ONLY_SUBCOMMANDS` in `shared`), not a per-command policy in the executor.
 
 ## Conventions that differ from defaults
 
@@ -46,6 +46,6 @@ The `server` package hardcodes `--env-file=../../.env` in its `dev` and `test` s
 ## Design invariants worth not breaking
 
 - **Single code path for success and failure** — the server delivers errors (including a missing API key) as `error` SSE events, not HTTP error statuses; aborted connections (neither `done` nor `error`) are normal cancels. Don't introduce HTTP-error branches.
-- **Mutating tools require user approval** — `edit_file`/`write_file`/`bash` (Build agent) and `web_fetch` (both agents, it leaves the machine). Read-only tools run unprompted. Tool loops are capped at 15 steps. Don't loosen these.
+- **Mutating tools require user approval** — `edit_file`/`write_file`/`bash` (Build agent) and `web_fetch` (both agents, it leaves the machine). Read-only tools run unprompted, `git` included: it skips the approval gate only because no subcommand on its allowlist can write in any mode. `branch`, `tag`, `stash`, `remote`, and `reflog` are off that list for exactly that reason — each hangs a writing form off the name it lists under (`git stash` alone pushes a stash) — so don't add a subcommand there without checking every mode and option it accepts. Tool loops are capped at 15 steps. Don't loosen these.
 - **Sandboxed by design** — every tool path resolves against the project root (`cwd`) and must not escape it.
 - Hono app routes are **chained into one expression** in `server/src/index.ts` so `typeof app` carries every route's type for the RPC client — add routes by extending the chain, not with separate `app.get(...)` statements.

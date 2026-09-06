@@ -2,6 +2,7 @@ import { tool, type ToolSet } from 'ai';
 import { TOOL_CATALOG, isTalkTool, toolNeedsApproval, type ToolName } from '@codeyantram/shared';
 import { execute as bash } from './bash';
 import { execute as editFile, undo as undoEdit } from './edit-file';
+import { execute as git } from './git';
 import { execute as glob } from './glob';
 import { execute as grep } from './grep';
 import { execute as listDir } from './list-dir';
@@ -20,6 +21,7 @@ const TOOL_EXECUTORS: Record<ToolName, (input: any, cwd: string) => Promise<stri
     undo_edit: undoEdit,
     write_file: writeFile,
     bash,
+    git,
     // web_fetch ignores the cwd argument every other executor uses - a fetch has no
     // project-relative path to resolve.
     web_fetch: webFetch,

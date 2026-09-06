@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -1197,6 +1198,130 @@ describe('bash', () => {
     test('runs with cwd set to the project root', async () => {
         await Bun.write(join(projectDir, 'marker.txt'), '');
         expect(await run(projectDir, 'bash', { command: 'ls' })).toContain('marker.txt');
+    });
+});
+
+describe('git', () => {
+    function fixtureGit(cwd: string, ...args: string[]): void {
+        const result = spawnSync('git', args, { cwd, stdio: 'ignore' });
+        if (result.status !== 0) throw new Error(`fixture setup failed: git ${args.join(' ')}`);
+    }
+
+    // A repo of its own per test, so nothing here can depend on - or disturb - the
+    // repository CodeYantram itself lives in. gpgsign is forced off because the machine
+    // running the suite may well sign commits by default.
+    async function initRepo(cwd: string): Promise<void> {
+        fixtureGit(cwd, 'init', '--initial-branch=main');
+        fixtureGit(cwd, 'config', 'user.email', 'test@example.com');
+        fixtureGit(cwd, 'config', 'user.name', 'CodeYantram Test');
+        fixtureGit(cwd, 'config', 'commit.gpgsign', 'false');
+        await Bun.write(join(cwd, 'file.txt'), 'one\n');
+        fixtureGit(cwd, 'add', 'file.txt');
+        fixtureGit(cwd, 'commit', '-m', 'first commit');
+    }
+
+    describe('reading a repository', () => {
+        beforeEach(async () => {
+            await initRepo(projectDir);
+        });
+
+        test('reports working-tree state', async () => {
+            await Bun.write(join(projectDir, 'new.txt'), '');
+            expect(await run(projectDir, 'git', { command: 'status', args: ['--short'] })).toContain('?? new.txt');
+        });
+
+        test('reads history', async () => {
+            expect(await run(projectDir, 'git', { command: 'log', args: ['--oneline'] })).toContain('first commit');
+        });
+
+        test('diffs an uncommitted change', async () => {
+            await Bun.write(join(projectDir, 'file.txt'), 'two\n');
+            const result = await run(projectDir, 'git', { command: 'diff' });
+            expect(result).toContain('-one');
+            expect(result).toContain('+two');
+        });
+
+        test('attributes a line to its author', async () => {
+            expect(await run(projectDir, 'git', { command: 'blame', args: ['file.txt'] })).toContain('CodeYantram Test');
+        });
+
+        test('reads a file as it was at a revision, which is how history reaches old content', async () => {
+            await Bun.write(join(projectDir, 'file.txt'), 'two\n');
+            expect(await run(projectDir, 'git', { command: 'show', args: ['HEAD:file.txt'] })).toBe('one');
+        });
+
+        test('resolves a revision', async () => {
+            expect(await run(projectDir, 'git', { command: 'rev-parse', args: ['--abbrev-ref', 'HEAD'] })).toBe('main');
+        });
+
+        test('describes a commit against its tags', async () => {
+            fixtureGit(projectDir, 'tag', 'v1.0.0');
+            expect(await run(projectDir, 'git', { command: 'describe', args: ['--tags'] })).toBe('v1.0.0');
+        });
+
+        // shortlog reads stdin when given no revision, and stdin is /dev/null here - so
+        // an explicit revision is the difference between a summary and silence.
+        test('summarizes authorship when given an explicit revision', async () => {
+            expect(await run(projectDir, 'git', { command: 'shortlog', args: ['-sn', 'HEAD'] })).toContain('CodeYantram Test');
+        });
+
+        test('lists tracked files', async () => {
+            expect(await run(projectDir, 'git', { command: 'ls-files' })).toBe('file.txt');
+        });
+
+        // -o means --others here, not --output: the file-writing guard must not touch it.
+        test('lists untracked files with ls-files -o', async () => {
+            await Bun.write(join(projectDir, 'new.txt'), '');
+            expect(await run(projectDir, 'git', { command: 'ls-files', args: ['-o', '--exclude-standard'] })).toBe('new.txt');
+        });
+
+        test('lists refs', async () => {
+            expect(await run(projectDir, 'git', { command: 'show-ref', args: ['--head'] })).toContain('refs/heads/main');
+        });
+
+        test('names the refs a commit belongs to, which is how branches surface without a branch subcommand', async () => {
+            expect(await run(projectDir, 'git', { command: 'log', args: ['--oneline', '--decorate', '-n', '1'] })).toContain('main');
+        });
+
+        test('returns "(no output)" rather than an empty string when a command says nothing', async () => {
+            expect(await run(projectDir, 'git', { command: 'status', args: ['--short'] })).toBe('(no output)');
+        });
+
+        test('passes arguments as argv, so shell syntax inside one stays literal', async () => {
+            const result = await run(projectDir, 'git', { command: 'show', args: ['-s', '--format=%s;echo pwned'] });
+            expect(result).toBe('first commit;echo pwned');
+        });
+
+        test('reports a failing git command as an error, with git\'s own message', async () => {
+            const result = await run(projectDir, 'git', { command: 'show', args: ['does-not-exist'] });
+            expect(result).toContain('Error (exit 128)');
+            expect(result).toContain('does-not-exist');
+        });
+
+        test('treats `diff --quiet` exit 1 as the answer it is, not as a failure', async () => {
+            await Bun.write(join(projectDir, 'file.txt'), 'two\n');
+            expect(await run(projectDir, 'git', { command: 'diff', args: ['--quiet'] })).toBe('Differences found (exit 1).');
+        });
+
+        test('`diff --quiet` with nothing changed still succeeds', async () => {
+            expect(await run(projectDir, 'git', { command: 'diff', args: ['--quiet'] })).toBe('(no output)');
+        });
+
+        // The whole read-only guarantee in one check: --output is the only way any of the
+        // allowed subcommands puts something on disk, and it never reaches git.
+        test('refuses --output, which would write the diff to a file instead of returning it', async () => {
+            const result = await run(projectDir, 'git', { command: 'diff', args: ['--output=out.patch'] });
+            expect(result).toContain('writes its output to a file');
+            expect(existsSync(join(projectDir, 'out.patch'))).toBe(false);
+        });
+
+        test('still allows a pathspec after --, which can only narrow what is read', async () => {
+            expect(await run(projectDir, 'git', { command: 'log', args: ['--oneline', '--', 'file.txt'] })).toContain('first commit');
+        });
+    });
+
+    test('says so plainly when the project root is not in a repository', async () => {
+        expect(await run(projectDir, 'git', { command: 'status' })).toBe('Error: the project root is not inside a git repository');
     });
 });
 
