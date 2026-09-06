@@ -1,5 +1,5 @@
 import { TextAttributes, type SyntaxStyle, type TreeSitterClient } from '@opentui/core';
-import type { AssistantMessage, ChatMessage, MessagePart, ToolCallPart } from '@codeyantram/shared';
+import type { AssistantMessage, ChatMessage, MessagePart, TokenUsage, ToolCallPart } from '@codeyantram/shared';
 import { useTheme } from '../providers/theme';
 import { getAppTreeSitterClient } from '../tree-sitter-client';
 import type { ThemeColors } from '../theme';
@@ -12,13 +12,29 @@ function formatBytes(bytes: number): string {
     return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)}KB` : `${bytes}B`;
 }
 
+/** The prompt-cache half of a turn's input tokens, as a parenthetical on the "in" count
+ * rather than segments of its own - `inputTokens` already includes both, so these break
+ * that number down instead of adding to it. Empty when the provider reported no cache
+ * activity, which is also what a cold first turn looks like; a session where this stays
+ * empty turn after turn means the prefix isn't caching. */
+function cacheSummary(usage: TokenUsage): string {
+    const notes: string[] = [];
+
+    if (usage.cacheReadTokens) notes.push(`${formatTokenCount(usage.cacheReadTokens)} cached`);
+    if (usage.cacheWriteTokens) notes.push(`+${formatTokenCount(usage.cacheWriteTokens)} write`);
+
+    return notes.length > 0 ? ` (${notes.join(', ')})` : '';
+}
+
 /** Per-turn cost summary: token usage and, when that turn's own AGENTS.md/CLAUDE.md rode
  * along, its size - both travel with the message they belong to (see chat.tsx's "start"
  * and "done" handling), so this always reflects that specific turn, not just the latest. */
 function usageSummary(message: AssistantMessage): string | null {
     const parts: string[] = [];
 
-    if (message.usage?.inputTokens !== undefined) parts.push(`${formatTokenCount(message.usage.inputTokens)} in`);
+    if (message.usage?.inputTokens !== undefined) {
+        parts.push(`${formatTokenCount(message.usage.inputTokens)} in${cacheSummary(message.usage)}`);
+    }
     if (message.usage?.outputTokens !== undefined) parts.push(`${formatTokenCount(message.usage.outputTokens)} out`);
 
     if (message.projectInstructions !== undefined) {

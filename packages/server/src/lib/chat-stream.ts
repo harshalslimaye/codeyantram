@@ -11,6 +11,7 @@ import {
 } from '@codeyantram/shared';
 import { MissingCredentialsError, resolveChatModel } from './models';
 import { loadPromptInstructions, type PromptInstructions } from './project-instructions';
+import { rollConversationCache, supportsCacheControl, withConversationCache } from './prompt-cache';
 import { getSystemMessages } from './system-prompt';
 import { buildProjectTools } from '../tools';
 
@@ -171,8 +172,12 @@ export async function streamChatResponse(
     try {
         const result = streamText({
             model: languageModel,
-            system: getSystemMessages(request.agent, instructions, model.provider === 'anthropic'),
-            messages: toModelMessages(request.messages),
+            system: getSystemMessages(request.agent, instructions, supportsCacheControl(model.provider)),
+            messages: withConversationCache(toModelMessages(request.messages), model.provider),
+            // Re-anchors the conversation breakpoints between tool steps, so a long turn's
+            // own output is cached as it accrues instead of being re-sent at full price on
+            // every step (see rollConversationCache).
+            prepareStep: ({ messages }) => rollConversationCache(messages, model.provider),
             providerOptions,
             abortSignal: abortController.signal,
             tools: toolsEnabled
@@ -258,6 +263,14 @@ export async function streamChatResponse(
                 inputTokens: usage.inputTokens,
                 outputTokens: usage.outputTokens,
                 totalTokens: usage.totalTokens,
+                // The cache half of the same input number (inputTokens already includes
+                // both), normalized by the AI SDK from whatever the provider called it.
+                // Forwarded so the CLI can show what a turn actually cost rather than
+                // what it looks like it cost - and so a change to prompt assembly that
+                // silently stops the prefix from caching shows up as these going to
+                // zero, instead of only as a larger bill.
+                cacheReadTokens: usage.inputTokenDetails?.cacheReadTokens,
+                cacheWriteTokens: usage.inputTokenDetails?.cacheWriteTokens,
             },
         });
     } catch (error) {

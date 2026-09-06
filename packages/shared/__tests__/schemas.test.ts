@@ -424,6 +424,26 @@ describe("chatStreamEventSchema", () => {
         expect(chatStreamEventSchema.safeParse({ type: "done", durationMs: 1234 }).success).toBe(true);
     });
 
+    test("accepts a done event whose usage carries prompt-cache counts", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "done",
+            durationMs: 1234,
+            usage: { inputTokens: 48200, outputTokens: 1300, cacheReadTokens: 46100, cacheWriteTokens: 1900 },
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("accepts a done event from a provider that reports no cache counts", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "done",
+            durationMs: 1234,
+            usage: { inputTokens: 10, outputTokens: 2 },
+        });
+
+        expect(result.success).toBe(true);
+    });
+
     test("accepts an error event carrying a known code", () => {
         const result = chatStreamEventSchema.safeParse({
             type: "error",

@@ -1,7 +1,7 @@
-import type { ProviderOptions } from '@ai-sdk/provider-utils';
 import type { SystemModelMessage } from 'ai';
 import type { AgentName } from '@codeyantram/shared';
 import { formatProjectInstructions, type PromptInstructions } from './project-instructions';
+import { SYSTEM_CACHE_CONTROL } from './prompt-cache';
 
 const SHARED_PROMPT = `You are CodeYantram, a terminal-based AI coding assistant. You help the user understand, navigate, and work with the project in their current working directory, using your tools rather than guessing at file contents or project structure.
 
@@ -34,12 +34,6 @@ const SYSTEM_PROMPTS = {
     Build: BUILD_PROMPT,
 } satisfies Record<AgentName, string>;
 
-// Anthropic's ephemeral cache_control breakpoint. Attached per-message below (never at the
-// top-level streamText providerOptions), and only when the caller says the resolved model
-// is actually Anthropic - an unrecognized providerOptions namespace is harmless to another
-// provider's SDK, but there's no reason to send it where it means nothing.
-const CACHE_CONTROL: ProviderOptions = { anthropic: { cacheControl: { type: 'ephemeral' } } };
-
 /**
  * Returns the system prompt as however many messages the request actually needs - one for
  * the static per-agent prompt, plus a second for the instructions block when there's one to
@@ -67,7 +61,7 @@ export function getSystemMessages(
         throw new Error(`No system prompt defined for agent "${agent}"`);
     }
 
-    const providerOptions = cacheable ? CACHE_CONTROL : undefined;
+    const providerOptions = cacheable ? SYSTEM_CACHE_CONTROL : undefined;
     const messages: SystemModelMessage[] = [{ role: 'system', content: prompt, providerOptions }];
 
     const block = instructions ? formatProjectInstructions(instructions.global, instructions.project) : '';
