@@ -79,6 +79,8 @@ bun run dev:cli
 
 Run both in the project root you want the agent to work on — the server resolves every tool path against the directory it was launched from.
 
+The server binds to `127.0.0.1` only (never `0.0.0.0`), and every route requires a local auth token the server mints on first start and the CLI reads back automatically — see [Local server auth](#local-server-auth) below. Running the CLI against a server on another machine (or a manually-copied config directory) needs that token to travel too; `API_URL` alone isn't enough.
+
 ## Usage
 
 ### Keybindings
@@ -244,13 +246,22 @@ A stream always opens with `start` and closes with `done` or `error`. A connecti
 
 ## Server API
 
-Mounted at `http://localhost:3001` (override with `API_URL` / `PORT`):
+Mounted at `http://127.0.0.1:3001` (override with `API_URL` / `PORT` — `PORT` doesn't change the bind address, only which local port it listens on):
 
 | Route | Method | Description |
 | --- | --- | --- |
 | `/health` | GET | Liveness check |
 | `/providers` | GET | Which providers have API keys configured |
 | `/chat` | POST | Streams one chat turn as SSE |
+
+### Local server auth
+
+The server is bound to loopback only, but loopback isn't a private channel — any process already running on the machine can reach `127.0.0.1`, not just the CLI. Every route (health check included) requires a token, checked against `~/.codeyantram/server-token.json` (`0600`, like `auth.json`):
+
+- The server mints one the first time it starts against a given config directory, and reuses it on every subsequent start — nothing to configure.
+- The CLI reads the same file and sends it automatically on every request; there's no setting to connect the two by hand as long as both point at the same config directory (the default, or a shared `CODEYANTRAM_CONFIG_DIR`).
+- A request without the right token gets refused: a plain `401` for `/health` and `/providers`, and — matching how every other `/chat`-time failure is delivered — a normal-looking SSE stream carrying a `start` then an `error` event, never a raw HTTP error status. The CLI's existing error handling covers it with no special case.
+- Deleting `server-token.json` and restarting the server rotates it; the CLI picks up the new value on its very next request, no CLI restart required.
 
 ## Configuration & State
 

@@ -1,12 +1,25 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { ChatRequest } from '@codeyantram/shared';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { getOrCreateServerToken, type ChatRequest } from '@codeyantram/shared';
 import { streamChat } from '../../src/api/chat';
 import { mockFetch, sseResponse } from '../support/sse';
 
 const originalFetch = global.fetch;
+const ORIGINAL_CONFIG_DIR_OVERRIDE = process.env.CODEYANTRAM_CONFIG_DIR;
+let tempDir: string | null = null;
 
 afterEach(() => {
     global.fetch = originalFetch;
+
+    if (ORIGINAL_CONFIG_DIR_OVERRIDE === undefined) delete process.env.CODEYANTRAM_CONFIG_DIR;
+    else process.env.CODEYANTRAM_CONFIG_DIR = ORIGINAL_CONFIG_DIR_OVERRIDE;
+
+    if (tempDir !== null) {
+        rmSync(tempDir, { recursive: true, force: true });
+        tempDir = null;
+    }
 });
 
 const request: ChatRequest = {
@@ -126,5 +139,38 @@ describe('streamChat', () => {
         const events = await collect(streamChat({ request, signal: controller.signal }));
 
         expect(events).toEqual([]);
+    });
+});
+
+describe('the server token header', () => {
+    test('sends the real token once one has actually been minted for this config dir', async () => {
+        tempDir = mkdtempSync(join(tmpdir(), 'codeyantram-chat-client-test-'));
+        process.env.CODEYANTRAM_CONFIG_DIR = tempDir;
+        const token = getOrCreateServerToken();
+
+        let sentToken: string | null | undefined;
+        mockFetch(async (_url, init) => {
+            sentToken = (init?.headers as Headers).get('x-codeyantram-token');
+            return sseResponse(['data: {"type":"done","durationMs":1}\n\n']);
+        });
+
+        await collect(streamChat({ request }));
+
+        expect(sentToken).toBe(token);
+    });
+
+    test('sends an empty token when none has been minted yet for this config dir - the server rejects it as any other missing/wrong token, not a special case', async () => {
+        tempDir = mkdtempSync(join(tmpdir(), 'codeyantram-chat-client-test-'));
+        process.env.CODEYANTRAM_CONFIG_DIR = tempDir; // real config dir, but nothing has written a token into it yet
+
+        let sentToken: string | null | undefined;
+        mockFetch(async (_url, init) => {
+            sentToken = (init?.headers as Headers).get('x-codeyantram-token');
+            return sseResponse(['data: {"type":"done","durationMs":1}\n\n']);
+        });
+
+        await collect(streamChat({ request }));
+
+        expect(sentToken).toBe('');
     });
 });

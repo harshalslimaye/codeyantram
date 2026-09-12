@@ -219,6 +219,145 @@ export const chatRequestSchema = z
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 
 // ---------------------------------------------------------------------------
+// Sessions
+//
+// The wire contract for the session API (packages/server/src/routers/sessions.ts) -
+// storage itself (schema, migrations, queries) lives in @codeyantram/sessions, which
+// never imports from here for its own row shapes. These schemas exist because a session
+// now crosses the CLI/server boundary, the same reason chatRequestSchema lives here
+// rather than being defined once per side.
+// ---------------------------------------------------------------------------
+
+// modelId/agentName/effort are plain, uncatalogued strings here - deliberately not
+// chatModelIdSchema/agentNameSchema/effortLevelSchema, and this is the one place in this
+// file that reuses a "shape" without reusing its validation. A session response can
+// describe one created months ago against a model or agent since removed from the
+// catalog, and it must still parse: the CLI's own resume flow (falling back to the
+// current default and telling the user, rather than refusing to open the session) can
+// only run once the data has actually been read back successfully. Catalog validation
+// still applies - just only going *in*, on createSessionRequestSchema below, where the
+// session is being created against the catalog as it exists right now.
+export const sessionSummarySchema = z.object({
+    id: z.string().min(1),
+    project: z.string().min(1),
+    title: z.string().min(1),
+    createdAt: z.number().int().nonnegative(),
+    updatedAt: z.number().int().nonnegative(),
+    modelId: z.string().min(1),
+    agentName: z.string().min(1),
+    effort: z.string().min(1).nullable(),
+    messageCount: z.number().int().nonnegative(),
+});
+
+export type SessionSummary = z.infer<typeof sessionSummarySchema>;
+
+// The full transcript, in seq order - what GET /sessions/:id returns. Reasoning parts
+// are included: they render on resume the same way they do live, and toRequestMessage
+// strips them again on the way back out to a provider, same as it always has.
+export const sessionSchema = sessionSummarySchema.extend({
+    messages: z.array(chatMessageSchema),
+});
+
+export type Session = z.infer<typeof sessionSchema>;
+
+// POST /sessions. Unlike the response schemas above, this validates against the live
+// catalogs - a session is being created right now, so it should use a model/agent/effort
+// combination the server actually supports today, exactly as chatRequestSchema already
+// requires for an ordinary turn. firstMessage is a UserMessage specifically (not
+// ChatMessage): a session always opens with one, matching
+// @codeyantram/sessions' NewSessionInput and the CLI's own "never create a session for
+// an empty conversation" rule.
+export const createSessionRequestSchema = z
+    .object({
+        cwd: z.string().min(1),
+        model: chatModelIdSchema,
+        agent: agentNameSchema,
+        effort: effortLevelSchema.optional(),
+        firstMessage: userMessageSchema,
+    })
+    .refine(
+        request => {
+            if (request.effort === undefined) return true;
+            const model = findSupportedChatModel(request.model);
+            return model !== undefined && modelSupportsEffort(model, request.effort);
+        },
+        {
+            message: "This model does not support the requested effort level",
+            path: ["effort"],
+        },
+    );
+
+export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
+
+export const createSessionResponseSchema = z.object({
+    id: z.string().min(1),
+});
+
+export type CreateSessionResponse = z.infer<typeof createSessionResponseSchema>;
+
+// GET /sessions?project=<cwd>
+export const listSessionsQuerySchema = z.object({
+    project: z.string().min(1),
+});
+
+export type ListSessionsQuery = z.infer<typeof listSessionsQuerySchema>;
+
+// Wrapped in a named field rather than a bare top-level array, matching
+// providersResponseSchema's own convention - room to add e.g. pagination metadata later
+// without a breaking response-shape change.
+export const listSessionsResponseSchema = z.object({
+    sessions: z.array(sessionSummarySchema),
+});
+
+export type ListSessionsResponse = z.infer<typeof listSessionsResponseSchema>;
+
+// GET /sessions/:id. "Not found" is a 404 with an ad hoc error body (see chatRequestSchema's
+// own validation-failure response), not a shape this schema describes - this only covers
+// the success case, same division providersResponseSchema draws.
+export const getSessionResponseSchema = z.object({
+    session: sessionSchema,
+});
+
+export type GetSessionResponse = z.infer<typeof getSessionResponseSchema>;
+
+// POST /sessions/:id/messages. The message is expected to already be finished (an
+// assistant message carries its usage, if it has any) - the store only ever accepts one
+// insert per message, never a partial one to patch later; see @codeyantram/sessions'
+// own "a row is inserted once, when it is final" rule.
+export const appendMessageRequestSchema = z.object({
+    message: chatMessageSchema,
+});
+
+export type AppendMessageRequest = z.infer<typeof appendMessageRequestSchema>;
+
+// POST /sessions/:id/approvals
+export const resolveApprovalRequestSchema = z.object({
+    toolCallId: z.string().min(1),
+    approved: z.boolean(),
+});
+
+export type ResolveApprovalRequest = z.infer<typeof resolveApprovalRequestSchema>;
+
+// PATCH /sessions/:id. The store trims and rejects an all-whitespace title on its own
+// (see renameSession in @codeyantram/sessions); .min(1) here only catches the cheaper,
+// literally-empty case at the schema layer, the same division of labor
+// chatRequestSchema's structural checks vs. its .refine() already draws.
+export const renameSessionRequestSchema = z.object({
+    title: z.string().min(1),
+});
+
+export type RenameSessionRequest = z.infer<typeof renameSessionRequestSchema>;
+
+// The uniform success response for every session route that has nothing more
+// interesting to report than "it worked" - append, resolve, rename, delete. One shared
+// shape rather than four identical ones.
+export const sessionActionResponseSchema = z.object({
+    ok: z.literal(true),
+});
+
+export type SessionActionResponse = z.infer<typeof sessionActionResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Stream events
 // ---------------------------------------------------------------------------
 

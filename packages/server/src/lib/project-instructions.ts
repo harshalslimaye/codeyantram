@@ -1,6 +1,6 @@
 import { open, stat } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
-import { CONFIG_DIR, isTestEnv } from '@codeyantram/shared';
+import { configDir, isTestEnv } from '@codeyantram/shared';
 import { BINARY_SAMPLE_BYTES, isBinary, pickEncoding, resolveRealInProject } from '../tools/shared';
 
 /** Instruction filenames checked at every level (global, project root, nested), in
@@ -135,7 +135,7 @@ export async function loadGlobalInstructions(): Promise<ProjectInstructions | nu
     if (isTestEnv()) return null;
 
     for (const filename of INSTRUCTION_FILENAMES) {
-        const loaded = await loadOne(CONFIG_DIR, filename);
+        const loaded = await loadOne(configDir(), filename);
         if (loaded !== null) return loaded;
     }
     return null;
