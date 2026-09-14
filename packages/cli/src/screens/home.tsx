@@ -3,6 +3,7 @@ import { TextAttributes } from '@opentui/core';
 import { InputBar } from '../components/input-bar';
 import { getCurrentBranch } from '../utils/git';
 import { getRootFolderName } from '@codeyantram/shared';
+import pkg from '../../package.json';
 
 export function Home() {
     const { colors } = useTheme();
@@ -25,7 +26,7 @@ export function Home() {
                     <box><text attributes={TextAttributes.DIM}>git:{branch}</text></box>                  
                 </box>
                 <box>
-                    <text attributes={TextAttributes.DIM}>v0.1.0</text>
+                    <text attributes={TextAttributes.DIM}>v{pkg.version}</text>
                 </box>
             </box>
         </box>
