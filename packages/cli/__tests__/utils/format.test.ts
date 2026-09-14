@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { formatRelativeTime, formatTokenCount } from '../../src/utils/format';
+import { formatRelativeTime, formatTokenCount, truncate } from '../../src/utils/format';
 
 describe('formatTokenCount', () => {
     test('leaves small counts as plain numbers', () => {
@@ -37,5 +37,18 @@ describe('formatRelativeTime', () => {
     test('falls back to a plain date once a week has passed', () => {
         const timestamp = now - 10 * 24 * 60 * 60_000;
         expect(formatRelativeTime(timestamp)).toBe(new Date(timestamp).toLocaleDateString());
+    });
+});
+
+describe('truncate', () => {
+    test('leaves text at or under the limit untouched', () => {
+        expect(truncate('short', 10)).toBe('short');
+        expect(truncate('exactly10!', 10)).toBe('exactly10!');
+    });
+
+    test('cuts longer text and appends an ellipsis, including it in the length budget', () => {
+        const result = truncate('this is definitely too long', 10);
+        expect(result).toBe('this is d…');
+        expect(result.length).toBe(10);
     });
 });

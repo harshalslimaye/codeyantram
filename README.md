@@ -265,16 +265,29 @@ The server is bound to loopback only, but loopback isn't a private channel — a
 
 ## Configuration & State
 
-Everything is stored as flat JSON under `~/.codeyantram/`:
+`~/.codeyantram/` (`0700`) holds everything CodeYantram persists — flat JSON files, plus a small SQLite database for chat sessions:
 
 | File | Contents |
 | --- | --- |
 | `auth.json` | Provider API keys (`0600`), managed via `/connect` |
 | `preferences.json` | Saved theme, model, and agent |
+| `server-token.json` | Local server auth token (`0600`) — see [Local server auth](#local-server-auth) |
+| `sessions.db` (+ `-wal`/`-shm`) | Chat session history (`0600` on all three files) — see below |
 
 Prompt history (what `↑`/`↓` step through in the input) is **not** on this list - it is held in memory for the lifetime of the process and is gone when you quit.
 
 Tests run with `NODE_ENV=test`, which disables disk writes so test suites never touch real config.
+
+### Session storage and retention
+
+Every message and tool-approval decision is saved to `sessions.db` as it happens (not just at the end of a conversation), so `/sessions` can list and resume past conversations across restarts. It has no size cap of its own — check its size any time with `du -h ~/.codeyantram/sessions.db*` — but it doesn't grow unbounded either: on every server start, a background sweep prunes, per project, whatever falls outside **both** of two independent caps (a session survives only if it clears both):
+
+| Cap | Default |
+| --- | --- |
+| Keep the N most recently updated sessions | 200 |
+| Drop anything older than | 90 days |
+
+A prune that actually deletes something runs `VACUUM` afterward to reclaim the freed space on disk. You can also delete a session directly from the `/sessions` picker with `ctrl+d`.
 
 ## Development
 

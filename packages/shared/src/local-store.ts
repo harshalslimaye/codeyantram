@@ -44,6 +44,12 @@ export function isRealIoEnabled(): boolean {
     return process.env.CODEYANTRAM_CONFIG_DIR !== undefined || !isTestEnv();
 }
 
+// The config directory holds nothing but secrets and a per-user database (API keys,
+// server auth token, and now sessions.db - full chat transcripts) - created at 0700
+// rather than mkdirSync's own default. One constant so every caller that creates it
+// (writeJsonFile below, and @codeyantram/sessions' getDb()) agrees on the exact value.
+export const CONFIG_DIR_MODE = 0o700;
+
 export function readJsonFile<T>(filename: string): T | undefined {
     if (!isRealIoEnabled()) return undefined;
 
@@ -58,7 +64,7 @@ export function writeJsonFile(filename: string, data: unknown, options?: { mode?
     if (!isRealIoEnabled()) return;
 
     try {
-        ensureDir(configDir());
+        ensureDir(configDir(), CONFIG_DIR_MODE);
         writeFileSync(join(configDir(), filename), JSON.stringify(data), {
             encoding: 'utf-8',
             mode: options?.mode,

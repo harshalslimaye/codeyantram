@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, openDb, resetDbForTests } from '../src/db';
@@ -54,6 +54,53 @@ describe('openDb', () => {
             }
         });
     });
+
+    test('hardens the main file and its WAL sidecars to 0600', async () => {
+        await withTempConfigDir(async dir => {
+            const path = join(dir, 'sessions.db');
+            const db = await openDb(`file:${path}`);
+            try {
+                expect(statSync(path).mode & 0o777).toBe(0o600);
+                expect(statSync(`${path}-wal`).mode & 0o777).toBe(0o600);
+                expect(statSync(`${path}-shm`).mode & 0o777).toBe(0o600);
+            } finally {
+                db.close();
+            }
+        });
+    });
+
+    test('retroactively hardens an existing database from before this hardening existed', async () => {
+        await withTempConfigDir(async dir => {
+            const path = join(dir, 'sessions.db');
+
+            // A first open creates the file (and its sidecars) already hardened -
+            // loosen them afterward to simulate a database that predates this feature.
+            const first = await openDb(`file:${path}`);
+            first.close();
+            chmodSync(path, 0o644);
+            chmodSync(`${path}-wal`, 0o644);
+            chmodSync(`${path}-shm`, 0o644);
+
+            const second = await openDb(`file:${path}`);
+            try {
+                expect(statSync(path).mode & 0o777).toBe(0o600);
+                expect(statSync(`${path}-wal`).mode & 0o777).toBe(0o600);
+                expect(statSync(`${path}-shm`).mode & 0o777).toBe(0o600);
+            } finally {
+                second.close();
+            }
+        });
+    });
+
+    test('does not attempt to chmod anything for a non-file URL', async () => {
+        const db = await openDb(':memory:');
+        try {
+            const { rows } = await db.execute('PRAGMA user_version');
+            expect(Number(rows[0]?.user_version)).toBe(latestSchemaVersion());
+        } finally {
+            db.close();
+        }
+    });
 });
 
 describe('getDb', () => {
@@ -70,6 +117,15 @@ describe('getDb', () => {
             process.env.CODEYANTRAM_CONFIG_DIR = dir;
             await getDb();
             expect(existsSync(join(dir, 'sessions.db'))).toBe(true);
+        });
+    });
+
+    test('creates configDir() at 0700 if it does not exist yet', async () => {
+        await withTempConfigDir(async parent => {
+            const dir = join(parent, 'config');
+            process.env.CODEYANTRAM_CONFIG_DIR = dir;
+            await getDb();
+            expect(statSync(dir).mode & 0o777).toBe(0o700);
         });
     });
 

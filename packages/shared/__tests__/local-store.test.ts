@@ -94,7 +94,7 @@ describe('CODEYANTRAM_CONFIG_DIR override', () => {
         });
     });
 
-    test('writeJsonFile creates the override directory if it does not exist yet', () => {
+    test('writeJsonFile creates the override directory (at 0700) if it does not exist yet', () => {
         withTempDir(parent => {
             const dir = join(parent, 'nested', 'config');
             process.env.CODEYANTRAM_CONFIG_DIR = dir;
@@ -102,6 +102,7 @@ describe('CODEYANTRAM_CONFIG_DIR override', () => {
             writeJsonFile('example.json', { created: true });
 
             expect(existsSync(join(dir, 'example.json'))).toBe(true);
+            expect(statSync(dir).mode & 0o777).toBe(0o700);
         });
     });
 });

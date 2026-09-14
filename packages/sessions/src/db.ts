@@ -1,9 +1,44 @@
 import { createClient, type Client } from '@libsql/client';
+import { chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import { configDir, ensureDir, isRealIoEnabled } from '@codeyantram/shared';
+import { CONFIG_DIR_MODE, configDir, ensureDir, isRealIoEnabled } from '@codeyantram/shared';
 import { migrate } from './migrations';
 
 const DB_FILENAME = 'sessions.db';
+
+// A real file's own permissions, not just the directory holding it - full chat
+// transcripts are worth protecting even if the directory around them were ever
+// misconfigured. Applied to the main file and both WAL sidecars (see hardenFilePermissions
+// below), and reapplied on every openDb() call rather than only when the file is first
+// created - the same "fix a pre-existing one, not just a fresh one" reasoning
+// ensureDir(..., CONFIG_DIR_MODE) already applies to the directory itself.
+const DB_FILE_MODE = 0o600;
+
+/**
+ * chmods `path` to DB_FILE_MODE, tolerating ENOENT - the two WAL sidecars
+ * (`sessions.db-wal`/`sessions.db-shm`) don't exist until something has actually written
+ * to the database at least once (verified directly: they appear only after the first
+ * CREATE TABLE, not merely after `PRAGMA journal_mode = WAL`), so calling this before
+ * `migrate()` has run its very first CREATE TABLE on a brand new database would otherwise
+ * throw on files that are about to exist but don't yet. Any other error (e.g. a real
+ * permissions problem) is not swallowed.
+ */
+function hardenFilePermissions(path: string): void {
+    try {
+        chmodSync(path, DB_FILE_MODE);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+}
+
+/** Extracts the real filesystem path from a libsql `file:` URL, or null for anything
+ * else (":memory:", a remote libsql:/https: URL) - there's no real file to chmod in
+ * those cases. Every production and test caller in this codebase uses a `file:` URL
+ * (see __tests__/support/db.ts), but openDb() itself is a general-purpose entry point
+ * that shouldn't assume that. */
+function filePathFromUrl(url: string): string | null {
+    return url.startsWith('file:') ? url.slice('file:'.length) : null;
+}
 
 /**
  * Opens a libsql client against `url`, applies the two pragmas every statement in this
@@ -27,6 +62,17 @@ export async function openDb(url: string): Promise<Client> {
     await db.execute('PRAGMA journal_mode = WAL');
     await db.execute('PRAGMA foreign_keys = ON');
     await migrate(db);
+
+    // After migrate(), not before: on a brand new database, migrate() is what actually
+    // performs the first write (CREATE TABLE), which is what brings the -wal/-shm
+    // sidecars into existence in the first place.
+    const path = filePathFromUrl(url);
+    if (path !== null) {
+        hardenFilePermissions(path);
+        hardenFilePermissions(`${path}-wal`);
+        hardenFilePermissions(`${path}-shm`);
+    }
+
     return db;
 }
 
@@ -37,10 +83,9 @@ let dbPromise: Promise<Client> | null = null;
  * reused after that. `sessions.db` lives inside configDir(), so it moves with a
  * CODEYANTRAM_CONFIG_DIR override the same way auth.json and preferences.json already do.
  *
- * Directory permissions are left at ensureDir's default here deliberately - hardening the
- * config directory to 0700 is Phase 6's job, done once for the directory as a whole
- * (auth.json and preferences.json already live there), not something this module should
- * do unilaterally the first time a database happens to be opened.
+ * ensureDir gets CONFIG_DIR_MODE (0700) here, same as writeJsonFile's own call in
+ * local-store.ts - whichever of the two actually creates the directory first is what
+ * sets its permissions.
  *
  * Guarded by isRealIoEnabled() - refuses to run at all under `bun test` with no
  * CODEYANTRAM_CONFIG_DIR override, rather than silently opening a real database at the
@@ -63,7 +108,7 @@ export function getDb(): Promise<Client> {
     }
 
     if (dbPromise === null) {
-        ensureDir(configDir());
+        ensureDir(configDir(), CONFIG_DIR_MODE);
         dbPromise = openDb(`file:${join(configDir(), DB_FILENAME)}`);
     }
     return dbPromise;

@@ -469,3 +469,45 @@ describe('pruneSessions', () => {
     });
 
 });
+
+describe('listProjects', () => {
+    test('returns nothing for an empty store', async () => {
+        await withTestDb(async db => {
+            const store = createSessionStore(db);
+            expect(await store.listProjects()).toEqual([]);
+        });
+    });
+
+    test('returns every distinct project, once each, regardless of how many sessions it has', async () => {
+        await withTestDb(async db => {
+            const store = createSessionStore(db);
+            await store.createSession({ project: '/repo-a', modelId: 'm', agentName: 'Build', firstMessage: userMessage('m1', 'a') });
+            await store.createSession({ project: '/repo-a', modelId: 'm', agentName: 'Build', firstMessage: userMessage('m2', 'b') });
+            await store.createSession({ project: '/repo-b', modelId: 'm', agentName: 'Build', firstMessage: userMessage('m3', 'c') });
+
+            const projects = await store.listProjects();
+            expect(projects.sort()).toEqual(['/repo-a', '/repo-b']);
+        });
+    });
+});
+
+describe('vacuum', () => {
+    test('runs without error and leaves the store fully usable afterward', async () => {
+        await withTestDb(async db => {
+            const store = createSessionStore(db);
+            const id = await store.createSession({
+                project: '/repo',
+                modelId: 'm',
+                agentName: 'Build',
+                firstMessage: userMessage('m1', 'hello'),
+            });
+            await store.deleteSession(id);
+
+            await expect(store.vacuum()).resolves.toBeUndefined();
+
+            // The connection still works normally after VACUUM - not left mid-transaction
+            // or otherwise disturbed.
+            expect(await store.listSessions('/repo')).toEqual([]);
+        });
+    });
+});

@@ -89,6 +89,17 @@ export interface SessionStore {
      * touched. Returns how many were deleted, for logging/tests. Deletes inside one
      * transaction, so a crash mid-prune can't leave it half done. */
     pruneSessions(options: PruneOptions): Promise<number>;
+    /** Every distinct project with at least one session, in no particular order - what a
+     * server-startup prune sweep (pruneSessions is scoped to one project at a time) needs
+     * to iterate over, since the server itself has no notion of "the current project"; it
+     * only ever sees whatever `cwd` each request happens to carry. */
+    listProjects(): Promise<string[]>;
+    /** Reclaims disk space pruneSessions' deletes freed up. A separate call, not run
+     * automatically inside pruneSessions itself, because VACUUM rewrites the entire
+     * database file and takes a lock incompatible with a concurrent write - worth doing
+     * once, right after a startup prune actually deleted something, not after every
+     * single delete/prune call this store makes over the server's lifetime. */
+    vacuum(): Promise<void>;
 }
 
 function toSessionSummary(row: SessionRow, messageCount: number): SessionSummary {
@@ -321,6 +332,17 @@ export function createSessionStore(db: Client): SessionStore {
         return toDelete.length;
     }
 
+    async function listProjects(): Promise<string[]> {
+        const result = await db.execute('SELECT DISTINCT project FROM sessions');
+        return result.rows.map(row => String(row.project));
+    }
+
+    async function vacuum(): Promise<void> {
+        // Not wrapped in withTransaction - VACUUM manages its own transaction internally
+        // and SQLite rejects running it inside one that's already open.
+        await db.execute('VACUUM');
+    }
+
     return {
         createSession,
         appendMessage,
@@ -330,5 +352,7 @@ export function createSessionStore(db: Client): SessionStore {
         renameSession,
         deleteSession,
         pruneSessions,
+        listProjects,
+        vacuum,
     };
 }

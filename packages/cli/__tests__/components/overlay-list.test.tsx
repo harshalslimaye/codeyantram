@@ -24,8 +24,10 @@ function mountList(overrides: Partial<{
     isActive: (item: string) => boolean;
     onTop: boolean;
     emptyMessage: string;
+    withOnDelete: boolean;
 }> = {}) {
     const onSelect = mock((_item: string) => {});
+    const onDelete = mock((_item: string) => {});
     const items = overrides.items ?? THREE_ITEMS;
     const layers = createLayerStack();
 
@@ -43,6 +45,7 @@ function mountList(overrides: Partial<{
                     getKey={item => item}
                     filter={(item, query) => item.startsWith(query)}
                     onSelect={onSelect}
+                    onDelete={overrides.withOnDelete ? onDelete : undefined}
                     renderer={renderItem}
                     isActive={overrides.isActive}
                     maxVisible={overrides.maxVisible}
@@ -53,7 +56,7 @@ function mountList(overrides: Partial<{
         { width: 40, height: 30, ...NO_BUILTIN_CTRL_C }
     ).then(setup => ({ ...setup, layers }));
 
-    return { setup, onSelect };
+    return { setup, onSelect, onDelete };
 }
 
 describe('rendering', () => {
@@ -217,6 +220,75 @@ describe('layer ownership', () => {
         await tick(20);
 
         expect(onSelect).not.toHaveBeenCalled();
+        rendered.renderer.destroy();
+    });
+});
+
+describe('onDelete', () => {
+    test('does nothing on ctrl+d when no onDelete was given', async () => {
+        const { setup } = mountList();
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(() => rendered.mockInput.pressKey('d', { ctrl: true })).not.toThrow();
+        rendered.renderer.destroy();
+    });
+
+    test('does not show the hint when no onDelete was given', async () => {
+        const { setup } = mountList();
+        const rendered = await setup;
+        const frame = await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(frame).not.toContain('ctrl+d');
+        rendered.renderer.destroy();
+    });
+
+    test('shows the hint when onDelete is given', async () => {
+        const { setup } = mountList({ withOnDelete: true });
+        const rendered = await setup;
+        const frame = await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(frame).toContain('ctrl+d delete');
+        rendered.renderer.destroy();
+    });
+
+    test('ctrl+d calls onDelete with the highlighted item', async () => {
+        const { setup, onDelete } = mountList({ withOnDelete: true });
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        rendered.mockInput.pressArrow('down');
+        await tick(20);
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await tick(20);
+
+        expect(onDelete).toHaveBeenCalledTimes(1);
+        expect(onDelete).toHaveBeenCalledWith('beta');
+        rendered.renderer.destroy();
+    });
+
+    test('does not fire onSelect', async () => {
+        const { setup, onSelect, onDelete } = mountList({ withOnDelete: true });
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await tick(20);
+
+        expect(onDelete).toHaveBeenCalledTimes(1);
+        expect(onSelect).not.toHaveBeenCalled();
+        rendered.renderer.destroy();
+    });
+
+    test('ignores ctrl+d while another layer owns the keyboard', async () => {
+        const { setup, onDelete } = mountList({ withOnDelete: true, onTop: false });
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await tick(20);
+
+        expect(onDelete).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
 });

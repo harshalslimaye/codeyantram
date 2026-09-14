@@ -26,3 +26,12 @@ export function formatRelativeTime(timestampMs: number): string {
 
     return new Date(timestampMs).toLocaleDateString();
 }
+
+/** Cuts `text` to `maxLength` (ellipsis included) if it's longer, otherwise leaves it
+ * alone - the same one-line-per-row treatment message-list.tsx already gives a long
+ * web_fetch URL, needed here for a session title long enough to wrap: OverlayList's row
+ * is a single-line flex row with a fixed-width column on the right (message count, age),
+ * and a wrapped title collides with it rather than pushing it down. */
+export function truncate(text: string, maxLength: number): string {
+    return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}

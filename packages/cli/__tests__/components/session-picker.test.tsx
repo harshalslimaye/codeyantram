@@ -19,20 +19,28 @@ function jsonResponse(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-/** A minimal stand-in for the real /sessions router - keyed by id for GET /sessions/:id,
- * one flat list for GET /sessions, everything else (there shouldn't be anything else in
- * these tests) answered generically. */
+/** A minimal stand-in for the real /sessions router - keyed by id for GET/DELETE
+ * /sessions/:id, one flat list for GET /sessions, everything else (there shouldn't be
+ * anything else in these tests) answered generically. `deleteCalls` records every id a
+ * DELETE actually hit, for tests that care whether one happened. */
 function mockSessionsApi(sessions: SessionSummary[], sessionsById: Record<string, Session> = {}) {
-    mockFetch(async input => {
+    const deleteCalls: string[] = [];
+    mockFetch(async (input, init) => {
         const url = String(input);
         const idMatch = /\/sessions\/([^/?]+)/.exec(url);
         if (idMatch) {
-            const session = sessionsById[idMatch[1] as string];
+            const id = idMatch[1] as string;
+            if (init?.method === 'DELETE') {
+                deleteCalls.push(id);
+                return sessionsById[id] === undefined ? jsonResponse({ error: 'not found' }, 404) : jsonResponse({ ok: true });
+            }
+            const session = sessionsById[id];
             return session === undefined ? jsonResponse({ error: 'not found' }, 404) : jsonResponse({ session });
         }
         if (url.includes('/sessions')) return jsonResponse({ sessions });
         return jsonResponse({ ok: true });
     });
+    return deleteCalls;
 }
 
 function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -58,9 +66,10 @@ function session(overrides: Partial<Session> = {}): Session {
     };
 }
 
-// "p" opens the real overlay with a real SessionPicker inside it, and a persisting
-// `current:<id>` label outside the overlay makes chat.sessionId observable both during and
-// after the picker is used - same shape as model-picker.test.tsx's own Harness.
+// "p" opens the real overlay with a real SessionPicker inside it, and persisting
+// `current:<id>`/`messages:<n>` labels outside the overlay make chat.sessionId and the
+// live conversation observable both during and after the picker is used - same shape as
+// model-picker.test.tsx's own Harness.
 function Harness() {
     const chat = useChat();
     const overlay = useOverlay();
@@ -72,7 +81,12 @@ function Harness() {
         overlay.show('Sessions', <SessionPicker />);
     });
 
-    return <text>current:{chat.sessionId ?? 'none'}</text>;
+    return (
+        <box>
+            <text>current:{chat.sessionId ?? 'none'}</text>
+            <text>messages:{chat.messages.length}</text>
+        </box>
+    );
 }
 
 function mount(width = 60, height = 30) {
@@ -158,6 +172,26 @@ describe('listing', () => {
         expect(frame).toContain('4 msgs');
         rendered.renderer.destroy();
     });
+
+    test('truncates a title long enough to collide with the message-count column', async () => {
+        const longTitle = 'be brutally honest. Do you feel the server is getting bloated';
+        mockSessionsApi([summary({ id: 's1', title: longTitle })]);
+
+        // Wide enough for the Overlay panel to sit at its own natural (unshrunk) width -
+        // the default 60-col mount used elsewhere in this file is narrower than the panel
+        // itself, so even a correctly truncated title would still wrap there.
+        const rendered = await mount(90, 30);
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('p');
+        await rendered.waitForFrame(f => f.includes('Sessions'));
+        const frame = await rendered.waitForFrame(f => f.includes('be brutally honest'));
+
+        expect(frame).not.toContain(longTitle);
+        expect(frame).toContain('…');
+        expect(frame).toContain('2 msgs');
+        rendered.renderer.destroy();
+    });
 });
 
 describe('selecting a session', () => {
@@ -199,6 +233,143 @@ describe('selecting a session', () => {
         const frame = rendered.captureCharFrame();
         expect(frame).toContain('Sessions');
         expect(frame).toContain('no longer exists');
+        rendered.renderer.destroy();
+    });
+});
+
+describe('deleting a session', () => {
+    test('ctrl+d deletes the highlighted session and removes it from the list', async () => {
+        const target = session({ id: 's1', title: 'Delete me' });
+        const deleteCalls = mockSessionsApi([summary({ id: 's1', title: 'Delete me' })], { s1: target });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('p');
+        await rendered.waitForFrame(f => f.includes('Sessions'));
+        await rendered.waitForFrame(f => f.includes('Delete me'));
+
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await tick(30);
+        await rendered.renderOnce();
+
+        expect(deleteCalls).toEqual(['s1']);
+        const frame = rendered.captureCharFrame();
+        // The row is gone (only the toast's own echo of the title remains) and the list
+        // falls back to its empty state.
+        expect(frame).toContain('No sessions yet');
+        expect(frame).toContain('Deleted "Delete me"');
+        rendered.renderer.destroy();
+    });
+
+    test('shows the ctrl+d hint', async () => {
+        mockSessionsApi([summary({ id: 's1', title: 'A session' })]);
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('p');
+        await rendered.waitForFrame(f => f.includes('Sessions'));
+        const frame = await rendered.waitForFrame(f => f.includes('A session'));
+
+        expect(frame).toContain('ctrl+d delete');
+        rendered.renderer.destroy();
+    });
+
+    test('reports a failure instead of removing the row if the delete request fails', async () => {
+        mockSessionsApi([summary({ id: 'gone', title: 'Already gone' })]);
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('p');
+        await rendered.waitForFrame(f => f.includes('Sessions'));
+        await rendered.waitForFrame(f => f.includes('Already gone'));
+
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await tick(30);
+        await rendered.renderOnce();
+
+        // The row survives - the store still has nothing named 'gone' to delete, so the
+        // request comes back 404 and this reports the failure rather than pretending it
+        // worked.
+        const frame = rendered.captureCharFrame();
+        expect(frame).toContain('Already gone');
+        expect(frame).toContain('Failed to delete session');
+        rendered.renderer.destroy();
+    });
+
+    test('deleting the session currently open in chat starts a new one, instead of leaving a stale transcript on screen', async () => {
+        const target = session({ id: 's1', title: 'Currently open' });
+        mockSessionsApi([summary({ id: 's1', title: 'Currently open' })], { s1: target });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        // Resume it first, so chat.sessionId/messages reflect a live conversation - the
+        // exact state this test needs to prove gets cleared. A settle tick between the
+        // list actually rendering and the next keypress, same as elsewhere in this file -
+        // OverlayList's own keyboard handler needs a moment to register once it mounts.
+        rendered.mockInput.pressKey('p');
+        await rendered.waitForFrame(f => f.includes('Currently open'));
+        await tick(20);
+        rendered.mockInput.pressEnter();
+        await tick(30);
+        await rendered.renderOnce();
+        expect(rendered.captureCharFrame()).toContain('current:s1');
+        expect(rendered.captureCharFrame()).toContain('messages:1');
+
+        // Reopening mounts a brand new SessionPicker, which re-fetches listSessions() -
+        // an extra settle tick here (unlike the fresh-mount case above) gives that mocked
+        // fetch round trip room to actually resolve before waitForFrame starts polling for
+        // its result; without it, waitForFrame's own poll loop doesn't yield the event
+        // loop enough for the promise chain to drain and times out.
+        rendered.mockInput.pressKey('p');
+        await tick(50);
+        await rendered.waitForFrame(f => f.includes('Currently open'));
+        await tick(20);
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await tick(30);
+        await rendered.renderOnce();
+
+        const frame = rendered.captureCharFrame();
+        expect(frame).toContain('current:none');
+        expect(frame).toContain('messages:0');
+        rendered.renderer.destroy();
+    });
+
+    test('deleting a different session leaves the currently open one untouched', async () => {
+        const open = session({ id: 's1', title: 'Stay open' });
+        mockSessionsApi(
+            [summary({ id: 's1', title: 'Stay open' }), summary({ id: 's2', title: 'Delete this one' })],
+            { s1: open },
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('p');
+        await rendered.waitForFrame(f => f.includes('Stay open'));
+        await tick(20);
+        rendered.mockInput.pressEnter();
+        await tick(30);
+        await rendered.renderOnce();
+        expect(rendered.captureCharFrame()).toContain('current:s1');
+
+        // See the settle-tick comment in the previous test - reopening re-fetches.
+        rendered.mockInput.pressKey('p');
+        await tick(50);
+        await rendered.waitForFrame(f => f.includes('Delete this one'));
+        await tick(20);
+        // "Stay open" sorts first (mockSessionsApi preserves list order) - step down once
+        // to land on "Delete this one" before deleting.
+        rendered.mockInput.pressArrow('down');
+        await tick(20);
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await tick(30);
+        await rendered.renderOnce();
+
+        const frame = rendered.captureCharFrame();
+        expect(frame).toContain('current:s1');
+        expect(frame).toContain('messages:1');
         rendered.renderer.destroy();
     });
 });

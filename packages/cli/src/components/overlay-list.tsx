@@ -24,6 +24,12 @@ type OverlayListProps<T> = {
     maxVisible?: number;
     /** Shown in place of the list when the search text matches nothing. */
     emptyMessage?: string;
+    /** Optional ctrl+d handler for the highlighted row - only the session picker uses
+     * this today, so it's opt-in rather than a capability every list gets for free. A
+     * dedicated modifier chord, not a bare key, since the search box is always focused
+     * and a bare key would either type into it or double as some other list action. Shows
+     * a "ctrl+d delete" hint next to the search box only when provided. */
+    onDelete?: (item: T) => void;
 };
 
 /**
@@ -41,6 +47,7 @@ export function OverlayList<T>({
     placeholder = 'Search',
     maxVisible = 6,
     emptyMessage = 'No results',
+    onDelete,
 }: OverlayListProps<T>) {
     const { colors } = useTheme();
     const layers = useLayerStack();
@@ -73,6 +80,13 @@ export function OverlayList<T>({
         if (!layers.isOnTop('overlay')) return;
         if (filtered.length === 0) return;
 
+        if (onDelete !== undefined && key.ctrl && key.name === 'd') {
+            key.preventDefault();
+            const item = filtered[selectedIndex];
+            if (item) onDelete(item);
+            return;
+        }
+
         switch (key.name) {
             case 'up':
                 key.preventDefault();
@@ -95,7 +109,12 @@ export function OverlayList<T>({
 
     return (
         <box>
-            <input focused value={query} onInput={setQuery} placeholder={placeholder} />
+            <box flexDirection="row" justifyContent="space-between">
+                <input focused value={query} onInput={setQuery} placeholder={placeholder} />
+                {onDelete !== undefined && (
+                    <text attributes={TextAttributes.DIM}>ctrl+d delete</text>
+                )}
+            </box>
             <box marginTop={1}>
                 {filtered.length === 0 ? (
                     <box paddingX={1}>
