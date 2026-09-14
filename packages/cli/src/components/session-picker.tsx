@@ -191,9 +191,14 @@ export function SessionPicker() {
                 // transcript sitting on screen, pointed at a session id the server no
                 // longer has - the next message would 404 and surface as a confusing
                 // "not saved" toast right after the user deliberately deleted it. newSession
-                // clears the live conversation and detaches autosave, the same as /new,
-                // so the next message starts a genuinely fresh one instead.
-                if (summary.id === chat.sessionId) chat.newSession();
+                // clears the live conversation and detaches autosave, the same as /new, so
+                // the next message starts a genuinely fresh one instead. Closing the overlay
+                // too actually navigates there - left open, the reset happens behind the
+                // picker and the user only sees it once they dismiss the picker themselves.
+                if (summary.id === chat.sessionId) {
+                    chat.newSession();
+                    overlay.close();
+                }
             } catch (error) {
                 toast.error(`Failed to delete session (${error instanceof Error ? error.message : String(error)})`);
             }

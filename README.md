@@ -177,7 +177,7 @@ Every message and tool-approval decision is saved to `~/.codeyantram/sessions.db
 | `ctrl+d` | Delete it immediately (no confirm step — it's a deliberate modifier chord) |
 | `escape` | Close the picker |
 
-Deleting the session you're currently in starts a new one automatically, the same as `/new` — otherwise the next message would fail against a session that no longer exists. Renaming the session you're currently in updates the Session screen's header immediately.
+Deleting the session you're currently in starts a new one automatically (the same as `/new`) and closes the picker, dropping you straight onto the fresh session — otherwise the next message would fail against a session that no longer exists. Deleting any other session just removes it from the list; the picker stays open. Renaming the session you're currently in updates the Session screen's header immediately.
 
 **Resuming at launch**, instead of through the picker:
 

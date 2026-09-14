@@ -342,6 +342,9 @@ describe('deleting a session', () => {
         const frame = rendered.captureCharFrame();
         expect(frame).toContain('current:none');
         expect(frame).toContain('messages:0');
+        // The picker itself closed too - the reset actually navigates the user to the new
+        // session screen, rather than leaving them looking at the (now-empty) picker.
+        expect(frame).not.toContain('Sessions');
         rendered.renderer.destroy();
     });
 
@@ -379,6 +382,9 @@ describe('deleting a session', () => {
         const frame = rendered.captureCharFrame();
         expect(frame).toContain('current:s1');
         expect(frame).toContain('messages:1');
+        // Unlike deleting the active session, this shouldn't navigate anywhere - the
+        // picker stays open so browsing/deleting other sessions can continue.
+        expect(frame).toContain('Sessions');
         rendered.renderer.destroy();
     });
 });
