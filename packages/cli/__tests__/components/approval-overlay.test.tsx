@@ -11,7 +11,7 @@ import { KeyboardProvider } from '../../src/providers/keyboard';
 import { ApprovalOverlay } from '../../src/components/approval-overlay';
 import { createLayerStack } from '../../src/keyboard';
 import { NO_BUILTIN_CTRL_C, tick } from '../support/mount';
-import { mockFetch, sseResponse } from '../support/sse';
+import { mockChatFetch, sseResponse } from '../support/sse';
 
 const originalFetch = global.fetch;
 
@@ -66,7 +66,7 @@ const APPROVAL_REQUEST_STREAM = [
 
 describe('rendering', () => {
     test('shows the tool name and its arguments once approval is pending', async () => {
-        mockFetch(async () => sseResponse(APPROVAL_REQUEST_STREAM));
+        mockChatFetch(async () => sseResponse(APPROVAL_REQUEST_STREAM));
 
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('streaming:false'));
@@ -89,7 +89,7 @@ describe('rendering', () => {
     });
 
     test('shows an egress warning naming the destination host for a network tool', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
                 'data: {"type":"tool-call","toolCallId":"c1","toolName":"web_fetch","args":{"url":"https://example.com/docs"}}\n\n',
@@ -110,7 +110,7 @@ describe('rendering', () => {
     });
 
     test('does not show an egress warning for a non-network tool', async () => {
-        mockFetch(async () => sseResponse(APPROVAL_REQUEST_STREAM));
+        mockChatFetch(async () => sseResponse(APPROVAL_REQUEST_STREAM));
 
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('streaming:false'));
@@ -126,7 +126,7 @@ describe('rendering', () => {
 describe('deciding', () => {
     test('pressing y approves, closes the overlay, and starts a follow-up turn', async () => {
         let call = 0;
-        mockFetch(async () => {
+        mockChatFetch(async () => {
             call++;
             return call === 1
                 ? sseResponse(APPROVAL_REQUEST_STREAM)
@@ -155,7 +155,7 @@ describe('deciding', () => {
 
     test('pressing n denies without a second request executing the tool', async () => {
         let call = 0;
-        mockFetch(async () => {
+        mockChatFetch(async () => {
             call++;
             return call === 1
                 ? sseResponse(APPROVAL_REQUEST_STREAM)
@@ -183,7 +183,7 @@ describe('deciding', () => {
 
     test('escape denies rather than leaving the overlay stuck open', async () => {
         let call = 0;
-        mockFetch(async () => {
+        mockChatFetch(async () => {
             call++;
             return call === 1
                 ? sseResponse(APPROVAL_REQUEST_STREAM)

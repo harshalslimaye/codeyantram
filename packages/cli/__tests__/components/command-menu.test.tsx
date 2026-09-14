@@ -1,7 +1,7 @@
 import { afterEach, describe, test, expect, mock, spyOn } from 'bun:test';
 import { CommandMenu } from '../../src/components/command-menu';
 import { mountDropup, settleEscape, tick } from '../support/mount';
-import { mockFetch, sseResponse } from '../support/sse';
+import { mockChatFetch, sseResponse } from '../support/sse';
 import { INIT_PROMPT } from '../../src/prompts/init';
 
 const originalFetch = global.fetch;
@@ -257,7 +257,7 @@ describe('layer ownership', () => {
 describe('selecting /init', () => {
     test('sends INIT_PROMPT as agent Build, regardless of the currently selected agent', async () => {
         const requests: unknown[] = [];
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             requests.push(JSON.parse(init?.body as string));
             return sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
@@ -287,7 +287,7 @@ describe('selecting /init', () => {
 describe('selecting /instructions', () => {
     test('toggles the preference and confirms via toast, without sending a message', async () => {
         let fetchCalls = 0;
-        mockFetch(async () => {
+        mockChatFetch(async () => {
             fetchCalls += 1;
             return sseResponse(['data: {"type":"start","messageId":"m1"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']);
         });

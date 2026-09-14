@@ -9,7 +9,7 @@ import { AgentProvider } from '../../src/providers/agent';
 import { ToastProvider } from '../../src/providers/toast';
 import { ChatProvider, useChat } from '../../src/providers/chat';
 import { NO_BUILTIN_CTRL_C, tick } from '../support/mount';
-import { mockFetch, pendingSseResponse, sseResponse } from '../support/sse';
+import { mockChatFetch, pendingSseResponse, sseResponse } from '../support/sse';
 
 const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
 // The catalog guarantees a model with any supportedEffortLevels also has a
@@ -78,7 +78,7 @@ function mount() {
 
 describe('sendMessage', () => {
     test('appends the user message and streams deltas into a new assistant message', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
                 'data: {"type":"text-delta","text":"Hi "}\n\n',
@@ -104,7 +104,7 @@ describe('sendMessage', () => {
 
     test('includes the current effort level in the request payload', async () => {
         const requests: unknown[] = [];
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             requests.push(JSON.parse(init?.body as string));
             return sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
@@ -127,7 +127,7 @@ describe('sendMessage', () => {
 
     test('an agent override in options wins over the currently selected agent, without waiting for a setAgent() re-render', async () => {
         const requests: unknown[] = [];
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             requests.push(JSON.parse(init?.body as string));
             return sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
@@ -151,7 +151,7 @@ describe('sendMessage', () => {
 
     test('omitting the override sends the currently selected agent, as before', async () => {
         const requests: unknown[] = [];
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             requests.push(JSON.parse(init?.body as string));
             return sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
@@ -187,7 +187,7 @@ describe('sendMessage', () => {
     test('a second call while one is already streaming is ignored (single-flight)', async () => {
         const pending = pendingSseResponse();
         let fetchCalls = 0;
-        mockFetch(async () => {
+        mockChatFetch(async () => {
             fetchCalls++;
             return pending.response;
         });
@@ -219,7 +219,7 @@ describe('sendMessage', () => {
 describe('project instructions', () => {
     test('sends useProjectInstructions: true by default', async () => {
         const requests: unknown[] = [];
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             requests.push(JSON.parse(init?.body as string));
             return sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
@@ -240,7 +240,7 @@ describe('project instructions', () => {
 
     test('setProjectInstructionsEnabled(false) turns useProjectInstructions off for the next request', async () => {
         const requests: unknown[] = [];
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             requests.push(JSON.parse(init?.body as string));
             return sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
@@ -264,7 +264,7 @@ describe('project instructions', () => {
     });
 
     test("travels with the message its own turn produced, not just whichever turn is most recent", async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1","projectInstructions":{"filename":"AGENTS.md","bytes":42,"truncated":false}}\n\n',
                 'data: {"type":"done","durationMs":5}\n\n',
@@ -284,7 +284,7 @@ describe('project instructions', () => {
             truncated: false,
         });
 
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse(['data: {"type":"start","messageId":"m2"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']),
         );
 
@@ -305,7 +305,7 @@ describe('project instructions', () => {
     });
 
     test('warns once when the instruction file is truncated, not again on a later turn', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1","projectInstructions":{"filename":"AGENTS.md","bytes":99999,"truncated":true}}\n\n',
                 'data: {"type":"done","durationMs":5}\n\n',
@@ -333,7 +333,7 @@ describe('project instructions', () => {
 
 describe('error handling', () => {
     test('missing_credentials shows a toast and drops the empty assistant message', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
                 'data: {"type":"error","code":"missing_credentials","message":"No API key for anthropic."}\n\n',
@@ -361,7 +361,7 @@ describe('error handling', () => {
 
 describe('tool approval', () => {
     test('a pending tool call surfaces as pendingApproval once the turn ends', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
                 'data: {"type":"tool-call","toolCallId":"c1","toolName":"bash","args":{"command":"rm x"}}\n\n',
@@ -391,7 +391,7 @@ describe('tool approval', () => {
     test('approving sends a follow-up request carrying the decision, with no new user message', async () => {
         const requests: unknown[] = [];
         let call = 0;
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             requests.push(JSON.parse(init?.body as string));
             call++;
             return call === 1
@@ -443,7 +443,7 @@ describe('tool approval', () => {
 
     test('denying sends the decision and never executes the tool', async () => {
         let call = 0;
-        mockFetch(async () => {
+        mockChatFetch(async () => {
             call++;
             return call === 1
                 ? sseResponse([
@@ -482,7 +482,7 @@ describe('tool approval', () => {
 
 describe('sendMessage onDone', () => {
     test('fires once the turn completes with nothing pending', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
                 'data: {"type":"text-delta","text":"hi"}\n\n',
@@ -503,7 +503,7 @@ describe('sendMessage onDone', () => {
     });
 
     test('does not fire while a tool call from this turn is still awaiting approval', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
                 'data: {"type":"tool-call","toolCallId":"c1","toolName":"bash","args":{}}\n\n',
@@ -526,7 +526,7 @@ describe('sendMessage onDone', () => {
 
     test('fires once a later turn - after the approval is resolved - finally has nothing pending', async () => {
         let call = 0;
-        mockFetch(async () => {
+        mockChatFetch(async () => {
             call++;
             return call === 1
                 ? sseResponse([
@@ -561,7 +561,7 @@ describe('sendMessage onDone', () => {
     });
 
     test('does not fire on error - the error toast is the completion signal there', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
                 'data: {"type":"error","code":"provider_error","message":"boom"}\n\n',
@@ -581,7 +581,7 @@ describe('sendMessage onDone', () => {
     });
 
     test('a later plain sendMessage does not inherit an earlier chain\'s callback', async () => {
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
                 'data: {"type":"error","code":"provider_error","message":"boom"}\n\n',
@@ -595,7 +595,7 @@ describe('sendMessage onDone', () => {
         captured?.sendMessage('hello', { onDone });
         await tick(50);
 
-        mockFetch(async () =>
+        mockChatFetch(async () =>
             sseResponse(['data: {"type":"start","messageId":"m2"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']),
         );
         captured?.sendMessage('a plain follow-up, no onDone');
@@ -610,7 +610,7 @@ describe('sendMessage onDone', () => {
 describe('cancel', () => {
     test('stops an in-flight stream without leaving isStreaming stuck true', async () => {
         const pending = pendingSseResponse();
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             pending.abortOn(init?.signal);
             return pending.response;
         });

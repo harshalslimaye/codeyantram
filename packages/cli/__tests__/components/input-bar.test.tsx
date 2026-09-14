@@ -17,7 +17,7 @@ import { ChatProvider, useChat } from '../../src/providers/chat';
 import { createLayerStack } from '../../src/keyboard';
 import { DEFAULT_AGENT } from '../../src/agents';
 import { NO_BUILTIN_CTRL_C, tick, settleEscape } from '../support/mount';
-import { mockFetch, sseResponse } from '../support/sse';
+import { mockChatFetch, sseResponse } from '../support/sse';
 
 const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
 // The catalog guarantees a model with any supportedEffortLevels also has a
@@ -275,7 +275,7 @@ describe('prompt history', () => {
     // cancellation), so nothing here has to model a response, and no error
     // toast lands on top of the frame being asserted.
     function stubServer() {
-        mockFetch(() => Promise.resolve(sseResponse([])));
+        mockChatFetch(() => Promise.resolve(sseResponse([])));
     }
 
     // Mirrors index.tsx's AppScreen: the first message swaps Home for
@@ -375,7 +375,7 @@ describe('history navigation', () => {
     // See the prompt-history block above for why the server is stubbed and
     // why assertions go through settle() rather than waitForFrame.
     function stubServer() {
-        mockFetch(() => Promise.resolve(sseResponse([])));
+        mockChatFetch(() => Promise.resolve(sseResponse([])));
     }
 
     async function settle(rendered: Awaited<ReturnType<typeof mount>>): Promise<string> {
@@ -597,7 +597,7 @@ describe('history chrome and /new', () => {
     });
 
     function stubServer() {
-        mockFetch(() => Promise.resolve(sseResponse([])));
+        mockChatFetch(() => Promise.resolve(sseResponse([])));
     }
 
     async function settle(rendered: Awaited<ReturnType<typeof mount>>): Promise<string> {
@@ -661,7 +661,7 @@ describe('context usage', () => {
     // A turn's "done" event carries usage the same way the real server does (see
     // chat-stream.ts) - just the one field this reads, since contextUsage ignores the rest.
     function stubServerWithUsage(inputTokens: number) {
-        mockFetch(() =>
+        mockChatFetch(() =>
             Promise.resolve(
                 sseResponse([
                     'data: {"type":"start","messageId":"m1"}\n\n',

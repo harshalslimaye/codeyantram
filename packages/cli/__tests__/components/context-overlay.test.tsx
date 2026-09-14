@@ -15,7 +15,7 @@ import { OverlayProvider, useOverlay } from '../../src/providers/overlay';
 import { KeyboardProvider, useLayerStack } from '../../src/providers/keyboard';
 import { createLayerStack, ROOT_LAYER } from '../../src/keyboard';
 import { NO_BUILTIN_CTRL_C, tick } from '../support/mount';
-import { mockFetch, sseResponse } from '../support/sse';
+import { mockChatFetch, sseResponse } from '../support/sse';
 
 const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
 // claude-sonnet-5's own contextWindow (see models.ts) - these tests pick usage figures
@@ -88,7 +88,7 @@ describe('with a completed turn', () => {
     });
 
     function stubServerWithUsage(usage: Record<string, number>) {
-        mockFetch(() =>
+        mockChatFetch(() =>
             Promise.resolve(
                 sseResponse([
                     'data: {"type":"start","messageId":"m1"}\n\n',
