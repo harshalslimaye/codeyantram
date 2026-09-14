@@ -18,10 +18,19 @@ import { getTreeSitterClient, type TreeSitterClient } from '@opentui/core';
 // fixes it. Computed at runtime via import.meta.resolve rather than
 // hardcoded, since Bun's node_modules/.bun/@opentui+core@<hash> directory
 // name isn't stable across installs or machines.
+//
+// Resolves the package's main entry ('@opentui/core'), not '@opentui/core/package.json' -
+// Bun's import.meta.resolve() allows that subpath regardless of the package's own exports
+// map, but Node's doesn't: @opentui/core's package.json declares an "exports" map with no
+// "./package.json" entry, so Node throws ERR_PACKAGE_PATH_NOT_EXPORTED for it. The main
+// entry ('.') sits at the same directory depth (.../@opentui/core/index.<node|bun>.js,
+// right alongside package.json), so the same three dirname() calls still land on the
+// right node_modules root either way - runtime-agnostic without needing an OTUI_ASSET_ROOT
+// override that itself differs by runtime.
 function resolveAssetRoot(): string {
-    const corePackageJsonPath = fileURLToPath(import.meta.resolve('@opentui/core/package.json'));
-    // package.json -> .../@opentui/core -> .../@opentui -> the node_modules root
-    return dirname(dirname(dirname(corePackageJsonPath)));
+    const coreEntryPath = fileURLToPath(import.meta.resolve('@opentui/core'));
+    // index.<node|bun>.js -> .../@opentui/core -> .../@opentui -> the node_modules root
+    return dirname(dirname(dirname(coreEntryPath)));
 }
 
 if (process.env.OTUI_ASSET_ROOT === undefined) {

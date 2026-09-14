@@ -13,11 +13,15 @@
     },
     "packages/cli": {
       "name": "@codeyantram/cli",
+      "version": "1.0.0",
+      "bin": {
+        "codeyantram": "dist/index.js",
+      },
       "dependencies": {
-        "@codeyantram/shared": "workspace:*",
+        "@libsql/client": "0.18.0",
         "@opentui/core": "^0.5.8",
         "@opentui/react": "^0.5.8",
-        "hono": "^4.13.5",
+        "@vscode/ripgrep": "^1.18.0",
         "react": "^19.2.8",
         "tree-sitter-bash": "^0.25.1",
         "tree-sitter-c": "^0.24.1",
@@ -36,7 +40,9 @@
       },
       "devDependencies": {
         "@codeyantram/server": "workspace:*",
+        "@codeyantram/shared": "workspace:*",
         "@types/react": "^19.2.18",
+        "hono": "^4.13.5",
         "typescript": "^5.9.3",
       },
     },
@@ -52,6 +58,7 @@
         "@codeyantram/shared": "workspace:*",
         "@hono/node-server": "^2.1.1",
         "@hono/zod-validator": "^0.9.0",
+        "@libsql/client": "0.18.0",
         "@vscode/ripgrep": "^1.18.0",
         "ai": "^7.0.84",
         "domhandler": "^5.0.3",

@@ -6,6 +6,11 @@ out
 dist
 *.tgz
 
+# copied into packages/cli at pack/publish time (see its package.json's "prepack") so the
+# real, canonical copies at the repo root ship in the npm tarball - never hand-edit these
+packages/cli/README.md
+packages/cli/LICENSE
+
 # code coverage
 coverage
 *.lcov

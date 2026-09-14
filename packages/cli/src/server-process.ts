@@ -1,22 +1,39 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { existsSync, openSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_DIR_MODE, configDir, ensureDir } from '@codeyantram/shared';
 
-// Points at the server's source entry, not a package import - @codeyantram/server stays
-// a devDependency-only relationship for the CLI (see api/client.ts's own comment on
-// AppType), so this spawns it as a separate OS process by file path instead of pulling
-// its code into the CLI's own module graph. Resolved from this module's own location
-// rather than the process cwd, same reasoning as the server's runtime/env.ts.
+// Points at the server's own process entry, not a package import - @codeyantram/server
+// stays a devDependency-only relationship for the CLI (see api/client.ts's own comment on
+// AppType), so this spawns it as a separate OS process by file path instead of pulling its
+// code into the CLI's own module graph.
 //
-// This path is monorepo-shaped (packages/cli/../server/src/index.ts) and only resolves
-// under a checkout of this repo - a real npm/bun install of the published CLI has no
-// sibling packages/server directory to find. Phase 5 (packaging) replaces this with a
-// lookup against the CLI's own installed dependency tree once the server ships as a
-// proper package with a built, Node-resolvable entry point; until then, this only works
-// against a monorepo checkout, exactly like `bun run dev:server` already only did.
-const SERVER_ENTRY_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../server/src/index.ts');
+// Two cases, checked in order:
+//  1. Built and co-located (dist/server.js next to this file's own compiled output) - the
+//     CLI's build script copies the server's bundled dist/index.js there (see
+//     package.json's "build"), so a published install finds it right beside the CLI's own
+//     entry, with no sibling packages/server directory required.
+//  2. Unbuilt monorepo dev (`bun run dev:cli` without a build first) - falls back to the
+//     server's raw TS source. Bun-only: Bun resolves a workspace package's own "module"
+//     field on the fly; Node's resolver can't (confirmed - see the Phase 2/5 audit notes),
+//     so there's no equivalent fallback for a Node-run, unbuilt CLI.
+function resolveServerEntryPath(): string {
+    const here = dirname(fileURLToPath(import.meta.url));
+
+    const bundledPath = resolve(here, 'server.js');
+    if (existsSync(bundledPath)) return bundledPath;
+
+    if (typeof Bun !== 'undefined') {
+        return resolve(here, '../../server/src/index.ts');
+    }
+
+    throw new Error(
+        `No bundled server found at ${bundledPath}, and Node can't run the server's raw ` +
+            `TypeScript source directly across workspace packages. Run \`bun run build\` ` +
+            `in packages/server (and packages/cli) first.`,
+    );
+}
 
 const STARTUP_TIMEOUT_MS = 10_000;
 const POLL_INTERVAL_MS = 150;
@@ -65,6 +82,10 @@ export async function ensureServerRunning(baseUrl: string): Promise<ManagedServe
         return null;
     }
 
+    // Resolved (and, on failure, thrown) before anything below opens a log file or spawns
+    // a process - nothing to clean up if there's no server to point at in the first place.
+    const entryPath = resolveServerEntryPath();
+
     ensureDir(configDir(), CONFIG_DIR_MODE);
     // The server's own console.log/console.error (prune-sweep summaries, shutdown
     // errors) would otherwise interleave with the TUI's own screen writes and corrupt
@@ -78,7 +99,7 @@ export async function ensureServerRunning(baseUrl: string): Promise<ManagedServe
     // baseUrl (tests, or a future --port flag) would otherwise spawn a server on the
     // wrong port and then poll a different one forever.
     const port = new URL(baseUrl).port;
-    const child = spawn(process.execPath, [SERVER_ENTRY_PATH], {
+    const child = spawn(process.execPath, [entryPath], {
         stdio: ['ignore', logFd, logFd],
         env: port === '' ? process.env : { ...process.env, PORT: port },
     });
