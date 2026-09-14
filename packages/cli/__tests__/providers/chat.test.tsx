@@ -357,6 +357,31 @@ describe('error handling', () => {
 
         rendered.renderer.destroy();
     });
+
+    test('a connection drop mid tool-call drops the whole assistant message, not just an empty one', async () => {
+        mockChatFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"tool-call","toolCallId":"c1","toolName":"read_file","args":{"path":"x"}}\n\n',
+                'data: {"type":"error","code":"internal_error","message":"socket connection was closed unexpectedly"}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        expect(captured?.isStreaming).toBe(false);
+        // The assistant message held a tool-call with no result - it can never be
+        // resolved now, so it must not survive into history for the next turn.
+        expect(captured?.messages).toEqual([
+            { id: expect.any(String), role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+        ]);
+
+        rendered.renderer.destroy();
+    });
 });
 
 describe('tool approval', () => {

@@ -308,9 +308,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
                                 // don't also fire a queued onDone on top of it.
                                 pendingOnDoneRef.current = null;
 
-                                // A turn that failed before any content arrived leaves
-                                // nothing worth showing - drop the empty assistant bubble
-                                // rather than rendering a blank message.
+                                // A turn that failed before any content arrived leaves nothing
+                                // worth showing - drop the empty assistant bubble rather than
+                                // rendering a blank message. Also drop it if it holds a tool-call
+                                // the stream never resolved: the connection died between the
+                                // "tool-call" event and its "tool-result", so this call will never
+                                // get a result now, and replaying it as history would send the
+                                // server (and the model) a tool-call with no matching tool-result -
+                                // invalid on every future turn, not just this one.
                                 const id = assistantMessageId;
                                 if (id !== null) {
                                     updateMessages(current =>
@@ -319,7 +324,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
                                                 !(
                                                     message.id === id &&
                                                     message.role === 'assistant' &&
-                                                    message.parts.length === 0
+                                                    (message.parts.length === 0 ||
+                                                        message.parts.some(
+                                                            part => part.type === 'tool-call' && part.result === undefined,
+                                                        ))
                                                 ),
                                         ),
                                     );
