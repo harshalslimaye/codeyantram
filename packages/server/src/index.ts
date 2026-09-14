@@ -5,6 +5,7 @@ import chatRouter from './routers/chat';
 import providersRouter from './routers/providers';
 import sessionsRouter from './routers/sessions';
 import { requireServerToken } from './lib/server-auth';
+import { serveApp, type RuntimeServerHandle } from './runtime/http';
 
 // Chained into one expression (rather than separate `app.get(...)`
 // statements) so `typeof app` actually carries every route's type - Hono's
@@ -90,40 +91,19 @@ if (!isTestEnv()) {
     void pruneOldSessions();
 }
 
-// Absent the prune sweep above, the sessions database would otherwise open lazily (see
-// @codeyantram/sessions' getDb()), the first time a /sessions request actually needs it -
-// nothing to do here for that half of "own the connection lifecycle" beyond what already
-// happens above. This is the other half: closing it cleanly on shutdown.
-//
-// Not a correctness requirement - SQLite's WAL mode already recovers cleanly from an
-// ungraceful kill - but closing runs a passive checkpoint, folding the WAL file back
-// into sessions.db itself, so the one file stays a complete snapshot rather than relying
-// on its -wal/-shm sidecars always traveling with it (see closeDb()'s own comment).
-//
-// Gated on isTestEnv(), not isRealIoEnabled() - several of this package's own tests
-// deliberately turn real I/O on via CODEYANTRAM_CONFIG_DIR for unrelated reasons (a real
-// session store to test against), and none of them want a live shutdown handler for
-// that. Every test file that imports `app` re-evaluates this module's top level once, so
-// without this guard a `bun test` run would both register this many times over (a
-// MaxListenersExceededWarning waiting to happen) and let a stray Ctrl+C during the test
-// run exit the process before Bun's own test runner gets to report results.
+const serverHandlePromise: Promise<RuntimeServerHandle> | null = isTestEnv()
+    ? null
+    : serveApp(app.fetch, { port, hostname: '127.0.0.1' });
+
 if (!isTestEnv()) {
     let shuttingDown = false;
     const shutdown = () => {
         if (shuttingDown) return;
         shuttingDown = true;
-        void closeDb().finally(() => process.exit(0));
+        void Promise.all([closeDb(), serverHandlePromise?.then(handle => handle.close())]).finally(() =>
+            process.exit(0),
+        );
     };
     process.once('SIGINT', shutdown);
     process.once('SIGTERM', shutdown);
 }
-
-export default {
-    fetch: app.fetch,
-    port,
-    // Bun's default hostname is 0.0.0.0 - every interface, not just this machine. Without
-    // this, the server (and every provider API key it holds) is reachable from anyone on
-    // the same network, not just local processes; the token above only defends against
-    // the latter.
-    hostname: '127.0.0.1',
-};
