@@ -1,3 +1,5 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { API_ROUTES, getOrCreateServerToken, isTestEnv } from '@codeyantram/shared';
 import { closeDb, getSessionStore } from '@codeyantram/sessions';
@@ -6,6 +8,16 @@ import providersRouter from './routers/providers';
 import sessionsRouter from './routers/sessions';
 import { requireServerToken } from './lib/server-auth';
 import { serveApp, type RuntimeServerHandle } from './runtime/http';
+import { loadEnvFile } from './runtime/env';
+
+// Loads the monorepo-root .env before anything below reads process.env (every current
+// reader - getOrCreateServerToken(), requireServerToken(), the provider key lookups -
+// only touches it lazily inside a function body, never at another module's own top
+// level, so this one call covers all of them). Resolved from this file's own location,
+// not the process cwd, for the same reason the old `bun --env-file=../../.env` dev-script
+// flag was relative to the script rather than wherever it got invoked from. See
+// runtime/env.ts for why this is a hand-rolled loader rather than a runtime-native one.
+loadEnvFile(resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env'));
 
 // Chained into one expression (rather than separate `app.get(...)`
 // statements) so `typeof app` actually carries every route's type - Hono's

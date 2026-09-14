@@ -5,9 +5,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun --env-file=../../.env run --watch src/index.ts",
+    "dev": "bun run --watch src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun --env-file=../../.env test"
+    "test": "bun test"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
