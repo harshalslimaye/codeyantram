@@ -65,7 +65,7 @@ async function createSession(overrides: Partial<typeof createBody> = {}): Promis
 }
 
 describe('POST /sessions', () => {
-    test('creates a session and returns its new id', async () => {
+    test('creates a session and returns its new id and derived title', async () => {
         const res = await req('/sessions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -73,9 +73,13 @@ describe('POST /sessions', () => {
         });
 
         expect(res.status).toBe(201);
-        const body = (await res.json()) as { id: string };
+        const body = (await res.json()) as { id: string; title: string };
         expect(typeof body.id).toBe('string');
         expect(body.id.length).toBeGreaterThan(0);
+        // Derived from createBody.firstMessage's text (see the userMessage() call above) -
+        // see @codeyantram/sessions' own title.ts for the derivation rule itself, tested
+        // there in full.
+        expect(body.title).toBe('fix the socket handshake');
     });
 
     test('rejects an unknown model', async () => {

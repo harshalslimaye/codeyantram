@@ -50,14 +50,14 @@ const app = new Hono()
         async c => {
             const request = c.req.valid('json');
             const store = await getSessionStore();
-            const id = await store.createSession({
+            const { id, title } = await store.createSession({
                 project: request.cwd,
                 modelId: request.model,
                 agentName: request.agent,
                 effort: request.effort ?? null,
                 firstMessage: request.firstMessage,
             });
-            return c.json({ id }, 201);
+            return c.json({ id, title }, 201);
         },
     )
     .get('/:id', async c => {

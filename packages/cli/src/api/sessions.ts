@@ -85,11 +85,12 @@ async function parseResponse<T>(res: ReadableResponse, schema: z.ZodType<T>, con
 }
 
 /** Creates a session and its first message atomically (see @codeyantram/sessions'
- * createSession) and returns the new session's id. */
-export async function createSession(body: CreateSessionRequest): Promise<string> {
+ * createSession) and returns the new session's id and its server-derived title -
+ * useSessionAutosave hands the title straight to chat.tsx's sessionTitle without a second
+ * round trip just to learn what the server decided it was. */
+export async function createSession(body: CreateSessionRequest): Promise<{ id: string; title: string }> {
     const res = await request(() => getApiClient().sessions.$post({ json: body }), 'Failed to create session');
-    const { id } = await parseResponse(res, createSessionResponseSchema, 'Failed to create session');
-    return id;
+    return parseResponse(res, createSessionResponseSchema, 'Failed to create session');
 }
 
 /** Every session for `project`, newest updated_at first - no messages, matching what

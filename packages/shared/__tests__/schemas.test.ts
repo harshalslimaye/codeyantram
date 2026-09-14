@@ -462,12 +462,20 @@ describe("createSessionRequestSchema", () => {
 });
 
 describe("createSessionResponseSchema", () => {
-    test("accepts an id", () => {
-        expect(createSessionResponseSchema.safeParse({ id: "s1" }).success).toBe(true);
+    test("accepts an id and title", () => {
+        expect(createSessionResponseSchema.safeParse({ id: "s1", title: "hello" }).success).toBe(true);
     });
 
     test("rejects an empty id", () => {
-        expect(createSessionResponseSchema.safeParse({ id: "" }).success).toBe(false);
+        expect(createSessionResponseSchema.safeParse({ id: "", title: "hello" }).success).toBe(false);
+    });
+
+    test("rejects an empty title", () => {
+        expect(createSessionResponseSchema.safeParse({ id: "s1", title: "" }).success).toBe(false);
+    });
+
+    test("rejects a missing title", () => {
+        expect(createSessionResponseSchema.safeParse({ id: "s1" }).success).toBe(false);
     });
 });
 

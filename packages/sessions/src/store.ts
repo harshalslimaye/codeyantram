@@ -59,8 +59,11 @@ export type PruneOptions = {
 
 export interface SessionStore {
     /** Creates a session and inserts its first message atomically, so a crash between
-     * the two can never leave an empty session row behind. Returns the new session's id. */
-    createSession(input: NewSessionInput): Promise<string>;
+     * the two can never leave an empty session row behind. Returns the new session's id
+     * and its derived title (see title.ts) - the caller (the HTTP router) needs both to
+     * answer POST /sessions without a second round trip just to learn the title it
+     * computed. */
+    createSession(input: NewSessionInput): Promise<{ id: string; title: string }>;
     /** Appends one already-finished message and bumps the session's updated_at, in one
      * transaction. Accepts either role - after the first message (handled by
      * createSession), a session alternates user and assistant messages through this. */
@@ -147,7 +150,7 @@ async function withTransaction<T>(db: Client, body: (tx: Transaction) => Promise
 }
 
 export function createSessionStore(db: Client): SessionStore {
-    async function createSession(input: NewSessionInput): Promise<string> {
+    async function createSession(input: NewSessionInput): Promise<{ id: string; title: string }> {
         const id = crypto.randomUUID();
         const now = Date.now();
         const title = deriveTitleFromMessage(input.firstMessage);
@@ -166,7 +169,7 @@ export function createSessionStore(db: Client): SessionStore {
             });
         });
 
-        return id;
+        return { id, title };
     }
 
     async function appendMessage(sessionId: string, message: ChatMessage): Promise<void> {

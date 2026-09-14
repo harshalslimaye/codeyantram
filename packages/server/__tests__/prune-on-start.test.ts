@@ -35,7 +35,7 @@ function userMessage(id: string, text: string): UserMessage {
 
 async function seedSession(project: string, id: string, daysOld: number): Promise<void> {
     const store = await getSessionStore();
-    const sessionId = await store.createSession({
+    const { id: sessionId } = await store.createSession({
         project,
         modelId: 'claude-sonnet-5',
         agentName: 'Build',

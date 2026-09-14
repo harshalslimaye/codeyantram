@@ -30,6 +30,10 @@ type OverlayListProps<T> = {
      * and a bare key would either type into it or double as some other list action. Shows
      * a "ctrl+d delete" hint next to the search box only when provided. */
     onDelete?: (item: T) => void;
+    /** Optional ctrl+r handler for the highlighted row - same reasoning and shape as
+     * onDelete above, just a different chord for a different action. Shows a
+     * "ctrl+r rename" hint next to onDelete's own when provided. */
+    onRename?: (item: T) => void;
 };
 
 /**
@@ -48,6 +52,7 @@ export function OverlayList<T>({
     maxVisible = 6,
     emptyMessage = 'No results',
     onDelete,
+    onRename,
 }: OverlayListProps<T>) {
     const { colors } = useTheme();
     const layers = useLayerStack();
@@ -87,6 +92,13 @@ export function OverlayList<T>({
             return;
         }
 
+        if (onRename !== undefined && key.ctrl && key.name === 'r') {
+            key.preventDefault();
+            const item = filtered[selectedIndex];
+            if (item) onRename(item);
+            return;
+        }
+
         switch (key.name) {
             case 'up':
                 key.preventDefault();
@@ -111,9 +123,14 @@ export function OverlayList<T>({
         <box>
             <box flexDirection="row" justifyContent="space-between">
                 <input focused value={query} onInput={setQuery} placeholder={placeholder} />
-                {onDelete !== undefined && (
-                    <text attributes={TextAttributes.DIM}>ctrl+d delete</text>
-                )}
+                <box flexDirection="row" gap={1}>
+                    {onRename !== undefined && (
+                        <text attributes={TextAttributes.DIM}>ctrl+r rename</text>
+                    )}
+                    {onDelete !== undefined && (
+                        <text attributes={TextAttributes.DIM}>ctrl+d delete</text>
+                    )}
+                </box>
             </box>
             <box marginTop={1}>
                 {filtered.length === 0 ? (

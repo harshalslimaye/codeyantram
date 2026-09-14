@@ -289,8 +289,12 @@ export const createSessionRequestSchema = z
 
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
 
+// title travels back here (not just on GET/list) so the CLI can show it (see
+// session.tsx) the instant a session is created, without a second round trip just to
+// learn what the server-derived title turned out to be.
 export const createSessionResponseSchema = z.object({
     id: z.string().min(1),
+    title: z.string().min(1),
 });
 
 export type CreateSessionResponse = z.infer<typeof createSessionResponseSchema>;

@@ -645,7 +645,7 @@ describe('newSession', () => {
             }
             if (init?.method === 'POST' && /\/sessions$/.test(url)) {
                 createCalls.push(url);
-                return new Response(JSON.stringify({ id: `s${createCalls.length}` }), {
+                return new Response(JSON.stringify({ id: `s${createCalls.length}`, title: 'a session' }), {
                     status: 201,
                     headers: { 'Content-Type': 'application/json' },
                 });
@@ -773,7 +773,7 @@ describe('resumeSession', () => {
                 pending.abortOn(init?.signal);
                 return pending.response;
             }
-            return new Response(JSON.stringify({ id: 's1', ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ id: 's1', title: 'a session', ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         });
 
         const rendered = await mount();

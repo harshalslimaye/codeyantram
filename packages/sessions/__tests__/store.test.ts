@@ -22,7 +22,7 @@ describe('createSession / loadSession', () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
 
-            const id = await store.createSession({
+            const { id } = await store.createSession({
                 project: '/repo',
                 modelId: 'claude-sonnet-5',
                 agentName: 'Build',
@@ -47,7 +47,7 @@ describe('createSession / loadSession', () => {
     test('accepts a null effort', async () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
-            const id = await store.createSession({
+            const { id } = await store.createSession({
                 project: '/repo',
                 modelId: 'gemini-3.5-flash',
                 agentName: 'Talk',
@@ -69,13 +69,13 @@ describe('createSession / loadSession', () => {
     test('two sessions get distinct ids', async () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
-            const a = await store.createSession({
+            const { id: a } = await store.createSession({
                 project: '/repo',
                 modelId: 'm',
                 agentName: 'Build',
                 firstMessage: userMessage('m1', 'a'),
             });
-            const b = await store.createSession({
+            const { id: b } = await store.createSession({
                 project: '/repo',
                 modelId: 'm',
                 agentName: 'Build',
@@ -89,7 +89,7 @@ describe('createSession / loadSession', () => {
 describe('appendMessage', () => {
     async function seedSession(db: Parameters<typeof createSessionStore>[0]) {
         const store = createSessionStore(db);
-        const id = await store.createSession({
+        const { id } = await store.createSession({
             project: '/repo',
             modelId: 'claude-sonnet-5',
             agentName: 'Build',
@@ -150,14 +150,14 @@ describe('listSessions', () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
 
-            const a = await store.createSession({
+            const { id: a } = await store.createSession({
                 project: '/repo-a',
                 modelId: 'm',
                 agentName: 'Build',
                 firstMessage: userMessage('m1', 'session a'),
             });
             await new Promise(resolve => setTimeout(resolve, 5));
-            const b = await store.createSession({
+            const { id: b } = await store.createSession({
                 project: '/repo-a',
                 modelId: 'm',
                 agentName: 'Build',
@@ -181,7 +181,7 @@ describe('listSessions', () => {
     test('reports messageCount without loading the messages themselves', async () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
-            const id = await store.createSession({
+            const { id } = await store.createSession({
                 project: '/repo',
                 modelId: 'm',
                 agentName: 'Build',
@@ -206,7 +206,7 @@ describe('listSessions', () => {
 describe('resolveApproval', () => {
     async function seedPendingApproval(db: Parameters<typeof createSessionStore>[0]) {
         const store = createSessionStore(db);
-        const id = await store.createSession({
+        const { id } = await store.createSession({
             project: '/repo',
             modelId: 'm',
             agentName: 'Build',
@@ -298,7 +298,7 @@ describe('renameSession', () => {
     test('updates the title and bumps updated_at', async () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
-            const id = await store.createSession({
+            const { id } = await store.createSession({
                 project: '/repo',
                 modelId: 'm',
                 agentName: 'Build',
@@ -318,7 +318,7 @@ describe('renameSession', () => {
     test('throws for an empty or whitespace-only title', async () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
-            const id = await store.createSession({
+            const { id } = await store.createSession({
                 project: '/repo',
                 modelId: 'm',
                 agentName: 'Build',
@@ -340,7 +340,7 @@ describe('deleteSession', () => {
     test('removes the session and cascades to its messages', async () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
-            const id = await store.createSession({
+            const { id } = await store.createSession({
                 project: '/repo',
                 modelId: 'm',
                 agentName: 'Build',
@@ -373,7 +373,7 @@ describe('pruneSessions', () => {
         const store = createSessionStore(db);
         const now = Date.now();
         for (const { id: messageId, daysOld } of ages) {
-            const id = await store.createSession({
+            const { id } = await store.createSession({
                 project,
                 modelId: 'm',
                 agentName: 'Build',
@@ -495,7 +495,7 @@ describe('vacuum', () => {
     test('runs without error and leaves the store fully usable afterward', async () => {
         await withTestDb(async db => {
             const store = createSessionStore(db);
-            const id = await store.createSession({
+            const { id } = await store.createSession({
                 project: '/repo',
                 modelId: 'm',
                 agentName: 'Build',

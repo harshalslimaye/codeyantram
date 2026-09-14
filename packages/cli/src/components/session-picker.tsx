@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useKeyboard } from '@opentui/react';
 import { TextAttributes } from '@opentui/core';
 import type { SessionSummary } from '@codeyantram/shared';
-import { deleteSession, listSessions, loadSession } from '../api/sessions';
+import { deleteSession, listSessions, loadSession, renameSession } from '../api/sessions';
 import { useChat } from '../providers/chat';
 import { useOverlay } from '../providers/overlay';
 import { useToast } from '../providers/toast';
+import { useLayerStack } from '../providers/keyboard';
 import { formatRelativeTime, truncate } from '../utils/format';
 import { prefixFilter } from '../utils/filter';
 import { OverlayList } from './overlay-list';
@@ -20,6 +22,61 @@ type LoadState =
 // (prefixFilter below reads `session.title` directly, not this truncated copy).
 const MAX_TITLE_LENGTH = 40;
 
+type SessionRenameFormProps = {
+    session: SessionSummary;
+    onRenamed: (title: string) => void;
+    onFailed: (error: unknown) => void;
+};
+
+/**
+ * The rename step /sessions' ctrl+r drops into, in place of the list - same "list, then a
+ * form" shape as ConnectFlow's own provider-picker → key-entry split. Exported (not just
+ * used internally) for direct testing, same reasoning as ConnectForm: it takes no context
+ * beyond `session`, so its submit branches are testable without mounting the picker's own
+ * load/error/ready state machine around it.
+ *
+ * Enter submits via useKeyboard, not the `<input>`'s own onSubmit - same reason
+ * OverlayList's own search box does this (see its own comment): the two prop types
+ * collide, and this needs 'overlay' to own the keyboard anyway, which useKeyboard already
+ * checks.
+ */
+export function SessionRenameForm({ session, onRenamed, onFailed }: SessionRenameFormProps) {
+    const [value, setValue] = useState(session.title);
+    const layers = useLayerStack();
+
+    useKeyboard(key => {
+        if (!layers.isOnTop('overlay')) return;
+        if (key.name !== 'return') return;
+        key.preventDefault();
+
+        const trimmed = value.trim();
+        // Blank or unchanged: nothing to actually rename, so this is a no-op cancel back
+        // to the list rather than a failed API call over an empty/identical title.
+        if (trimmed === '' || trimmed === session.title) {
+            onRenamed(session.title);
+            return;
+        }
+
+        void (async () => {
+            try {
+                await renameSession(session.id, trimmed);
+                onRenamed(trimmed);
+            } catch (error) {
+                onFailed(error);
+            }
+        })();
+    });
+
+    return (
+        <box>
+            <text attributes={TextAttributes.BOLD}>Rename session</text>
+            <box marginTop={1}>
+                <input focused value={value} onInput={setValue} placeholder="New title" />
+            </box>
+        </box>
+    );
+}
+
 /**
  * /sessions' overlay body. Unlike every other picker in this app (theme, model, agent,
  * effort), its items aren't already sitting in a context provider - they live on the
@@ -31,6 +88,12 @@ export function SessionPicker() {
     const overlay = useOverlay();
     const toast = useToast();
     const [state, setState] = useState<LoadState>({ status: 'loading' });
+    // Which row (if any) ctrl+r has dropped into the rename form for - separate from
+    // `state`, since it's a UI step, not data about the sessions themselves. Escape still
+    // closes the whole overlay outright from here, the same as it does from the list
+    // (Overlay's own keyboard handler, not something this component overrides) - same
+    // precedent as ConnectFlow's key-entry step.
+    const [renaming, setRenaming] = useState<SessionSummary | null>(null);
 
     useEffect(() => {
         // Guards against setting state from a request that's still in flight once this
@@ -66,6 +129,31 @@ export function SessionPicker() {
             <box paddingX={1}>
                 <text attributes={TextAttributes.DIM}>Couldn't load sessions ({state.message})</text>
             </box>
+        );
+    }
+
+    if (renaming !== null) {
+        return (
+            <SessionRenameForm
+                session={renaming}
+                onRenamed={title => {
+                    setState(current =>
+                        current.status === 'ready'
+                            ? { status: 'ready', sessions: current.sessions.map(s => (s.id === renaming.id ? { ...s, title } : s)) }
+                            : current,
+                    );
+                    // Keeps the Session screen's own header in sync if this is the
+                    // conversation currently open - see chat.tsx's own comment on why this
+                    // is a local sync, not a second API call.
+                    chat.renameCurrentSession(renaming.id, title);
+                    if (title !== renaming.title) toast.info(`Renamed to "${title}"`);
+                    setRenaming(null);
+                }}
+                onFailed={error => {
+                    toast.error(`Failed to rename session (${error instanceof Error ? error.message : String(error)})`);
+                    setRenaming(null);
+                }}
+            />
         );
     }
 
@@ -120,6 +208,7 @@ export function SessionPicker() {
             isActive={session => session.id === chat.sessionId}
             onSelect={handleSelect}
             onDelete={handleDelete}
+            onRename={summary => setRenaming(summary)}
             renderer={(session, { isActive }) => (
                 <box flexDirection="row" gap={1} justifyContent="space-between">
                     <text>

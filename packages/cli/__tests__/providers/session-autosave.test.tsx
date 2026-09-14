@@ -97,7 +97,7 @@ function trackCalls(handler: (call: Call, index: number) => Response | Promise<R
 
 describe('saveUserMessage', () => {
     test('creates a session on the first call', async () => {
-        const calls = trackCalls(() => jsonResponse({ id: 's1' }, 201));
+        const calls = trackCalls(() => jsonResponse({ id: 's1', title: 'a session' }, 201));
         const { value } = mockToast();
         const rendered = await mount(value);
 
@@ -105,6 +105,7 @@ describe('saveUserMessage', () => {
         await tick(20);
 
         expect(captured!.sessionId).toBe('s1');
+        expect(captured!.sessionTitle).toBe('a session');
         expect(calls).toHaveLength(1);
         expect(calls[0]).toMatchObject({ method: 'POST', url: expect.stringContaining('/sessions') });
         expect(calls[0]!.body).toMatchObject({ cwd: '/repo', model: 'claude-sonnet-5', agent: 'Build', firstMessage: userMessage });
@@ -113,7 +114,7 @@ describe('saveUserMessage', () => {
     });
 
     test('appends, rather than creating again, once a session exists', async () => {
-        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1' }, 201) : jsonResponse({ ok: true })));
+        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1', title: 'a session' }, 201) : jsonResponse({ ok: true })));
         const { value } = mockToast();
         const rendered = await mount(value);
 
@@ -132,7 +133,7 @@ describe('saveUserMessage', () => {
         console.error = () => {}; // expected - this test deliberately triggers the logged failure
         const calls = trackCalls((_call, index) => {
             if (index === 0) throw new Error('ECONNREFUSED');
-            return jsonResponse({ id: 's1' }, 201);
+            return jsonResponse({ id: 's1', title: 'a session' }, 201);
         });
         const { value } = mockToast();
         const rendered = await mount(value);
@@ -152,7 +153,7 @@ describe('saveUserMessage', () => {
 
 describe('saveAssistantMessage', () => {
     test('appends once a session exists', async () => {
-        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1' }, 201) : jsonResponse({ ok: true })));
+        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1', title: 'a session' }, 201) : jsonResponse({ ok: true })));
         const { value } = mockToast();
         const rendered = await mount(value);
 
@@ -187,7 +188,7 @@ describe('saveAssistantMessage', () => {
 
 describe('saveApproval', () => {
     test('resolves an approval once a session exists', async () => {
-        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1' }, 201) : jsonResponse({ ok: true })));
+        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1', title: 'a session' }, 201) : jsonResponse({ ok: true })));
         const { value } = mockToast();
         const rendered = await mount(value);
 
@@ -243,7 +244,7 @@ describe('the "not saved" toast', () => {
     test('fires again after a streak is broken by a success', async () => {
         console.error = () => {};
         const calls = trackCalls((_call, index) => {
-            if (index === 1) return jsonResponse({ id: 's1' }, 201); // the second attempt succeeds
+            if (index === 1) return jsonResponse({ id: 's1', title: 'a session' }, 201); // the second attempt succeeds
             throw new Error('ECONNREFUSED');
         });
         const { value, warnCalls } = mockToast();
@@ -267,7 +268,7 @@ describe('the "not saved" toast', () => {
 
 describe('reset', () => {
     test('clears sessionId, so the next saveUserMessage creates a new session', async () => {
-        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1' }, 201) : jsonResponse({ id: 's2' }, 201)));
+        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1', title: 'a session' }, 201) : jsonResponse({ id: 's2', title: 'a session' }, 201)));
         const { value } = mockToast();
         const rendered = await mount(value);
 
@@ -278,6 +279,7 @@ describe('reset', () => {
         captured!.reset();
         await tick(20);
         expect(captured!.sessionId).toBeNull();
+        expect(captured!.sessionTitle).toBeNull();
 
         captured!.saveUserMessage(userMessage, context);
         await tick(20);
@@ -291,7 +293,7 @@ describe('reset', () => {
 
     test('does not resurrect the old session id if its own create call resolves after reset', async () => {
         const deferred = deferredResponse();
-        const calls = trackCalls((_call, index) => (index === 0 ? deferred.promise : jsonResponse({ id: 's2' }, 201)));
+        const calls = trackCalls((_call, index) => (index === 0 ? deferred.promise : jsonResponse({ id: 's2', title: 'a session' }, 201)));
         const { value } = mockToast();
         const rendered = await mount(value);
 
@@ -302,7 +304,7 @@ describe('reset', () => {
         captured!.reset();
         captured!.saveUserMessage({ id: 'm3', role: 'user', parts: [{ type: 'text', text: 'a follow-up' }] }, context);
 
-        deferred.resolve(jsonResponse({ id: 's1' }, 201));
+        deferred.resolve(jsonResponse({ id: 's1', title: 'a session' }, 201));
         await tick(30);
 
         // If reset had raced ahead of the pending create, its `.then` handler
@@ -320,9 +322,10 @@ describe('attach', () => {
         const { value } = mockToast();
         const rendered = await mount(value);
 
-        captured!.attach('existing-session');
+        captured!.attach('existing-session', 'An earlier conversation');
         await tick(20);
         expect(captured!.sessionId).toBe('existing-session');
+        expect(captured!.sessionTitle).toBe('An earlier conversation');
 
         captured!.saveAssistantMessage(reply);
         await tick(20);
@@ -330,6 +333,56 @@ describe('attach', () => {
         expect(calls).toHaveLength(1);
         expect(calls[0]).toMatchObject({ method: 'POST', url: expect.stringContaining('/sessions/existing-session/messages') });
 
+        rendered.renderer.destroy();
+    });
+});
+
+describe('renameCurrent', () => {
+    test('updates sessionTitle when the id matches the currently attached session', async () => {
+        trackCalls(() => jsonResponse({ ok: true }));
+        const { value } = mockToast();
+        const rendered = await mount(value);
+
+        captured!.attach('s1', 'Old title');
+        await tick(20);
+
+        captured!.renameCurrent('s1', 'New title');
+        await tick(20);
+
+        expect(captured!.sessionTitle).toBe('New title');
+        rendered.renderer.destroy();
+    });
+
+    test('does nothing if the id does not match the currently attached session', async () => {
+        trackCalls(() => jsonResponse({ ok: true }));
+        const { value } = mockToast();
+        const rendered = await mount(value);
+
+        captured!.attach('s1', 'Old title');
+        await tick(20);
+
+        // A rename for a session the user has since navigated away from (e.g. via /new)
+        // landing late must not overwrite the title of whatever is open now.
+        captured!.renameCurrent('some-other-session', 'New title');
+        await tick(20);
+
+        expect(captured!.sessionTitle).toBe('Old title');
+        rendered.renderer.destroy();
+    });
+
+    test('makes no network call - the caller has already renamed it via the API', async () => {
+        const calls = trackCalls(() => jsonResponse({ ok: true }));
+        const { value } = mockToast();
+        const rendered = await mount(value);
+
+        captured!.attach('s1', 'Old title');
+        await tick(20);
+        calls.length = 0;
+
+        captured!.renameCurrent('s1', 'New title');
+        await tick(20);
+
+        expect(calls).toHaveLength(0);
         rendered.renderer.destroy();
     });
 });
@@ -348,7 +401,7 @@ describe('serialisation', () => {
         expect(calls).toHaveLength(1); // the append must not have run yet
         expect(captured!.sessionId).toBeNull();
 
-        deferred.resolve(jsonResponse({ id: 's1' }, 201));
+        deferred.resolve(jsonResponse({ id: 's1', title: 'a session' }, 201));
         await tick(20);
 
         expect(calls).toHaveLength(2);
@@ -360,7 +413,7 @@ describe('serialisation', () => {
     test('a failed save does not block the next enqueued save', async () => {
         console.error = () => {};
         const calls = trackCalls((_call, index) => {
-            if (index === 0) return jsonResponse({ id: 's1' }, 201);
+            if (index === 0) return jsonResponse({ id: 's1', title: 'a session' }, 201);
             if (index === 1) throw new Error('network blip'); // the assistant-message save fails
             return jsonResponse({ ok: true }); // the approval save after it must still run
         });

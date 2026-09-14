@@ -25,9 +25,11 @@ function mountList(overrides: Partial<{
     onTop: boolean;
     emptyMessage: string;
     withOnDelete: boolean;
+    withOnRename: boolean;
 }> = {}) {
     const onSelect = mock((_item: string) => {});
     const onDelete = mock((_item: string) => {});
+    const onRename = mock((_item: string) => {});
     const items = overrides.items ?? THREE_ITEMS;
     const layers = createLayerStack();
 
@@ -46,6 +48,7 @@ function mountList(overrides: Partial<{
                     filter={(item, query) => item.startsWith(query)}
                     onSelect={onSelect}
                     onDelete={overrides.withOnDelete ? onDelete : undefined}
+                    onRename={overrides.withOnRename ? onRename : undefined}
                     renderer={renderItem}
                     isActive={overrides.isActive}
                     maxVisible={overrides.maxVisible}
@@ -56,7 +59,7 @@ function mountList(overrides: Partial<{
         { width: 40, height: 30, ...NO_BUILTIN_CTRL_C }
     ).then(setup => ({ ...setup, layers }));
 
-    return { setup, onSelect, onDelete };
+    return { setup, onSelect, onDelete, onRename };
 }
 
 describe('rendering', () => {
@@ -289,6 +292,73 @@ describe('onDelete', () => {
         await tick(20);
 
         expect(onDelete).not.toHaveBeenCalled();
+        rendered.renderer.destroy();
+    });
+});
+
+describe('onRename', () => {
+    test('does nothing on ctrl+r when no onRename was given', async () => {
+        const { setup } = mountList();
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(() => rendered.mockInput.pressKey('r', { ctrl: true })).not.toThrow();
+        rendered.renderer.destroy();
+    });
+
+    test('does not show the hint when no onRename was given', async () => {
+        const { setup } = mountList();
+        const rendered = await setup;
+        const frame = await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(frame).not.toContain('ctrl+r');
+        rendered.renderer.destroy();
+    });
+
+    test('shows the hint when onRename is given', async () => {
+        const { setup } = mountList({ withOnRename: true });
+        const rendered = await setup;
+        const frame = await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(frame).toContain('ctrl+r rename');
+        rendered.renderer.destroy();
+    });
+
+    test('ctrl+r calls onRename with the highlighted item, not onSelect', async () => {
+        const { setup, onSelect, onRename } = mountList({ withOnRename: true });
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        rendered.mockInput.pressArrow('down');
+        await tick(20);
+        rendered.mockInput.pressKey('r', { ctrl: true });
+        await tick(20);
+
+        expect(onRename).toHaveBeenCalledTimes(1);
+        expect(onRename).toHaveBeenCalledWith('beta');
+        expect(onSelect).not.toHaveBeenCalled();
+        rendered.renderer.destroy();
+    });
+
+    test('ignores ctrl+r while another layer owns the keyboard', async () => {
+        const { setup, onRename } = mountList({ withOnRename: true, onTop: false });
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        rendered.mockInput.pressKey('r', { ctrl: true });
+        await tick(20);
+
+        expect(onRename).not.toHaveBeenCalled();
+        rendered.renderer.destroy();
+    });
+
+    test('both hints show together when onDelete and onRename are both given', async () => {
+        const { setup } = mountList({ withOnDelete: true, withOnRename: true });
+        const rendered = await setup;
+        const frame = await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(frame).toContain('ctrl+r rename');
+        expect(frame).toContain('ctrl+d delete');
         rendered.renderer.destroy();
     });
 });

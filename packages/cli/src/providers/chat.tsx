@@ -61,6 +61,14 @@ type ChatContextValue = {
     // first message of this conversation actually finishes saving. Exposed here for
     // Phase 5's picker, which needs to know which session is the one currently open.
     sessionId: string | null;
+    // That session's title - server-derived on create, or handed over by resumeSession
+    // for one already loaded. Null exactly when sessionId is. Shown in the Session
+    // screen's header (see screens/session.tsx).
+    sessionTitle: string | null;
+    // Keeps sessionTitle in sync after the session picker renames whatever is currently
+    // open in chat, via the API itself (not this) - see useSessionAutosave's own
+    // renameCurrent for why the id is checked before applying it.
+    renameCurrentSession: (sessionId: string, title: string) => void;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -189,7 +197,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             }
 
             updateMessages(() => session.messages);
-            autosave.attach(session.id);
+            autosave.attach(session.id, session.title);
         },
         [agent.name, autosave.attach, model.id, setAgent, setEffort, setModel, toast, updateMessages],
     );
@@ -457,6 +465,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 projectInstructionsEnabled,
                 setProjectInstructionsEnabled,
                 sessionId: autosave.sessionId,
+                sessionTitle: autosave.sessionTitle,
+                renameCurrentSession: autosave.renameCurrent,
             }}
         >
             {children}

@@ -24,6 +24,10 @@ export type SessionAutosave = {
      * moment a save is requested, since the id doesn't exist until createSession's
      * response says so. */
     sessionId: string | null;
+    /** The current session's title - server-derived on create (see createSession's
+     * response), or handed over directly by resumeSession (attach) for one already
+     * loaded. Null exactly when sessionId is, and for the same reason. */
+    sessionTitle: string | null;
     /** Records a user message. If no session exists yet, this creates one with `message`
      * as its first (see createSession's own atomicity: a session row and its first
      * message are inserted together, so a session with zero messages never exists);
@@ -47,8 +51,13 @@ export type SessionAutosave = {
     /** Attaches to an already-existing session (its full history is whatever the caller -
      * a resume flow - already loaded and put in `messages`) so the next saveUserMessage
      * appends to it instead of creating a new one. Queued through the chain like reset,
-     * for the same reason. */
-    attach(sessionId: string): void;
+     * for the same reason. `title` is the caller's own already-loaded Session.title - this
+     * never re-derives or re-fetches it. */
+    attach(sessionId: string, title: string): void;
+    /** Updates sessionTitle locally, without making any network call - the caller has
+     * already renamed the session via the API itself (see api/sessions.ts' renameSession);
+     * this only applies if `sessionId` still matches the currently attached session. */
+    renameCurrent(sessionId: string, title: string): void;
 };
 
 /**
@@ -72,6 +81,7 @@ export type SessionAutosave = {
 export function useSessionAutosave(): SessionAutosave {
     const toast = useToast();
     const [sessionId, setSessionId] = useState<string | null>(null);
+    const [sessionTitle, setSessionTitle] = useState<string | null>(null);
     // Mirrors `sessionId` for synchronous reads inside enqueued tasks - a task reads this
     // ref, never the state variable, since the ref is guaranteed up to date the instant
     // the create task that set it finishes, while React state wouldn't necessarily have
@@ -116,7 +126,7 @@ export function useSessionAutosave(): SessionAutosave {
         (message: UserMessage, context: SessionAutosaveContext) => {
             enqueue(async () => {
                 if (sessionIdRef.current === null) {
-                    const id = await createSession({
+                    const { id, title } = await createSession({
                         cwd: context.project,
                         model: context.modelId,
                         agent: context.agentName,
@@ -125,6 +135,7 @@ export function useSessionAutosave(): SessionAutosave {
                     });
                     sessionIdRef.current = id;
                     setSessionId(id);
+                    setSessionTitle(title);
                 } else {
                     await appendMessage(sessionIdRef.current, message);
                 }
@@ -176,18 +187,32 @@ export function useSessionAutosave(): SessionAutosave {
         enqueue(async () => {
             sessionIdRef.current = null;
             setSessionId(null);
+            setSessionTitle(null);
         });
     }, [enqueue]);
 
     const attach = useCallback(
-        (id: string) => {
+        (id: string, title: string) => {
             enqueue(async () => {
                 sessionIdRef.current = id;
                 setSessionId(id);
+                setSessionTitle(title);
             });
         },
         [enqueue],
     );
 
-    return { sessionId, saveUserMessage, saveAssistantMessage, saveApproval, reset, attach };
+    // A local display update only - the caller (the session picker) has already made the
+    // actual rename API call itself by the time this runs; this just keeps sessionTitle in
+    // sync so a rename of the session currently open in chat shows up immediately in the
+    // Session screen's header, instead of only after the next resume. Not queued through
+    // enqueue like every save/reset/attach above: there's no network call here to
+    // serialise against, and the `id` check guards the one real race that matters (a rename
+    // for a session the user has since navigated away from, via /new or resuming another,
+    // landing late and overwriting the *new* session's title).
+    const renameCurrent = useCallback((id: string, title: string) => {
+        if (sessionIdRef.current === id) setSessionTitle(title);
+    }, []);
+
+    return { sessionId, sessionTitle, saveUserMessage, saveAssistantMessage, saveApproval, reset, attach, renameCurrent };
 }

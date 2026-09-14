@@ -11,10 +11,10 @@ export function mockFetch(impl: (...args: Parameters<typeof fetch>) => ReturnTyp
  * separately. A test written to check /chat's own behavior shouldn't need to know that,
  * or provide its own session-endpoint responses: anything requested that isn't /chat
  * gets one canned success shape here, chosen to satisfy every schema autosave's calls
- * validate against at once (createSessionResponseSchema's `id`, sessionActionResponseSchema's
- * `ok`) regardless of which of create/append/approve is actually in flight - so those
- * calls quietly succeed instead of erroring and firing a "not saved" toast the test never
- * asked to think about.
+ * validate against at once (createSessionResponseSchema's `id`/`title`,
+ * sessionActionResponseSchema's `ok`) regardless of which of create/append/approve is
+ * actually in flight - so those calls quietly succeed instead of erroring and firing a
+ * "not saved" toast the test never asked to think about.
  *
  * A test that specifically wants to exercise autosave's own behavior
  * (session-autosave.test.tsx) uses the plain mockFetch above instead, since it needs
@@ -25,7 +25,7 @@ export function mockChatFetch(chatImpl: (...args: Parameters<typeof fetch>) => R
         const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
         if (url.includes('/chat')) return chatImpl(input, init);
 
-        return new Response(JSON.stringify({ id: 'test-session', ok: true }), {
+        return new Response(JSON.stringify({ id: 'test-session', title: 'a session', ok: true }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
         });

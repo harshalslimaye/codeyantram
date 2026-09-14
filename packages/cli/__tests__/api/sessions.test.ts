@@ -44,9 +44,9 @@ const summary = {
 };
 
 describe('createSession', () => {
-    test('returns the new id on success', async () => {
-        mockFetch(async () => jsonResponse({ id: 's1' }, 201));
-        expect(await createSession(createBody)).toBe('s1');
+    test('returns the new id and title on success', async () => {
+        mockFetch(async () => jsonResponse({ id: 's1', title: 'hello' }, 201));
+        expect(await createSession(createBody)).toEqual({ id: 's1', title: 'hello' });
     });
 
     test('throws SessionApiError with the status for a non-ok response', async () => {
