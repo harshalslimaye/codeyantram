@@ -42,7 +42,16 @@ The **CLI** never talks to a model directly. It POSTs a chat request to the loca
 
 ### Prerequisites
 
-- **Bun 1.3.0+** (the CLI, server, and tests all run on Bun)
+- **Bun 1.3.0+** to develop, build, or run the CLI. The CLI's terminal renderer
+  ([OpenTUI](https://opentui.com)) doesn't implement its native FFI backend for Node yet
+  (`@opentui/core@0.5.9` throws "OpenTUI native FFI is not available for this runtime yet"
+  under Node) — this is an upstream limitation, not something this repo's build can work
+  around, so the CLI needs Bun for now.
+- **Node.js 22+** is fully supported for the **server** on its own (its dual-runtime HTTP
+  entrypoint, env loading, and every tool have no Bun-only calls left — see
+  [How It Works](#how-it-works)) — useful for self-hosting the server independent of the
+  CLI. The CLI itself still spawns it via whichever runtime launched the CLI process
+  (`process.execPath`), so a Bun-run CLI always gets a Bun-run server today.
 - A terminal with a modern color/UTF-8 profile
 
 ### Install
@@ -72,14 +81,31 @@ The server checks the `/connect` auth store first, then falls back to the env va
 ### Run
 
 ```bash
-# Terminal 1 — start the local server (default port 3001)
-bun run dev:server
-
-# Terminal 2 — start the TUI
 bun run dev:cli
 ```
 
-Run both in the project root you want the agent to work on — the server resolves every tool path against the directory it was launched from.
+One terminal, one command: the CLI checks whether a server is already answering at
+`API_URL` (default `http://localhost:3001`) and, if not, spawns one itself and shuts it
+down again on exit. Running `bun run dev:server` separately first still works exactly as
+before — the CLI detects it and reuses it rather than spawning a second one, which is
+useful for watching the server's own logs directly instead of `~/.codeyantram/server.log`.
+
+Run it in the project root you want the agent to work on — the server resolves every tool
+path against the directory it was launched from.
+
+### Build
+
+```bash
+cd packages/cli && bun run build
+```
+
+Produces `packages/cli/dist/index.js` (executable, `#!/usr/bin/env bun` shebang — the
+package's `bin` entry) and `packages/cli/dist/server.js` (the bundled server, copied
+alongside it, which `ensureServerRunning()` spawns automatically instead of falling back to
+raw source). `@opentui/*`, `react`, `web-tree-sitter`, every `tree-sitter-*` grammar
+package, `@libsql/client`, and `@vscode/ripgrep` stay external (real `node_modules`
+dependencies, not bundled) — each does its own native-binary or `import.meta.resolve()`
+asset lookup at runtime that only works against a real, installed copy.
 
 The server binds to `127.0.0.1` only (never `0.0.0.0`), and every route requires a local auth token the server mints on first start and the CLI reads back automatically — see [Local server auth](#local-server-auth) below. Running the CLI against a server on another machine (or a manually-copied config directory) needs that token to travel too; `API_URL` alone isn't enough.
 

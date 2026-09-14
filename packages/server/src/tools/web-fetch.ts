@@ -121,15 +121,20 @@ function classifyContentType(rawContentType: string): { category: FetchCategory;
     return { category, charset: charset === null || charset === '' ? null : charset };
 }
 
-/** Returns `label` unchanged if TextDecoder recognizes it, else null - a Content-Type
- * or <meta charset> can name anything, including junk or a label Node's ICU build
- * doesn't ship. The `as Bun.Encoding` cast is a type-only lie: bun-types' Encoding
- * union only lists the 3 labels Bun.file()/Buffer care about, far narrower than the
- * full WHATWG label set TextDecoder actually accepts at runtime - this try/catch is
- * exactly what stands in for that missing static check. */
+/** TextDecoder's real, runtime-accepted label param is the full WHATWG Encoding Standard
+ * label set (any string - an unrecognized one just throws) - narrower than that only in
+ * whichever ambient `TextDecoder` type happens to be in scope. Deriving the cast target
+ * from `typeof TextDecoder` itself, rather than naming `Bun.Encoding` directly, keeps this
+ * file typecheckable under either: bun-types (whose constructor narrows the label to a
+ * 3-value `Bun.Encoding` union - see its own d.ts - far short of what TextDecoder actually
+ * accepts) or Node's own types (which don't narrow it at all). Either way, the cast is a
+ * type-only lie the same as before; this try/catch is what stands in for the missing
+ * static check. */
+type TextDecoderLabel = ConstructorParameters<typeof TextDecoder>[0];
+
 function normalizeEncodingLabel(label: string): string | null {
     try {
-        new TextDecoder(label as Bun.Encoding);
+        new TextDecoder(label as TextDecoderLabel);
         return label;
     } catch {
         return null;
@@ -351,7 +356,7 @@ export async function performFetch(rawUrl: string): Promise<FetchedResource> {
         // See normalizeEncodingLabel's comment - `encoding` is either that literal
         // 'utf-8'/'windows-1252' TextEncodingLabel or a label already proven valid by
         // constructing a TextDecoder with it there, never an unvalidated string.
-        const text = new TextDecoder(encoding as Bun.Encoding, { fatal: false }).decode(buffer);
+        const text = new TextDecoder(encoding as TextDecoderLabel, { fatal: false }).decode(buffer);
 
         return {
             finalUrl: currentUrl.href,

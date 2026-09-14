@@ -7,6 +7,8 @@ import { Session } from "./screens/session";
 import { ResumeOnLaunch } from "./components/resume-on-launch";
 import { parseResumeTarget, type ResumeTarget } from "./resume";
 import { useChat } from "./providers/chat";
+import { getServerBaseUrl } from "./api/client";
+import { ensureServerRunning } from "./server-process";
 
 const layers = createLayerStack();
 
@@ -40,6 +42,20 @@ function App({ resumeTarget }: AppProps) {
 // (InputBar, Autocomplete) needs to be the only thing deciding what ctrl+c
 // does.
 const resumeTarget = parseResumeTarget(process.argv.slice(2));
+
+// Before the terminal goes into the TUI's raw mode - a plain, scrollable error here is
+// far more legible than the same failure surfacing as a broken chat request once the
+// renderer has already taken over the screen. Only spawns anything when nothing is
+// already answering at this URL (a manually-run `bun run dev:server`, or another CLI
+// instance, is left alone - see ensureServerRunning's own comment).
+try {
+  await ensureServerRunning(getServerBaseUrl());
+} catch (error) {
+  console.error(
+    `Failed to start the codeyantram server: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exit(1);
+}
 
 const renderer = await createCliRenderer({ exitOnCtrlC: false });
 createRoot(renderer).render(<App resumeTarget={resumeTarget} />);
