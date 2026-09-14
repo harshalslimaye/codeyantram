@@ -1,21 +1,7 @@
-import { hc } from 'hono/client';
-import type { AppType } from '@codeyantram/server';
 import { chatStreamEventSchema, type ChatRequest, type ChatStreamEvent } from '@codeyantram/shared';
+import { getApiClient } from './client';
 
-// Matches the server's own default (packages/server/src/index.ts) so a
-// fresh checkout works without any .env at all.
-const DEFAULT_BASE_URL = 'http://localhost:3001';
-
-export function getServerBaseUrl(): string {
-    return process.env.API_URL ?? DEFAULT_BASE_URL;
-}
-
-// AppType is a type-only import (see package.json: @codeyantram/server is a
-// devDependency, never a runtime one) - hc<AppType>() gets full route/body
-// typing for free without the CLI depending on the server at runtime.
-function getClient() {
-    return hc<AppType>(getServerBaseUrl());
-}
+export { getServerBaseUrl } from './client';
 
 /**
  * Splits a growing text buffer on SSE record boundaries ("\n\n"), returning
@@ -65,9 +51,9 @@ export async function* streamChat({
     request: ChatRequest;
     signal?: AbortSignal;
 }): AsyncGenerator<ChatStreamEvent> {
-    let response: Awaited<ReturnType<ReturnType<typeof getClient>['chat']['$post']>>;
+    let response: Awaited<ReturnType<ReturnType<typeof getApiClient>['chat']['$post']>>;
     try {
-        response = await getClient().chat.$post({ json: request }, { init: { signal } });
+        response = await getApiClient().chat.$post({ json: request }, { init: { signal } });
     } catch (error) {
         if (signal?.aborted) return;
         yield {

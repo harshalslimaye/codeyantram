@@ -1,7 +1,7 @@
 import { afterEach, describe, test, expect, mock, spyOn } from 'bun:test';
 import { CommandMenu } from '../../src/components/command-menu';
 import { mountDropup, settleEscape, tick } from '../support/mount';
-import { mockFetch, sseResponse } from '../support/sse';
+import { mockChatFetch, sseResponse } from '../support/sse';
 import { INIT_PROMPT } from '../../src/prompts/init';
 
 const originalFetch = global.fetch;
@@ -19,8 +19,8 @@ afterEach(() => {
 // placeholder names — 'models'/'upgrade' stand in for "some command with a
 // unique prefix", 'agents'/'exit' for "any two other real commands". 'models'
 // and 'agents' both now open real overlays (see model-picker.test.tsx and
-// agent-picker.test.tsx), so the "generic toast placeholder" tests below use
-// 'sessions' instead.
+// agent-picker.test.tsx), and so does 'sessions' (see session-picker.test.tsx),
+// so the "generic toast placeholder" tests below use 'upgrade' instead.
 
 function mountWithValue(
     value: string,
@@ -111,34 +111,34 @@ describe('trigger matching and filtering', () => {
 });
 
 describe('selecting a command', () => {
-    // 'sessions' (like every current command besides 'exit', 'themes',
-    // 'models', and 'agents') shows an info toast rather than filling in the
-    // input via `populate` — see commands.test.ts for the toast-is-called
-    // assertion itself. `populate` is still exercised by command-menu.tsx's
-    // wiring; it just has no live command using it right now, so it isn't
-    // covered via SLASH_COMMANDS here.
+    // 'upgrade' (like every current command besides 'exit', 'themes',
+    // 'models', 'agents', and 'sessions') shows an info toast rather than
+    // filling in the input via `populate` — see commands.test.ts for the
+    // toast-is-called assertion itself. `populate` is still exercised by
+    // command-menu.tsx's wiring; it just has no live command using it right
+    // now, so it isn't covered via SLASH_COMMANDS here.
     test('selecting a placeholder command closes the menu without populating', async () => {
-        const { setup, onSelect } = mountWithValue('/se');
+        const { setup, onSelect } = mountWithValue('/up');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('sessions'));
+        await rendered.waitForFrame(f => f.includes('upgrade'));
 
         rendered.mockInput.pressEnter();
-        await rendered.waitFor(() => !rendered.captureCharFrame().includes('sessions'));
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('upgrade'));
 
-        expect(rendered.captureCharFrame()).not.toContain('sessions');
+        expect(rendered.captureCharFrame()).not.toContain('upgrade');
         expect(onSelect).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
 
     test('Tab selects the same as Enter', async () => {
-        const { setup, onSelect } = mountWithValue('/se');
+        const { setup, onSelect } = mountWithValue('/up');
         const rendered = await setup;
-        await rendered.waitForFrame(f => f.includes('sessions'));
+        await rendered.waitForFrame(f => f.includes('upgrade'));
 
         rendered.mockInput.pressTab();
-        await rendered.waitFor(() => !rendered.captureCharFrame().includes('sessions'));
+        await rendered.waitFor(() => !rendered.captureCharFrame().includes('upgrade'));
 
-        expect(rendered.captureCharFrame()).not.toContain('sessions');
+        expect(rendered.captureCharFrame()).not.toContain('upgrade');
         expect(onSelect).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
@@ -257,7 +257,7 @@ describe('layer ownership', () => {
 describe('selecting /init', () => {
     test('sends INIT_PROMPT as agent Build, regardless of the currently selected agent', async () => {
         const requests: unknown[] = [];
-        mockFetch(async (_url, init) => {
+        mockChatFetch(async (_url, init) => {
             requests.push(JSON.parse(init?.body as string));
             return sseResponse([
                 'data: {"type":"start","messageId":"m1"}\n\n',
@@ -287,7 +287,7 @@ describe('selecting /init', () => {
 describe('selecting /instructions', () => {
     test('toggles the preference and confirms via toast, without sending a message', async () => {
         let fetchCalls = 0;
-        mockFetch(async () => {
+        mockChatFetch(async () => {
             fetchCalls += 1;
             return sseResponse(['data: {"type":"start","messageId":"m1"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']);
         });

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-CodeYantram is a terminal AI assistant: a **Bun workspace monorepo** (`packages/*`) of three packages — `cli` (OpenTUI/React TUI), `server` (Hono, model routing + tool execution), `shared` (Zod schemas, catalogs, pure logic). The CLI never calls a model itself — it POSTs to the local server, which streams SSE events back.
+CodeYantram is a terminal AI assistant: a **Bun workspace monorepo** (`packages/*`) of four packages — `cli` (OpenTUI/React TUI), `server` (Hono, model routing + tool execution), `shared` (Zod schemas, catalogs, pure logic), `sessions` (SQLite-backed chat session store, via `@libsql/client`). The CLI never calls a model itself — it POSTs to the local server, which streams SSE events back. The server also owns the session store: every message is autosaved as it happens (not just at the end of a turn), so `/sessions` can list and resume past conversations across restarts.
 
 ## Build / test / typecheck (no lint or format tooling exists)
 
@@ -21,6 +21,8 @@ Per package: `cd packages/<pkg> && bun test` / `bun run typecheck`. There is **n
 
 `bun test` sets `NODE_ENV=test`, which disables real disk writes (`packages/shared/src/local-store.ts` `isTestEnv()`), so suites never touch `~/.codeyantram`. Don't "fix" suites by clearing that guard.
 
+The one thing allowed to defeat it: setting `CODEYANTRAM_CONFIG_DIR` to a test's own temp directory turns real I/O back on (`isRealIoEnabled()`) - `sessions`' own store/db tests, and the server's session-router and prune-on-start tests, need this to exercise a real (isolated) SQLite database rather than a guaranteed no-op. Always pair it with `resetDbForTests()` (from `@codeyantram/sessions`) in `beforeEach`/`afterEach` - `getDb()` memoizes one client at module scope, so a stale one from a previous test would otherwise leak across tests, and across test files (Bun shares one process per `bun test` run).
+
 ## Run (manual smoke test — requires two terminals)
 
 ```bash
@@ -36,6 +38,8 @@ The `server` package hardcodes `--env-file=../../.env` in its `dev` and `test` s
 - **Cross-package imports use workspace source directly** (`@codeyantram/shared`, `@codeyantram/server` resolve to their `src/` via `module`), not built artifacts — no `dist`/build output exists. Editing `shared` changes behavior for the other two with no build step.
 - Everything that crosses the CLI/server boundary — message shapes, tool/agent/model catalogs, stream-event folding (`applyStreamEvent`), API route constants — is defined **once** in `shared` and tested there (`packages/shared/src/{schemas,stream,tools,agents,models,routes}.ts`). Keep contracts in `shared`, not inlined per package.
 - Tool definitions live in `shared/src/tools.ts`; tool *executors* and path sandboxing live in `packages/server/src/tools/`; `web_fetch`'s network policy is `server/src/tools/{url-policy,web-fetch}.ts`, and the `git` tool's read-only guarantee is its subcommand allowlist (`GIT_READ_ONLY_SUBCOMMANDS` in `shared`), not a per-command policy in the executor.
+- **Sessions**: storage (schema, migrations, retention query) lives in `packages/sessions/src/store.ts`, opened via `getDb()`/`openDb()` in `db.ts` (SQLite `file:` URL, WAL mode, PRAGMA foreign_keys, `sessions.db`/`-wal`/`-shm` all hardened to `0600` on every open — see `hardenFilePermissions`). The wire contract (request/response schemas, distinct from the store's own row shapes) lives in `shared/src/schemas.ts`; the HTTP router is `server/src/routers/sessions.ts`; the CLI's client is `packages/cli/src/api/sessions.ts`. `packages/server/src/index.ts` runs a fire-and-forget prune sweep (keep newest 200 sessions per project, drop anything older than 90 days, then `VACUUM` if anything was actually deleted) once at startup — it must never block the server from accepting requests.
+- **Session autosave** (`packages/cli/src/providers/session-autosave.ts`) serializes every save (create/append/resolve-approval) through one promise chain, not fired independently - a user message and the assistant reply that follows it are separate calls in quick succession, and without sequencing the second (an append) could race ahead of the first (a create) before a session id even exists to append to. Every save is fire-and-forget from `chat.tsx`'s side: a slow or failed save must never delay or break the live conversation. Don't add an `await` on these calls from `ChatProvider`.
 
 ## Conventions that differ from defaults
 

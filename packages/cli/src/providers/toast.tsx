@@ -23,7 +23,12 @@ const DEFAULT_DURATIONS: Record<ToastVariant, number> = {
 // the oldest is dropped rather than growing the stack indefinitely.
 const MAX_VISIBLE = 3;
 
-const ToastContext = createContext<ToastContextValue | null>(null);
+// Exported (unlike this file's other internals) so a test that needs to count or inspect
+// calls precisely - e.g. proving a warn-once throttle actually only warns once - can
+// provide its own minimal ToastContextValue instead of mounting the real ToastProvider
+// and inferring call counts from identical-looking rendered text. See
+// session-autosave.test.tsx.
+export const ToastContext = createContext<ToastContextValue | null>(null);
 
 export function useToast() {
     const context = useContext(ToastContext);

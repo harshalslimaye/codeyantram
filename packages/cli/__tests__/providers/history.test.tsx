@@ -1,8 +1,12 @@
-import { describe, test, expect } from 'bun:test';
+import { afterEach, beforeEach, describe, test, expect } from 'bun:test';
 import { useRef, useState } from 'react';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { testRender } from '@opentui/react/test-utils';
 import { useKeyboard } from '@opentui/react';
 import { HistoryProvider, useHistory } from '../../src/providers/history';
+import { getPromptHistory } from '../../src/utils/prompt-history-store';
 import { tick } from '../support/mount';
 
 // Drives the context from a key handler rather than an effect, because that
@@ -176,6 +180,48 @@ describe('HistoryProvider', () => {
 
         expect(frame).toContain('browsing[false]');
         expect(frame).toContain('entries[prompt 1]');
+        rendered.renderer.destroy();
+    });
+});
+
+describe('persistence', () => {
+    const ORIGINAL_CONFIG_DIR_OVERRIDE = process.env.CODEYANTRAM_CONFIG_DIR;
+    let tempDir: string;
+
+    beforeEach(() => {
+        tempDir = mkdtempSync(join(tmpdir(), 'codeyantram-history-provider-test-'));
+        process.env.CODEYANTRAM_CONFIG_DIR = tempDir;
+    });
+
+    afterEach(() => {
+        rmSync(tempDir, { recursive: true, force: true });
+        if (ORIGINAL_CONFIG_DIR_OVERRIDE === undefined) delete process.env.CODEYANTRAM_CONFIG_DIR;
+        else process.env.CODEYANTRAM_CONFIG_DIR = ORIGINAL_CONFIG_DIR_OVERRIDE;
+    });
+
+    test('a recorded prompt survives remounting the provider (a restart, in the real app)', async () => {
+        const first = await mount();
+        await first.waitForFrame(f => f.includes('entries[]'));
+        first.mockInput.pressKey('r');
+        await settle(first);
+        first.renderer.destroy();
+
+        const second = await mount();
+        const frame = await second.waitForFrame(f => f.includes('entries[prompt 1]'));
+
+        expect(frame).toContain('entries[prompt 1]');
+        second.renderer.destroy();
+    });
+
+    test('stepping through history without recording anything writes nothing to disk', async () => {
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('entries[]'));
+
+        rendered.mockInput.pressKey('u');
+        rendered.mockInput.pressKey('d');
+        await settle(rendered);
+
+        expect(getPromptHistory(process.cwd())).toEqual([]);
         rendered.renderer.destroy();
     });
 });

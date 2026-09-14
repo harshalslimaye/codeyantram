@@ -15,26 +15,28 @@ Built with **Bun**, **OpenTUI** (a React-based TUI renderer), **Hono**, and the 
 - **Project instructions** — an `AGENTS.md` (or `CLAUDE.md`) at the project root is loaded into the system prompt on every turn, so the project's own conventions travel with each request.
 - **Tool approval gate** — every mutating tool pauses mid-turn and asks for explicit approval (`y`/`n`) before it runs.
 - **Streaming SSE protocol** — one wire format for success *and* failure; cancel is just closing the connection.
-- **Local persistence** — API keys (`auth.json`, `0600`) and preferences (`preferences.json`) under `~/.codeyantram/`.
+- **Persistent chat sessions** — every message is autosaved as it happens (not just at the end of a turn), so `/sessions` can list, resume, rename, or delete past conversations across restarts; `--continue`/`--resume <id>` pick one up straight from launch.
+- **Local persistence** — API keys (`auth.json`, `0600`), preferences (`preferences.json`), per-project prompt history (`prompt-history.json`), and chat sessions (`sessions.db`, SQLite) under `~/.codeyantram/` (`0700`).
 - **12 hand-tuned themes** and tree-sitter syntax highlighting across 17+ languages.
-- **Slash-command menu** with autocomplete (`/new`, `/agents`, `/models`, `/connect`, `/themes`, `/exit`, …).
+- **Slash-command menu** with autocomplete (`/new`, `/agents`, `/models`, `/connect`, `/sessions`, `/themes`, `/exit`, …).
 - **Read-only git without the shell** — a dedicated `git` tool runs ten inspection subcommands as argv (no shell, no pipes), so reading history, diffs, and blame costs no approval prompt and works in Talk too. Branches and tags are *arguments* here (`diff main...HEAD`, `show v1.2.0:src/config.ts`), not subcommands; every git command that writes still goes through `bash`.
 - **Sandboxed tool paths** — every tool path is resolved against the project root and can never escape it.
 - **Single-flight turns** — one response in flight at a time; escape/ctrl+c cancels cleanly.
 
 ## Architecture
 
-CodeYantram is a **Bun workspace monorepo** with three packages:
+CodeYantram is a **Bun workspace monorepo** with four packages:
 
 ```
 codeyantram/
 ├── packages/
-│   ├── cli/      # The terminal UI (OpenTUI + React)
-│   ├── server/   # Local Hono server: model routing + tool execution
-│   └── shared/   # Zod schemas, catalogs, and pure logic shared by both
+│   ├── cli/       # The terminal UI (OpenTUI + React)
+│   ├── server/    # Local Hono server: model routing, tool execution, session API
+│   ├── shared/    # Zod schemas, catalogs, and pure logic shared by both
+│   └── sessions/  # SQLite-backed chat session store (schema, migrations, retention)
 ```
 
-The **CLI** never talks to a model directly. It POSTs a chat request to the local **server**, which resolves the provider/model/API key, streams the response back over **SSE**, and executes any tool calls against the project root. The **shared** package defines the contract between them — schemas, the model/tool/agent catalogs, and stream-folding logic — so both sides can't drift apart.
+The **CLI** never talks to a model directly. It POSTs a chat request to the local **server**, which resolves the provider/model/API key, streams the response back over **SSE**, and executes any tool calls against the project root. The **shared** package defines the contract between them — schemas, the model/tool/agent catalogs, and stream-folding logic — so both sides can't drift apart. The **server** also owns the **sessions** package's store: every message and tool-approval decision is saved as it happens, so a conversation survives quitting the CLI.
 
 ## Getting Started
 
@@ -79,6 +81,8 @@ bun run dev:cli
 
 Run both in the project root you want the agent to work on — the server resolves every tool path against the directory it was launched from.
 
+The server binds to `127.0.0.1` only (never `0.0.0.0`), and every route requires a local auth token the server mints on first start and the CLI reads back automatically — see [Local server auth](#local-server-auth) below. Running the CLI against a server on another machine (or a manually-copied config directory) needs that token to travel too; `API_URL` alone isn't enough.
+
 ## Usage
 
 ### Keybindings
@@ -99,13 +103,13 @@ Type `/` in the input bar for an autocompleting menu:
 
 | Command | Description |
 | --- | --- |
-| `/new` | Start a new session |
+| `/new` | Start a new session (the old one is already saved — see [Sessions](#sessions)) |
 | `/agents` | Switch agent (Talk / Build) |
 | `/models` | Switch model |
 | `/connect` | Connect a provider with an API key (or clear one) |
 | `/init` | Generate or refine this project's `AGENTS.md` (switches to Build) |
 | `/instructions` | Toggle project instructions on/off for the session |
-| `/sessions` | Switch session |
+| `/sessions` | Browse, resume, rename, or delete saved sessions |
 | `/themes` | Switch theme |
 | `/upgrade` | Upgrade CodeYantram |
 | `/support` | Get support |
@@ -158,6 +162,35 @@ Don't have one yet? Run `/init` to generate one — it surveys the project (READ
 ### Themes
 
 Twelve built-in themes (Sahyadri, Kaapi, Thirai, Konkan, Sanganak, Aranya, Gulabi, Bazaar, Shishir, Ladakh, Oviya, Kaadu), switchable via `/themes`. Theme, model, and agent preferences persist across restarts.
+
+### Sessions
+
+Every message and tool-approval decision is saved to `~/.codeyantram/sessions.db` as it happens — not just at the end of a turn — so a conversation survives quitting the CLI. The Session screen shows the current conversation's title (server-derived from your first message, e.g. `fix the socket handshake`) in a small header above the transcript.
+
+**The `/sessions` picker:**
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` | Move the selection |
+| `enter` | Resume the highlighted session |
+| `ctrl+r` | Rename it (enter submits, a blank or unchanged title cancels with no API call) |
+| `ctrl+d` | Delete it immediately (no confirm step — it's a deliberate modifier chord) |
+| `escape` | Close the picker |
+
+Deleting the session you're currently in starts a new one automatically (the same as `/new`) and closes the picker, dropping you straight onto the fresh session — otherwise the next message would fail against a session that no longer exists. Deleting any other session just removes it from the list; the picker stays open. Renaming the session you're currently in updates the Session screen's header immediately.
+
+**Resuming at launch**, instead of through the picker:
+
+```bash
+bun run dev:cli --continue        # resume this project's most recently updated session
+bun run dev:cli --resume <id>     # resume a specific session by id
+```
+
+Both fall back to starting fresh (with a toast explaining why) if there's nothing to resume — no previous session for `--continue`, or an unknown/deleted id for `--resume`.
+
+**Retention.** `sessions.db` has no size cap of its own, but it doesn't grow forever either — see [Session storage and retention](#session-storage-and-retention) below.
+
+**Prompt history** (what `↑`/`↓` step through in the input bar, separate from saved chat sessions) is also persisted, per project, in `prompt-history.json` — a fresh `bun run dev:cli` in the same directory picks up where you left off.
 
 ## Tools
 
@@ -244,26 +277,54 @@ A stream always opens with `start` and closes with `done` or `error`. A connecti
 
 ## Server API
 
-Mounted at `http://localhost:3001` (override with `API_URL` / `PORT`):
+Mounted at `http://127.0.0.1:3001` (override with `API_URL` / `PORT` — `PORT` doesn't change the bind address, only which local port it listens on):
 
 | Route | Method | Description |
 | --- | --- | --- |
 | `/health` | GET | Liveness check |
 | `/providers` | GET | Which providers have API keys configured |
 | `/chat` | POST | Streams one chat turn as SSE |
+| `/sessions` | GET | List sessions for a project (`?project=<cwd>`) |
+| `/sessions` | POST | Create a session with its first message; returns `{ id, title }` |
+| `/sessions/:id` | GET | Load a session, messages included |
+| `/sessions/:id` | PATCH | Rename a session |
+| `/sessions/:id` | DELETE | Delete a session |
+| `/sessions/:id/messages` | POST | Append an already-finished message |
+| `/sessions/:id/approvals` | POST | Resolve a pending tool-call approval |
+
+### Local server auth
+
+The server is bound to loopback only, but loopback isn't a private channel — any process already running on the machine can reach `127.0.0.1`, not just the CLI. Every route (health check included) requires a token, checked against `~/.codeyantram/server-token.json` (`0600`, like `auth.json`):
+
+- The server mints one the first time it starts against a given config directory, and reuses it on every subsequent start — nothing to configure.
+- The CLI reads the same file and sends it automatically on every request; there's no setting to connect the two by hand as long as both point at the same config directory (the default, or a shared `CODEYANTRAM_CONFIG_DIR`).
+- A request without the right token gets refused: a plain `401` for `/health` and `/providers`, and — matching how every other `/chat`-time failure is delivered — a normal-looking SSE stream carrying a `start` then an `error` event, never a raw HTTP error status. The CLI's existing error handling covers it with no special case.
+- Deleting `server-token.json` and restarting the server rotates it; the CLI picks up the new value on its very next request, no CLI restart required.
 
 ## Configuration & State
 
-Everything is stored as flat JSON under `~/.codeyantram/`:
+`~/.codeyantram/` (`0700`) holds everything CodeYantram persists — flat JSON files, plus a small SQLite database for chat sessions:
 
 | File | Contents |
 | --- | --- |
 | `auth.json` | Provider API keys (`0600`), managed via `/connect` |
 | `preferences.json` | Saved theme, model, and agent |
-
-Prompt history (what `↑`/`↓` step through in the input) is **not** on this list - it is held in memory for the lifetime of the process and is gone when you quit.
+| `server-token.json` | Local server auth token (`0600`) — see [Local server auth](#local-server-auth) |
+| `sessions.db` (+ `-wal`/`-shm`) | Chat session history (`0600` on all three files) — see below |
+| `prompt-history.json` | Prompt history (what `↑`/`↓` step through in the input), keyed per project |
 
 Tests run with `NODE_ENV=test`, which disables disk writes so test suites never touch real config.
+
+### Session storage and retention
+
+Every message and tool-approval decision is saved to `sessions.db` as it happens (not just at the end of a conversation), so `/sessions` can list and resume past conversations across restarts. It has no size cap of its own — check its size any time with `du -h ~/.codeyantram/sessions.db*` — but it doesn't grow unbounded either: on every server start, a background sweep prunes, per project, whatever falls outside **both** of two independent caps (a session survives only if it clears both):
+
+| Cap | Default |
+| --- | --- |
+| Keep the N most recently updated sessions | 200 |
+| Drop anything older than | 90 days |
+
+A prune that actually deletes something runs `VACUUM` afterward to reclaim the freed space on disk. You can also delete a session directly from the `/sessions` picker with `ctrl+d`.
 
 ## Development
 
@@ -297,31 +358,42 @@ packages/
 │   ├── agents.ts          # Agent catalog (Talk / Build) + tool-access rules
 │   ├── models.ts          # Provider + model catalog, effort levels
 │   ├── tools.ts           # Tool catalog + read-only classification
-│   ├── schemas.ts         # Zod schemas: requests, messages, stream events
+│   ├── schemas.ts         # Zod schemas: requests, messages, stream events, session API
 │   ├── stream.ts          # applyStreamEvent — delta → part folding
 │   ├── auth.ts            # API key store (read/write/remove)
 │   ├── local-store.ts     # ~/.codeyantram JSON read/write + test guard
 │   └── routes.ts          # API route constants
+├── sessions/src/
+│   ├── store.ts           # createSession/appendMessage/listSessions/pruneSessions/…
+│   ├── db.ts              # SQLite client (WAL, foreign keys, file permissions)
+│   ├── migrations.ts      # forward-only PRAGMA user_version migrations
+│   └── title.ts           # deriveTitle — session title from the first message
 ├── server/src/
-│   ├── index.ts           # Hono app, routes, port
+│   ├── index.ts           # Hono app, routes, port, startup prune sweep + shutdown
 │   ├── lib/chat-stream.ts # streamText → SSE bridge, tool loops, approval
 │   ├── lib/models.ts      # model resolution + provider options
 │   ├── lib/system-prompt.ts        # per-agent prompts as cache-breakpointed system messages
 │   ├── lib/project-instructions.ts # global/project/nested AGENTS.md discovery, caps, framing, sandboxing
 │   ├── providers/         # one builder per provider (AI SDK)
-│   ├── routers/           # /chat and /providers Hono routers
+│   ├── routers/           # /chat, /providers, and /sessions Hono routers
 │   └── tools/             # one executor per tool + path sandboxing
 └── cli/src/
-    ├── index.tsx          # entrypoint, renderer, screen switch
-    ├── layouts/root.tsx   # provider composition
-    ├── screens/           # Home (landing) ⇄ Session (transcript)
-    ├── components/        # input bar, message list, overlays, toasts, pickers
-    ├── providers/         # chat, theme, model, agent, overlay, toast, keyboard
-    ├── api/chat.ts        # SSE client + schema validation
-    ├── commands.tsx       # slash-command registry
-    ├── keyboard.ts        # layered keyboard ownership stack
-    ├── theme.ts           # 12 themes
-    └── syntax-theme.ts    # tree-sitter style mapping
+    ├── index.tsx                    # entrypoint, renderer, screen switch, --continue/--resume
+    ├── resume.ts                    # parses --continue/--resume from argv
+    ├── layouts/root.tsx             # provider composition
+    ├── screens/                     # Home (landing) ⇄ Session (transcript + title header)
+    ├── components/                  # input bar, message list, overlays, toasts, pickers
+    ├── components/session-picker.tsx    # /sessions: list, resume, rename, delete
+    ├── components/resume-on-launch.tsx  # --continue/--resume's actual load-and-resume
+    ├── providers/                   # chat, theme, model, agent, overlay, toast, keyboard, history
+    ├── providers/session-autosave.ts    # save-as-you-go, serialized through one promise chain
+    ├── api/chat.ts                  # SSE client + schema validation
+    ├── api/sessions.ts              # session API client (create/list/load/rename/delete/…)
+    ├── utils/prompt-history-store.ts    # per-project prompt history persistence
+    ├── commands.tsx                 # slash-command registry
+    ├── keyboard.ts                  # layered keyboard ownership stack
+    ├── theme.ts                     # 12 themes
+    └── syntax-theme.ts              # tree-sitter style mapping
 ```
 
 ## Design Notes
@@ -333,3 +405,4 @@ packages/
 - **Cache breakpoints follow content that actually varies together** — the static per-agent prompt and the instructions block are separate system messages precisely so an `AGENTS.md` edit invalidates only the smaller, variable one, not the whole prompt.
 - **Sandboxed by design** — every tool path resolves against `cwd` and rejects anything escaping the project root; mutating tools are gated behind user approval.
 - **Keyboard ownership via a layer stack** — root, autocomplete, and overlay each claim the keyboard in turn, so only the topmost UI reacts to a keypress (and `ctrl+c` exits only when nothing else owns it).
+- **Saved as it happens, never in the way** — every autosave call is fire-and-forget and serialized through one promise chain; a slow or failed save is logged and (once per failure streak) surfaced as a toast, but can never delay or break the live conversation that already succeeded by the time it runs.

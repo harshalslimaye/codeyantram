@@ -1,17 +1,24 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import {
     applyStreamEvent,
+    effortLevelSchema,
+    modelSupportsEffort,
     toRequestMessage,
+    findSupportedChatModel,
     type AgentName,
+    type AssistantMessage,
     type ChatMessage,
     type ChatRequest,
+    type Session,
     type ToolCallPart,
 } from '@codeyantram/shared';
+import { AGENTS } from '../agents';
 import { streamChat } from '../api/chat';
 import { readPreferences, writePreferences } from '../utils/preferences';
 import { useAgent } from './agent';
 import { useModel } from './model';
 import { useEffort } from './effort';
+import { useSessionAutosave } from './session-autosave';
 import { useToast } from './toast';
 
 export type SendMessageOptions = {
@@ -36,6 +43,11 @@ type ChatContextValue = {
     sendMessage: (text: string, options?: SendMessageOptions) => void;
     cancel: () => void;
     newSession: () => void;
+    /** Replaces the live conversation with an already-saved session's history (see
+     * @codeyantram/sessions), reattaching autosave to it so the next message appends
+     * rather than starting yet another session. Used by the session picker and by
+     * --continue/--resume at launch. */
+    resumeSession: (session: Session) => void;
     // The oldest tool call in the latest assistant message still awaiting a
     // decision - null once the turn is still streaming, or nothing is
     // pending. Only ever set for a mutating tool (see isReadOnlyTool).
@@ -45,6 +57,18 @@ type ChatContextValue = {
     // across restarts (see preferences.ts). Defaults to enabled.
     projectInstructionsEnabled: boolean;
     setProjectInstructionsEnabled: (enabled: boolean) => void;
+    // The session currently being saved to (see useSessionAutosave) - null until the
+    // first message of this conversation actually finishes saving. Exposed here for
+    // Phase 5's picker, which needs to know which session is the one currently open.
+    sessionId: string | null;
+    // That session's title - server-derived on create, or handed over by resumeSession
+    // for one already loaded. Null exactly when sessionId is. Shown in the Session
+    // screen's header (see screens/session.tsx).
+    sessionTitle: string | null;
+    // Keeps sessionTitle in sync after the session picker renames whatever is currently
+    // open in chat, via the API itself (not this) - see useSessionAutosave's own
+    // renameCurrent for why the id is checked before applying it.
+    renameCurrentSession: (sessionId: string, title: string) => void;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -72,10 +96,11 @@ function findPendingApproval(message: ChatMessage | undefined): ToolCallPart | n
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
-    const { model } = useModel();
-    const { effort } = useEffort();
-    const { agent } = useAgent();
+    const { model, setModel } = useModel();
+    const { effort, setEffort } = useEffort();
+    const { agent, setAgent } = useAgent();
     const toast = useToast();
+    const autosave = useSessionAutosave();
 
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isStreaming, setIsStreaming] = useState(false);
@@ -119,10 +144,63 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Cancels any in-flight turn first, so a late-arriving delta for the
     // conversation being discarded has nothing left to attach to.
+    //
+    // The old conversation isn't going anywhere - every message in it was already
+    // autosaved as it happened (see Phase 4) - so this only clears what's on screen and
+    // detaches autosave from it (autosave.reset()), so the next message starts a genuinely
+    // new session instead of quietly appending to the one /new just left.
     const newSession = useCallback(() => {
         abortControllerRef.current?.abort();
         updateMessages(() => []);
-    }, [updateMessages]);
+        autosave.reset();
+    }, [autosave.reset, updateMessages]);
+
+    // Swaps the live conversation for an already-saved session's full history - the
+    // session picker and --continue/--resume at launch both funnel through this. Model and
+    // agent are restored when the catalog still recognizes them, falling back to whatever
+    // is currently selected (with a toast) otherwise - the same graceful-degradation
+    // sessionSummarySchema's own comment describes, since a session can easily outlive the
+    // model/agent it was created with.
+    //
+    // Effort is set on a deferred tick (setTimeout 0), not in the same synchronous batch as
+    // setModel - EffortProvider re-resolves its own effort from scratch, during render,
+    // whenever the model prop it reads actually changes (see its own render-time
+    // adjustment), and that resolution runs *after* whatever this function's own body does,
+    // so a direct setEffort call here would get silently overwritten by it the instant the
+    // model change lands. Deferring means EffortProvider's own re-resolution has already
+    // happened and committed by the time this one runs, so it's this call, not that one,
+    // that has the last word - the same "let the current render settle first" reasoning
+    // overlay.tsx's own setTimeout(…, 1) already relies on for focus handoff.
+    const resumeSession = useCallback(
+        (session: Session) => {
+            abortControllerRef.current?.abort();
+
+            const resumedModel = findSupportedChatModel(session.modelId);
+            if (resumedModel === undefined) {
+                toast.warn(`"${session.modelId}" is no longer available - keeping ${model.id} for this session.`);
+            } else {
+                setModel(resumedModel);
+
+                if (session.effort !== null) {
+                    const parsedEffort = effortLevelSchema.safeParse(session.effort);
+                    if (parsedEffort.success && modelSupportsEffort(resumedModel, parsedEffort.data)) {
+                        setTimeout(() => setEffort(parsedEffort.data), 0);
+                    }
+                }
+            }
+
+            const resumedAgent = AGENTS.find(candidate => candidate.name === session.agentName);
+            if (resumedAgent === undefined) {
+                toast.warn(`"${session.agentName}" is no longer available - keeping ${agent.name} for this session.`);
+            } else {
+                setAgent(resumedAgent);
+            }
+
+            updateMessages(() => session.messages);
+            autosave.attach(session.id, session.title);
+        },
+        [agent.name, autosave.attach, model.id, setAgent, setEffort, setModel, toast, updateMessages],
+    );
 
     // The shared streaming core: sends `history` as-is (sendMessage appends
     // the new user message before calling this; respondToApproval doesn't
@@ -264,6 +342,24 @@ export function ChatProvider({ children }: ChatProviderProps) {
                                     );
                                 }
 
+                                // Saved once, here, now that the message is actually
+                                // finished (usage patched in above, if there was any) -
+                                // never mid-stream. One assistant message exists per
+                                // "start"..."done" round (see the "start" case above),
+                                // so this fires once per round even mid-approval-chain,
+                                // not only once the whole chain finally completes -
+                                // each round's message is a real, distinct thing the
+                                // store needs (a tool-call-only message with a pending
+                                // approval is exactly what a resumed session replays).
+                                // messagesRef.current, not `messages` - the updateMessages
+                                // call just above has already synced it, and reading the
+                                // ref rather than requiring a second render round-trip is
+                                // exactly what messagesRef exists for.
+                                const finishedMessage = messagesRef.current.find(
+                                    (message): message is AssistantMessage => message.id === id && message.role === 'assistant',
+                                );
+                                if (finishedMessage !== undefined) autosave.saveAssistantMessage(finishedMessage);
+
                                 if (pendingApprovalIds.size === 0) {
                                     const onDone = pendingOnDoneRef.current;
                                     pendingOnDoneRef.current = null;
@@ -279,7 +375,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 }
             })();
         },
-        [agent.name, model.id, effort, projectInstructionsEnabled, toast, updateMessages],
+        // autosave.saveAssistantMessage specifically, not the whole `autosave` object -
+        // useSessionAutosave returns a fresh object literal every render (only its
+        // individual methods are memoized via useCallback), so depending on the object
+        // itself would recreate runTurn - and everything downstream of it - on every
+        // single render, defeating every useCallback in this file.
+        [agent.name, autosave.saveAssistantMessage, model.id, effort, projectInstructionsEnabled, toast, updateMessages],
     );
 
     const sendMessage = useCallback(
@@ -287,14 +388,25 @@ export function ChatProvider({ children }: ChatProviderProps) {
             const trimmed = text.trim();
             if (trimmed === '' || abortControllerRef.current !== null) return;
 
-            const userMessage: ChatMessage = {
+            // Not annotated `: ChatMessage` - left to infer its own literal type so it
+            // narrows to UserMessage, which autosave.saveUserMessage below requires.
+            const userMessage = {
                 id: crypto.randomUUID(),
-                role: 'user',
-                parts: [{ type: 'text', text: trimmed }],
+                role: 'user' as const,
+                parts: [{ type: 'text' as const, text: trimmed }],
             };
 
             const history = [...messagesRef.current, userMessage];
             updateMessages(() => history);
+            // The agent actually used for this turn - options?.agent can override the
+            // currently-selected one (see SendMessageOptions), and the saved session's
+            // agentName has to reflect that, not whatever agent.name happens to be.
+            autosave.saveUserMessage(userMessage, {
+                project: process.cwd(),
+                modelId: model.id,
+                agentName: options?.agent ?? agent.name,
+                effort,
+            });
             // Always (re)assigned here, including to null - so a plain message sent after
             // an earlier onDone-bearing chain never inherits a stale callback (see the
             // pendingOnDoneRef comment above for why respondToApproval's own runTurn call
@@ -302,7 +414,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             pendingOnDoneRef.current = options?.onDone ?? null;
             runTurn(history, options?.agent);
         },
-        [runTurn, updateMessages],
+        [agent.name, autosave.saveUserMessage, effort, model.id, runTurn, updateMessages],
     );
 
     // Records the user's decision on the oldest pending approval in the
@@ -330,10 +442,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
             };
             const updatedHistory = [...current.slice(0, -1), updatedMessage];
             updateMessages(() => updatedHistory);
+            autosave.saveApproval(pending.toolCallId, approved);
 
             if (findPendingApproval(updatedMessage) === null) runTurn(updatedHistory);
         },
-        [runTurn, updateMessages],
+        [autosave.saveApproval, runTurn, updateMessages],
     );
 
     const pendingApproval = isStreaming ? null : findPendingApproval(messages[messages.length - 1]);
@@ -346,10 +459,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 sendMessage,
                 cancel,
                 newSession,
+                resumeSession,
                 pendingApproval,
                 respondToApproval,
                 projectInstructionsEnabled,
                 setProjectInstructionsEnabled,
+                sessionId: autosave.sessionId,
+                sessionTitle: autosave.sessionTitle,
+                renameCurrentSession: autosave.renameCurrent,
             }}
         >
             {children}
