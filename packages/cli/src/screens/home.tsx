@@ -25,7 +25,7 @@ export function Home() {
                     <box><text attributes={TextAttributes.DIM}>git:{branch}</text></box>                  
                 </box>
                 <box>
-                    <text attributes={TextAttributes.DIM}>v1.0.0</text>
+                    <text attributes={TextAttributes.DIM}>v0.1.0</text>
                 </box>
             </box>
         </box>
