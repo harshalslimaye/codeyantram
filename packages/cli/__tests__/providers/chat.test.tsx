@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { useKeyboard } from '@opentui/react';
 import { testRender } from '@opentui/react/test-utils';
-import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel } from '@codeyantram/shared';
+import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel, type Session } from '@codeyantram/shared';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
 import { EffortProvider } from '../../src/providers/effort';
@@ -9,7 +9,7 @@ import { AgentProvider } from '../../src/providers/agent';
 import { ToastProvider } from '../../src/providers/toast';
 import { ChatProvider, useChat } from '../../src/providers/chat';
 import { NO_BUILTIN_CTRL_C, tick } from '../support/mount';
-import { mockChatFetch, pendingSseResponse, sseResponse } from '../support/sse';
+import { mockChatFetch, mockFetch, pendingSseResponse, sseResponse } from '../support/sse';
 
 const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
 // The catalog guarantees a model with any supportedEffortLevels also has a
@@ -626,6 +626,168 @@ describe('cancel', () => {
         await tick(50);
 
         expect(captured?.isStreaming).toBe(false);
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('newSession', () => {
+    test('clears messages and detaches autosave, so the next message starts a brand new session', async () => {
+        // A custom mock, not mockChatFetch - this test cares about telling two distinct
+        // session creates apart (mockChatFetch's canned {id: 'test-session'} answers every
+        // create identically, which can't distinguish "still the old session" from "a new
+        // one").
+        const createCalls: string[] = [];
+        mockFetch(async (input, init) => {
+            const url = String(input);
+            if (url.includes('/chat')) {
+                return sseResponse(['data: {"type":"start","messageId":"m1"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']);
+            }
+            if (init?.method === 'POST' && /\/sessions$/.test(url)) {
+                createCalls.push(url);
+                return new Response(JSON.stringify({ id: `s${createCalls.length}` }), {
+                    status: 201,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+        expect(createCalls).toHaveLength(1);
+        expect(captured?.sessionId).toBe('s1');
+
+        captured?.newSession();
+        await tick(20);
+        expect(captured?.messages).toEqual([]);
+        expect(captured?.sessionId).toBeNull();
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        // A second create, not an append to s1 - proves /new actually detached autosave
+        // rather than leaving the next message to silently join the old session.
+        expect(createCalls).toHaveLength(2);
+        expect(captured?.sessionId).toBe('s2');
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('resumeSession', () => {
+    const RESUMED_SESSION: Session = {
+        id: 'resumed-1',
+        project: '/repo',
+        title: 'An earlier conversation',
+        createdAt: 1,
+        updatedAt: 2,
+        modelId: 'claude-opus-5',
+        agentName: 'Build',
+        effort: 'low',
+        messageCount: 1,
+        messages: [{ id: 'm0', role: 'user', parts: [{ type: 'text', text: 'previously, on this session' }] }],
+    };
+
+    test('replaces the live conversation with the session and attaches autosave to it', async () => {
+        mockFetch(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        captured?.resumeSession(RESUMED_SESSION);
+        await tick(20);
+
+        expect(captured?.messages).toEqual(RESUMED_SESSION.messages);
+        expect(captured?.sessionId).toBe('resumed-1');
+
+        rendered.renderer.destroy();
+    });
+
+    test('a follow-up turn uses the resumed model, agent, and effort', async () => {
+        const requests: unknown[] = [];
+        mockFetch(async (input, init) => {
+            const url = String(input);
+            if (url.includes('/chat')) {
+                requests.push(JSON.parse(init?.body as string));
+                return sseResponse(['data: {"type":"start","messageId":"m2"}\n\n', 'data: {"type":"done","durationMs":5}\n\n']);
+            }
+            return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        captured?.resumeSession(RESUMED_SESSION);
+        await tick(20);
+        captured?.sendMessage('a follow-up');
+        await tick(50);
+
+        expect(requests).toEqual([
+            expect.objectContaining({ model: 'claude-opus-5', agent: 'Build', effort: 'low' }),
+        ]);
+
+        rendered.renderer.destroy();
+    });
+
+    test('falls back to the current model (with a toast) if the saved one is no longer supported', async () => {
+        mockFetch(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        captured?.resumeSession({ ...RESUMED_SESSION, modelId: 'no-longer-a-real-model' });
+        await tick(20);
+
+        expect(captured?.messages).toEqual(RESUMED_SESSION.messages);
+        await rendered.renderOnce();
+        expect(rendered.captureCharFrame()).toContain('no-longer-a-real-model');
+
+        rendered.renderer.destroy();
+    });
+
+    test('falls back to the current agent (with a toast) if the saved one is no longer supported', async () => {
+        mockFetch(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        captured?.resumeSession({ ...RESUMED_SESSION, agentName: 'NoSuchAgent' as Session['agentName'] });
+        await tick(20);
+
+        expect(captured?.messages).toEqual(RESUMED_SESSION.messages);
+        await rendered.renderOnce();
+        expect(rendered.captureCharFrame()).toContain('NoSuchAgent');
+
+        rendered.renderer.destroy();
+    });
+
+    test('cancels an in-flight turn before switching conversations', async () => {
+        const pending = pendingSseResponse();
+        mockFetch(async (input, init) => {
+            const url = String(input);
+            if (url.includes('/chat')) {
+                pending.abortOn(init?.signal);
+                return pending.response;
+            }
+            return new Response(JSON.stringify({ id: 's1', ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(20);
+        expect(captured?.isStreaming).toBe(true);
+
+        captured?.resumeSession(RESUMED_SESSION);
+        await tick(20);
+
+        expect(captured?.isStreaming).toBe(false);
+        expect(captured?.messages).toEqual(RESUMED_SESSION.messages);
 
         rendered.renderer.destroy();
     });

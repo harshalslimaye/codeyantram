@@ -265,6 +265,75 @@ describe('the "not saved" toast', () => {
     });
 });
 
+describe('reset', () => {
+    test('clears sessionId, so the next saveUserMessage creates a new session', async () => {
+        const calls = trackCalls((_call, index) => (index === 0 ? jsonResponse({ id: 's1' }, 201) : jsonResponse({ id: 's2' }, 201)));
+        const { value } = mockToast();
+        const rendered = await mount(value);
+
+        captured!.saveUserMessage(userMessage, context);
+        await tick(20);
+        expect(captured!.sessionId).toBe('s1');
+
+        captured!.reset();
+        await tick(20);
+        expect(captured!.sessionId).toBeNull();
+
+        captured!.saveUserMessage(userMessage, context);
+        await tick(20);
+
+        expect(captured!.sessionId).toBe('s2');
+        expect(calls).toHaveLength(2);
+        expect(calls.every(call => call.method === 'POST' && call.url.endsWith('/sessions'))).toBe(true);
+
+        rendered.renderer.destroy();
+    });
+
+    test('does not resurrect the old session id if its own create call resolves after reset', async () => {
+        const deferred = deferredResponse();
+        const calls = trackCalls((_call, index) => (index === 0 ? deferred.promise : jsonResponse({ id: 's2' }, 201)));
+        const { value } = mockToast();
+        const rendered = await mount(value);
+
+        // Fires a create for the old conversation, then abandons it (via reset) before
+        // that create's own response has come back - the exact race reset's own queuing
+        // (see session-autosave.ts) exists to guard against.
+        captured!.saveUserMessage(userMessage, context);
+        captured!.reset();
+        captured!.saveUserMessage({ id: 'm3', role: 'user', parts: [{ type: 'text', text: 'a follow-up' }] }, context);
+
+        deferred.resolve(jsonResponse({ id: 's1' }, 201));
+        await tick(30);
+
+        // If reset had raced ahead of the pending create, its `.then` handler
+        // would have overwritten the reset back to 's1' once it finally resolved.
+        expect(captured!.sessionId).toBe('s2');
+        expect(calls).toHaveLength(2);
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('attach', () => {
+    test('points the next save at an already-existing session instead of creating one', async () => {
+        const calls = trackCalls(() => jsonResponse({ ok: true }));
+        const { value } = mockToast();
+        const rendered = await mount(value);
+
+        captured!.attach('existing-session');
+        await tick(20);
+        expect(captured!.sessionId).toBe('existing-session');
+
+        captured!.saveAssistantMessage(reply);
+        await tick(20);
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toMatchObject({ method: 'POST', url: expect.stringContaining('/sessions/existing-session/messages') });
+
+        rendered.renderer.destroy();
+    });
+});
+
 describe('serialisation', () => {
     test('an assistant-message save waits for the same session\'s create call to finish first', async () => {
         const deferred = deferredResponse();

@@ -1,13 +1,18 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import {
     applyStreamEvent,
+    effortLevelSchema,
+    modelSupportsEffort,
     toRequestMessage,
+    findSupportedChatModel,
     type AgentName,
     type AssistantMessage,
     type ChatMessage,
     type ChatRequest,
+    type Session,
     type ToolCallPart,
 } from '@codeyantram/shared';
+import { AGENTS } from '../agents';
 import { streamChat } from '../api/chat';
 import { readPreferences, writePreferences } from '../utils/preferences';
 import { useAgent } from './agent';
@@ -38,6 +43,11 @@ type ChatContextValue = {
     sendMessage: (text: string, options?: SendMessageOptions) => void;
     cancel: () => void;
     newSession: () => void;
+    /** Replaces the live conversation with an already-saved session's history (see
+     * @codeyantram/sessions), reattaching autosave to it so the next message appends
+     * rather than starting yet another session. Used by the session picker and by
+     * --continue/--resume at launch. */
+    resumeSession: (session: Session) => void;
     // The oldest tool call in the latest assistant message still awaiting a
     // decision - null once the turn is still streaming, or nothing is
     // pending. Only ever set for a mutating tool (see isReadOnlyTool).
@@ -78,9 +88,9 @@ function findPendingApproval(message: ChatMessage | undefined): ToolCallPart | n
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
-    const { model } = useModel();
-    const { effort } = useEffort();
-    const { agent } = useAgent();
+    const { model, setModel } = useModel();
+    const { effort, setEffort } = useEffort();
+    const { agent, setAgent } = useAgent();
     const toast = useToast();
     const autosave = useSessionAutosave();
 
@@ -126,10 +136,63 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     // Cancels any in-flight turn first, so a late-arriving delta for the
     // conversation being discarded has nothing left to attach to.
+    //
+    // The old conversation isn't going anywhere - every message in it was already
+    // autosaved as it happened (see Phase 4) - so this only clears what's on screen and
+    // detaches autosave from it (autosave.reset()), so the next message starts a genuinely
+    // new session instead of quietly appending to the one /new just left.
     const newSession = useCallback(() => {
         abortControllerRef.current?.abort();
         updateMessages(() => []);
-    }, [updateMessages]);
+        autosave.reset();
+    }, [autosave.reset, updateMessages]);
+
+    // Swaps the live conversation for an already-saved session's full history - the
+    // session picker and --continue/--resume at launch both funnel through this. Model and
+    // agent are restored when the catalog still recognizes them, falling back to whatever
+    // is currently selected (with a toast) otherwise - the same graceful-degradation
+    // sessionSummarySchema's own comment describes, since a session can easily outlive the
+    // model/agent it was created with.
+    //
+    // Effort is set on a deferred tick (setTimeout 0), not in the same synchronous batch as
+    // setModel - EffortProvider re-resolves its own effort from scratch, during render,
+    // whenever the model prop it reads actually changes (see its own render-time
+    // adjustment), and that resolution runs *after* whatever this function's own body does,
+    // so a direct setEffort call here would get silently overwritten by it the instant the
+    // model change lands. Deferring means EffortProvider's own re-resolution has already
+    // happened and committed by the time this one runs, so it's this call, not that one,
+    // that has the last word - the same "let the current render settle first" reasoning
+    // overlay.tsx's own setTimeout(…, 1) already relies on for focus handoff.
+    const resumeSession = useCallback(
+        (session: Session) => {
+            abortControllerRef.current?.abort();
+
+            const resumedModel = findSupportedChatModel(session.modelId);
+            if (resumedModel === undefined) {
+                toast.warn(`"${session.modelId}" is no longer available - keeping ${model.id} for this session.`);
+            } else {
+                setModel(resumedModel);
+
+                if (session.effort !== null) {
+                    const parsedEffort = effortLevelSchema.safeParse(session.effort);
+                    if (parsedEffort.success && modelSupportsEffort(resumedModel, parsedEffort.data)) {
+                        setTimeout(() => setEffort(parsedEffort.data), 0);
+                    }
+                }
+            }
+
+            const resumedAgent = AGENTS.find(candidate => candidate.name === session.agentName);
+            if (resumedAgent === undefined) {
+                toast.warn(`"${session.agentName}" is no longer available - keeping ${agent.name} for this session.`);
+            } else {
+                setAgent(resumedAgent);
+            }
+
+            updateMessages(() => session.messages);
+            autosave.attach(session.id);
+        },
+        [agent.name, autosave.attach, model.id, setAgent, setEffort, setModel, toast, updateMessages],
+    );
 
     // The shared streaming core: sends `history` as-is (sendMessage appends
     // the new user message before calling this; respondToApproval doesn't
@@ -388,6 +451,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 sendMessage,
                 cancel,
                 newSession,
+                resumeSession,
                 pendingApproval,
                 respondToApproval,
                 projectInstructionsEnabled,

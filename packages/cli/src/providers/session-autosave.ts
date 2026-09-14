@@ -38,6 +38,17 @@ export type SessionAutosave = {
     /** Records an approval decision. Reported the same way as saveAssistantMessage if no
      * session exists yet. */
     saveApproval(toolCallId: string, approved: boolean): void;
+    /** Detaches from whatever session is currently open - the next saveUserMessage
+     * creates a brand new one instead of appending to the old one. Used by /new: the old
+     * conversation is already durable (every message in it was saved as it happened), this
+     * only moves the pointer. Queued through the same chain as every save (see below) for
+     * why this can't just assign the ref directly. */
+    reset(): void;
+    /** Attaches to an already-existing session (its full history is whatever the caller -
+     * a resume flow - already loaded and put in `messages`) so the next saveUserMessage
+     * appends to it instead of creating a new one. Queued through the chain like reset,
+     * for the same reason. */
+    attach(sessionId: string): void;
 };
 
 /**
@@ -152,5 +163,31 @@ export function useSessionAutosave(): SessionAutosave {
         [enqueue],
     );
 
-    return { sessionId, saveUserMessage, saveAssistantMessage, saveApproval };
+    // reset/attach both go through enqueue, the same as every save - not a direct ref
+    // assignment - and that's load-bearing, not just consistency for its own sake. A plain
+    // `sessionIdRef.current = null` here would race a create call already in flight (say,
+    // the very message that /new is abandoning): if that create's own response lands
+    // *after* this runs, its `.then` handler (see saveUserMessage above) would overwrite
+    // the reset right back to the old session id, and the next message would silently
+    // append to the conversation /new just left instead of starting a new one. Queuing
+    // through the chain instead guarantees reset/attach only ever run once every
+    // already-in-flight save for the previous session has fully settled.
+    const reset = useCallback(() => {
+        enqueue(async () => {
+            sessionIdRef.current = null;
+            setSessionId(null);
+        });
+    }, [enqueue]);
+
+    const attach = useCallback(
+        (id: string) => {
+            enqueue(async () => {
+                sessionIdRef.current = id;
+                setSessionId(id);
+            });
+        },
+        [enqueue],
+    );
+
+    return { sessionId, saveUserMessage, saveAssistantMessage, saveApproval, reset, attach };
 }
