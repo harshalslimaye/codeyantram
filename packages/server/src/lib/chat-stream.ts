@@ -2,6 +2,7 @@ import { stepCountIs, streamText, type ModelMessage } from 'ai';
 import type { SSEStreamingApi } from 'hono/streaming';
 import {
     PROVIDER_ENV_VARS,
+    agentBypassesApproval,
     agentHasFullToolAccess,
     agentHasTools,
     type ChatRequest,
@@ -192,7 +193,12 @@ export async function streamChatResponse(
             providerOptions,
             abortSignal: abortController.signal,
             tools: toolsEnabled
-                ? buildProjectTools(request.cwd, !agentHasFullToolAccess(request.agent), includeInstructions)
+                ? buildProjectTools(
+                      request.cwd,
+                      !agentHasFullToolAccess(request.agent),
+                      includeInstructions,
+                      agentBypassesApproval(request.agent),
+                  )
                 : undefined,
             stopWhen: toolsEnabled ? stepCountIs(MAX_TOOL_STEPS) : undefined,
         });

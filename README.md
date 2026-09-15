@@ -9,11 +9,12 @@ Built with **Bun**, **OpenTUI** (a React-based TUI renderer), **Hono**, and the 
 - **In-terminal chat UI** — OpenTUI/React interface with streaming markdown rendering, live deltas, a "Thinking…" spinner, and tool-call status (`running…`, `done`, `needs approval`, `denied`).
 - **Multi-provider support** — Anthropic, OpenAI, Google, and DeepSeek from one catalog, each with its own API key, plus **OpenRouter** for hundreds more models (including free ones) through a single key, fetched live from OpenRouter's own catalog rather than hardcoded.
 - **Reasoning effort control** — models that support it expose per-model effort levels (`none` → `max`), validated before a request is ever sent.
-- **Two agents with graduated tool access**:
+- **Three agents with graduated tool access**:
   - **Talk** — read-only tools (`read_file`, `list_dir`, `glob`, `grep`, `git`) plus `web_fetch` to read a URL — the one Talk tool that still asks for approval, since it leaves the machine.
-  - **Build** — the full tool catalog, including mutating tools (`edit_file`, `write_file`, `bash`).
+  - **Build** — the full tool catalog, including mutating tools (`edit_file`, `write_file`, `bash`), every one of them gated behind approval.
+  - **Yolo** — the same full tool catalog as Build, but with the approval gate switched off entirely: every tool call, `web_fetch` included, runs the instant it's made. See [Yolo](#yolo) below before turning it on.
 - **Project instructions** — an `AGENTS.md` (or `CLAUDE.md`) at the project root is loaded into the system prompt on every turn, so the project's own conventions travel with each request.
-- **Tool approval gate** — every mutating tool pauses mid-turn and asks for explicit approval (`y`/`n`) before it runs.
+- **Tool approval gate** — every mutating tool pauses mid-turn and asks for explicit approval (`y`/`n`) before it runs, unless the active agent is Yolo.
 - **Streaming SSE protocol** — one wire format for success *and* failure; cancel is just closing the connection.
 - **Persistent chat sessions** — every message is autosaved as it happens (not just at the end of a turn), so `/sessions` can list, resume, rename, or delete past conversations across restarts; `--continue`/`--resume <id>` pick one up straight from launch.
 - **Local persistence** — API keys (`auth.json`, `0600`), preferences (`preferences.json`), per-project prompt history (`prompt-history.json`), and chat sessions (`sessions.db`, SQLite) under `~/.codeyantram/` (`0700`).
@@ -119,7 +120,7 @@ The server binds to `127.0.0.1` only (never `0.0.0.0`), and every route requires
 | `enter` | Send message |
 | `shift+enter` | Insert a newline in the input |
 | `↑` / `↓` | Step back and forward through this run's submitted prompts (inside a multi-line prompt, only from its first/last line) |
-| `tab` | Cycle agents (Talk ⇄ Build) |
+| `tab` | Cycle agents (Talk → Build → Yolo → Talk) |
 | `escape` | Cancel an in-flight stream; otherwise clear the prompt |
 | `ctrl+c` | Clear the prompt; quit when the prompt is empty |
 | `↑` / `↓` / `enter` / `tab` / `escape` | Navigate menus and overlays (when one owns the keyboard) |
@@ -131,7 +132,7 @@ Type `/` in the input bar for an autocompleting menu:
 | Command | Description |
 | --- | --- |
 | `/new` | Start a new session (the old one is already saved — see [Sessions](#sessions)) |
-| `/agents` | Switch agent (Talk / Build) |
+| `/agents` | Switch agent (Talk / Build / Yolo) |
 | `/models` | Switch model |
 | `/connect` | Connect a provider with an API key (or clear one) |
 | `/init` | Generate or refine this project's `AGENTS.md` (switches to Build) |
@@ -146,8 +147,15 @@ Type `/` in the input bar for an autocompleting menu:
 
 - **Talk** (default) — chat and *read* the project. Exposed tools are read-only, so it's safe for exploration.
 - **Build** — full agent. Can edit files, write files, and run shell commands — each mutating call pauses for your approval first.
+- **Yolo** — the same full tool catalog as Build, but with no approval gate at all. See [Yolo](#yolo) below.
 
-Switch between them with `tab` or `/agents`; the current agent is shown in the input bar.
+Switch between them with `tab` or `/agents`; the current agent is shown in the input bar, colored to match — Yolo's label uses the theme's warning/error color instead of the ordinary accent, so it stays visually distinct from Talk and Build. The first time a session switches into Yolo (a `tab` press, `/agents`, or resuming into a saved Yolo preference), a one-time toast repeats the same warning; switching away and back within the same run of the CLI doesn't repeat it.
+
+#### Yolo
+
+Yolo runs every tool call the instant the model makes it — `edit_file`, `write_file`, `bash`, and `web_fetch` included — with no `y`/`n` prompt in between. It's the one deliberate exception to this project's normal approval gate, not a relaxed version of it: the bypass is enforced on the **server**, not just hidden in the CLI (`buildProjectTools`'s `skipApproval`, driven by `agentBypassesApproval` — see `AGENTS.md`), so there's no client-side check to work around.
+
+Use it when you trust the task enough that stopping to approve each call would just be friction — a long, repetitive refactor, or a sandboxed/disposable project — and not otherwise. Since `web_fetch` also runs unapproved under Yolo, fetched content reaching the model is exactly as untrusted as it always is, just with one fewer human in the loop before whatever it triggers next executes. `/init` always forces the Build agent for its own turn regardless of which agent you were on, Yolo included, so generating or refining `AGENTS.md` still goes through the ordinary approval prompt.
 
 ### Models
 
@@ -229,15 +237,15 @@ Defined in `packages/shared/src/tools.ts` and executed by the server against the
 
 | Tool | Description | Access |
 | --- | --- | --- |
-| `read_file` | Read a file's contents | Read-only (Talk + Build) |
+| `read_file` | Read a file's contents | Read-only (Talk, Build + Yolo) |
 | `list_dir` | List a directory's entries | Read-only |
 | `glob` | Find files matching a glob | Read-only |
 | `grep` | Regex-search file contents | Read-only |
-| `git` | Read the repository — `status`, `log`, `diff`, `show`, `blame`, `describe`, `shortlog`, `rev-parse`, `ls-files`, `show-ref` | Read-only (Talk + Build) |
-| `edit_file` | Replace one exact, unique snippet | **Requires approval** (Build) |
-| `write_file` | Create/overwrite a file | **Requires approval** (Build) |
-| `bash` | Run a shell command (30s timeout) | **Requires approval** (Build) |
-| `web_fetch` | Fetch a URL and return its content as text | **Requires approval** (Talk + Build) |
+| `git` | Read the repository — `status`, `log`, `diff`, `show`, `blame`, `describe`, `shortlog`, `rev-parse`, `ls-files`, `show-ref` | Read-only (Talk, Build + Yolo) |
+| `edit_file` | Replace one exact, unique snippet | **Requires approval** (Build) · auto-runs (Yolo) |
+| `write_file` | Create/overwrite a file | **Requires approval** (Build) · auto-runs (Yolo) |
+| `bash` | Run a shell command (30s timeout) | **Requires approval** (Build) · auto-runs (Yolo) |
+| `web_fetch` | Fetch a URL and return its content as text | **Requires approval** (Talk + Build) · auto-runs (Yolo) |
 
 ### The approval flow
 
@@ -246,7 +254,7 @@ Defined in `packages/shared/src/tools.ts` and executed by the server against the
 3. `y` / `enter` approves, `n` denies, `escape`/`ctrl+c` counts as a denial.
 4. The CLI records the decision, then automatically starts a new turn that replays it — the server acts on it and streams back the tool result.
 
-Read-only tools run immediately with no prompt. `web_fetch` always needs approval, even in Talk, since it's the one tool that leaves the machine. A tool loop is capped at 15 steps to guard against a confused model looping forever.
+Read-only tools run immediately with no prompt. `web_fetch` always needs approval outside Yolo — even in Talk, since it's the one tool that leaves the machine. The Yolo agent skips this flow entirely: every tool it calls, `web_fetch` included, runs immediately with no `tool-approval-request` event and no overlay — see [Yolo](#yolo). A tool loop is capped at 15 steps to guard against a confused model looping forever, for every agent.
 
 ### Network access
 
@@ -387,7 +395,7 @@ Each package has a `__tests__/` suite covering schemas, stream folding, models, 
 ```
 packages/
 ├── shared/src/
-│   ├── agents.ts          # Agent catalog (Talk / Build) + tool-access rules
+│   ├── agents.ts          # Agent catalog (Talk / Build / Yolo) + tool-access + approval-bypass rules
 │   ├── models.ts          # Provider + model catalog, effort levels
 │   ├── tools.ts           # Tool catalog + read-only classification
 │   ├── schemas.ts         # Zod schemas: requests, messages, stream events, session API
@@ -437,6 +445,6 @@ packages/
 - **Project instructions are input, not authority** — every source (`~/.codeyantram/AGENTS.md`, the project root's, a subdirectory's own) is folded in with explicit limits (no approval bypass, no tool-access widening) and its framing markers neutralized, on the assumption the repo may not be one the user wrote.
 - **Nested instructions ride on the tool that touches them, not the prompt** — a subdirectory's `AGENTS.md` costs nothing until `read_file` actually opens something under it, then attaches to that call's own result instead of growing the system prompt for the whole session.
 - **Cache breakpoints follow content that actually varies together** — the static per-agent prompt and the instructions block are separate system messages precisely so an `AGENTS.md` edit invalidates only the smaller, variable one, not the whole prompt.
-- **Sandboxed by design** — every tool path resolves against `cwd` and rejects anything escaping the project root; mutating tools are gated behind user approval.
+- **Sandboxed by design** — every tool path resolves against `cwd` and rejects anything escaping the project root; mutating tools are gated behind user approval, except under the Yolo agent, whose bypass is a deliberate, single-purpose exception to this rule, not a general escape hatch — see [Yolo](#yolo).
 - **Keyboard ownership via a layer stack** — root, autocomplete, and overlay each claim the keyboard in turn, so only the topmost UI reacts to a keypress (and `ctrl+c` exits only when nothing else owns it).
 - **Saved as it happens, never in the way** — every autosave call is fire-and-forget and serialized through one promise chain; a slow or failed save is logged and (once per failure streak) surfaced as a toast, but can never delay or break the live conversation that already succeeded by the time it runs.

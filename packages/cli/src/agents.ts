@@ -4,9 +4,12 @@ export type Agent = {
     name: AgentName;
 };
 
+// Order is the tab-cycle order too (see getNextAgent) - escalating from
+// read-only, to gated-mutating, to ungated-mutating.
 export const AGENTS: Agent[] = [
     { name: 'Talk' },
     { name: 'Build' },
+    { name: 'Yolo' },
 ];
 
 // Named explicitly (not AGENTS[0]) so reordering the list above can't silently change the default.

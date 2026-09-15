@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { streamText } from 'ai';
+import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import type { RequestMessage } from '@codeyantram/shared';
 import { toModelMessages } from '../../src/lib/chat-stream';
+import { buildProjectTools } from '../../src/tools';
 
 describe('toModelMessages', () => {
     test('joins a user message\'s text parts into one user message', () => {
@@ -231,5 +234,65 @@ describe('toModelMessages', () => {
             role: 'tool',
             content: [{ type: 'tool-approval-response', approvalId: 'appr-1', approved: false }],
         });
+    });
+});
+
+// Exercises the exact call streamChatResponse makes - streamText with the tool
+// set buildProjectTools returns - against a mocked model that calls a mutating
+// tool, without going through HTTP or model resolution. The AI SDK decides
+// whether to emit "tool-approval-request" purely from each tool's own
+// needsApproval (see buildProjectTools' skipApproval), so this is a real
+// exercise of that mechanism, not a re-assertion of what tools.test.ts already
+// checks statically.
+describe('approval bypass (Yolo) through streamText', () => {
+    function mutatingToolCallModel() {
+        return new MockLanguageModelV4({
+            doStream: async () => ({
+                stream: simulateReadableStream({
+                    chunks: [
+                        { type: 'stream-start', warnings: [] },
+                        {
+                            type: 'tool-call',
+                            toolCallId: 'call-1',
+                            toolName: 'write_file',
+                            input: JSON.stringify({ path: 'x.txt', content: 'hi' }),
+                        },
+                        {
+                            type: 'finish',
+                            finishReason: { unified: 'tool-calls' as const, raw: undefined },
+                            usage: {
+                                inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+                                outputTokens: { total: 1, text: 1, reasoning: undefined },
+                            },
+                        },
+                    ],
+                }),
+            }),
+        });
+    }
+
+    async function partTypes(skipApproval: boolean): Promise<string[]> {
+        const tools = buildProjectTools('/tmp', false, true, skipApproval);
+        const result = streamText({
+            model: mutatingToolCallModel(),
+            tools,
+            messages: [{ role: 'user', content: 'write a file' }],
+        });
+
+        const types: string[] = [];
+        for await (const part of result.stream) types.push(part.type);
+        return types;
+    }
+
+    test('skipApproval: true (Yolo) never emits tool-approval-request for a mutating call', async () => {
+        const types = await partTypes(true);
+        expect(types).toContain('tool-call');
+        expect(types).not.toContain('tool-approval-request');
+    });
+
+    test('skipApproval: false (Build) still emits tool-approval-request for the same call', async () => {
+        const types = await partTypes(false);
+        expect(types).toContain('tool-call');
+        expect(types).toContain('tool-approval-request');
     });
 });

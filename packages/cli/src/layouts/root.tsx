@@ -9,6 +9,7 @@ import { OverlayProvider } from '../providers/overlay';
 import { ToastProvider } from '../providers/toast';
 import { ChatProvider } from '../providers/chat';
 import { ApprovalOverlay } from '../components/approval-overlay';
+import { YoloWarning } from '../components/yolo-warning';
 import type { LayerStack } from '../keyboard';
 
 type RootProps = {
@@ -33,6 +34,7 @@ export function Root({ layers, children }: RootProps) {
                                             {children}
                                         </OverlayProvider>
                                         <ApprovalOverlay />
+                                        <YoloWarning />
                                     </ChatProvider>
                                 </ToastProvider>
                             </AgentProvider>

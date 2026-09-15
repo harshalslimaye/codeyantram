@@ -35,6 +35,7 @@ function Harness() {
 
     useKeyboard(key => {
         if (key.name === 's') chat.sendMessage('hello');
+        if (key.name === 'z') chat.sendMessage('hello', { agent: 'Yolo' });
         if (key.name === 'c') chat.cancel();
         if (key.name === 'y') chat.respondToApproval(true);
         if (key.name === 'n') chat.respondToApproval(false);
@@ -500,6 +501,42 @@ describe('tool approval', () => {
             .find((part): part is Extract<typeof part, { type: 'tool-call' }> => part.type === 'tool-call');
         expect(resolvedCall?.approvalStatus).toBe('denied');
         expect(resolvedCall?.result).toBe('Denied by user.');
+
+        rendered.renderer.destroy();
+    });
+
+    // The server never emits tool-approval-request for a Yolo-agent turn (see
+    // buildProjectTools' skipApproval, packages/server/src/tools/index.ts) - so
+    // this proves the CLI side of the bypass by construction rather than by
+    // inspecting any Yolo-specific branch: pendingApproval is derived purely
+    // from stream events (findPendingApproval), with no agent-name check of its
+    // own, so a mutating tool call followed straight by its tool-result (never
+    // an approval-request in between, exactly what the real server sends for
+    // Yolo) simply never makes pendingApproval non-null, and ApprovalOverlay -
+    // which renders nothing when pendingApproval is null - never mounts.
+    test('a Yolo-agent turn never surfaces a pendingApproval, even for a mutating tool', async () => {
+        const requests: unknown[] = [];
+        mockChatFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"tool-call","toolCallId":"c1","toolName":"write_file","args":{"path":"x.txt","content":"hi"}}\n\n',
+                'data: {"type":"tool-result","toolCallId":"c1","result":"created x.txt"}\n\n',
+                'data: {"type":"text-delta","text":"done"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('z');
+        await rendered.waitForFrame(f => f.includes('done'));
+
+        const requestBody = requests[0] as { agent?: string };
+        expect(requestBody.agent).toBe('Yolo');
+        expect(captured?.pendingApproval).toBeNull();
+        expect(captured?.isStreaming).toBe(false);
 
         rendered.renderer.destroy();
     });
