@@ -7,7 +7,7 @@ Built with **Bun**, **OpenTUI** (a React-based TUI renderer), **Hono**, and the 
 ## Features
 
 - **In-terminal chat UI** — OpenTUI/React interface with streaming markdown rendering, live deltas, a "Thinking…" spinner, and tool-call status (`running…`, `done`, `needs approval`, `denied`).
-- **Multi-provider support** — Anthropic, OpenAI, Google, and DeepSeek from one catalog, each with its own API key.
+- **Multi-provider support** — Anthropic, OpenAI, Google, and DeepSeek from one catalog, each with its own API key, plus **OpenRouter** for hundreds more models (including free ones) through a single key, fetched live from OpenRouter's own catalog rather than hardcoded.
 - **Reasoning effort control** — models that support it expose per-model effort levels (`none` → `max`), validated before a request is ever sent.
 - **Two agents with graduated tool access**:
   - **Talk** — read-only tools (`read_file`, `list_dir`, `glob`, `grep`, `git`) plus `web_fetch` to read a URL — the one Talk tool that still asks for approval, since it leaves the machine.
@@ -74,6 +74,7 @@ ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 GOOGLE_GENERATIVE_AI_API_KEY=
 DEEPSEEK_API_KEY=
+OPENROUTER_API_KEY=
 ```
 
 The server checks the `/connect` auth store first, then falls back to the env var — a key set either way works at chat time.
@@ -150,7 +151,7 @@ Switch between them with `tab` or `/agents`; the current agent is shown in the i
 
 ### Models
 
-The catalog is defined in `packages/shared/src/models.ts`:
+The static catalog is defined in `packages/shared/src/models.ts`:
 
 | Provider | Models | Effort levels |
 | --- | --- | --- |
@@ -159,7 +160,11 @@ The catalog is defined in `packages/shared/src/models.ts`:
 | Google | `gemini-3.5-flash` | `minimal` → `high` |
 | DeepSeek | `deepseek-v4-flash`, `deepseek-v4-pro` | — |
 
-Default: `claude-sonnet-5` with `high` effort. A model is only offered in `/models` if its provider has a key configured.
+**OpenRouter is different: its models aren't hardcoded.** `GET /models` fetches and caches OpenRouter's own live catalog (hundreds of models, 5-minute cache — see `packages/server/src/lib/openrouter-models.ts`), and the CLI's `/models` picker merges the result in alongside the static catalog above. A new model OpenRouter adds shows up automatically, with no release of this project required. Effort levels are per-model, taken from whatever OpenRouter itself reports (`reasoning.supported_efforts`) rather than a fixed list.
+
+Some OpenRouter models are free (id ends in `:free`) but rate-limited: 20 requests/minute, and 50/day until you've bought $10 of credits lifetime (never spent by free usage — it's a one-time threshold, not a balance), then 1,000/day. A model built for exactly this kind of agentic, tool-calling workload: `nvidia/nemotron-3.5-lightning:free` (30B MoE, 3B active, 1M context, `tools` support).
+
+Default: `claude-sonnet-5` with `high` effort. A model is only offered in `/models` if its provider has a key configured — OpenRouter has no separate "configured" gate beyond that same key, since (unlike a locally-hosted provider might) it isn't reachable without one.
 
 ### Project instructions
 
@@ -309,6 +314,7 @@ Mounted at `http://127.0.0.1:3001` (override with `API_URL` / `PORT` — `PORT` 
 | --- | --- | --- |
 | `/health` | GET | Liveness check |
 | `/providers` | GET | Which providers have API keys configured |
+| `/models` | GET | OpenRouter's live-fetched model catalog (the static catalog's four providers are already known to the CLI at build time) |
 | `/chat` | POST | Streams one chat turn as SSE |
 | `/sessions` | GET | List sessions for a project (`?project=<cwd>`) |
 | `/sessions` | POST | Create a session with its first message; returns `{ id, title }` |
@@ -400,8 +406,9 @@ packages/
 │   ├── lib/models.ts      # model resolution + provider options
 │   ├── lib/system-prompt.ts        # per-agent prompts as cache-breakpointed system messages
 │   ├── lib/project-instructions.ts # global/project/nested AGENTS.md discovery, caps, framing, sandboxing
+│   ├── lib/openrouter-models.ts    # fetch + cache + map OpenRouter's live catalog
 │   ├── providers/         # one builder per provider (AI SDK)
-│   ├── routers/           # /chat, /providers, and /sessions Hono routers
+│   ├── routers/           # /chat, /providers, /models, and /sessions Hono routers
 │   └── tools/             # one executor per tool + path sandboxing
 └── cli/src/
     ├── index.tsx                    # entrypoint, renderer, screen switch, --continue/--resume
@@ -415,6 +422,7 @@ packages/
     ├── providers/session-autosave.ts    # save-as-you-go, serialized through one promise chain
     ├── api/chat.ts                  # SSE client + schema validation
     ├── api/sessions.ts              # session API client (create/list/load/rename/delete/…)
+    ├── api/models.ts                # fetches OpenRouter's live catalog from GET /models
     ├── utils/prompt-history-store.ts    # per-project prompt history persistence
     ├── commands.tsx                 # slash-command registry
     ├── keyboard.ts                  # layered keyboard ownership stack

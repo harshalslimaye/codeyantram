@@ -31,6 +31,13 @@ describe('resolveApiKey', () => {
         process.env[PROVIDER_ENV_VARS.openai] = 'sk-test-key';
         expect(resolveApiKey('openai')).toBe('sk-test-key');
     });
+
+    // Unlike a locally-hosted provider, OpenRouter is a normal type: 'api' entry - a real
+    // key, resolved exactly the same way as any of the other three hosted providers.
+    test('resolves an OpenRouter key from its env var, same as any other hosted provider', () => {
+        process.env[PROVIDER_ENV_VARS.openrouter] = 'sk-or-test-key';
+        expect(resolveApiKey('openrouter')).toBe('sk-or-test-key');
+    });
 });
 
 describe('getUsableProviders', () => {
@@ -41,5 +48,12 @@ describe('getUsableProviders', () => {
     test('lists only providers with an env var set', () => {
         process.env[PROVIDER_ENV_VARS.google] = 'test-key';
         expect(getUsableProviders()).toEqual(['google']);
+    });
+
+    test('lists openrouter once its key is set, not before - it needs one like any other hosted provider', () => {
+        expect(getUsableProviders()).not.toContain('openrouter');
+
+        process.env[PROVIDER_ENV_VARS.openrouter] = 'sk-or-test-key';
+        expect(getUsableProviders()).toEqual(['openrouter']);
     });
 });

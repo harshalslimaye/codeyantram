@@ -19,6 +19,7 @@ const PROVIDER_LABELS: Record<SupportedProvider, string> = {
     openai: 'OpenAI',
     google: 'Google',
     deepseek: 'DeepSeek',
+    openrouter: 'OpenRouter',
 };
 
 type ConnectFormProps = {

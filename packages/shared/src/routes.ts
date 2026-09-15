@@ -3,6 +3,7 @@
 export const API_ROUTES = {
     health: "/health",
     providers: "/providers",
+    models: "/models",
     chat: "/chat",
     // Only the mount point, not every path under it - /sessions/:id,
     // /sessions/:id/messages, and /sessions/:id/approvals are relative paths

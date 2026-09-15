@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { AgentName, AssistantMessage, EffortLevel, SupportedChatModelId, UserMessage } from '@codeyantram/shared';
+import type { AgentName, AssistantMessage, EffortLevel, UserMessage } from '@codeyantram/shared';
 import { appendMessage, createSession, resolveApproval } from '../api/sessions';
 import { useToast } from './toast';
 
@@ -14,7 +14,10 @@ import { useToast } from './toast';
  */
 export type SessionAutosaveContext = {
     project: string;
-    modelId: SupportedChatModelId;
+    // A bare string, not SupportedChatModelId: an OpenRouter model's id is fetched live
+    // and never appears in the static catalog that type is derived from (see
+    // modelsResponseSchema in @codeyantram/shared).
+    modelId: string;
     agentName: AgentName;
     effort: EffortLevel | undefined;
 };

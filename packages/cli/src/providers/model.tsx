@@ -2,28 +2,31 @@ import { createContext, useState, useContext, useCallback, type ReactNode } from
 import {
     DEFAULT_CHAT_MODEL_ID,
     findSupportedChatModel,
-    type SupportedChatModel,
+    type SupportedChatModelDefinition,
 } from '@codeyantram/shared';
 import { readPreferences, writePreferences } from '../utils/preferences';
 
-const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID) as SupportedChatModel;
+const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID) as SupportedChatModelDefinition;
 
-export function getInitialModel(): SupportedChatModel {
+// Only ever checks the static catalog: unlike it, OpenRouter's list is fetched live (see
+// model-picker.tsx) and isn't available synchronously at startup. A persisted preference
+// pointing at an OpenRouter model falls back to DEFAULT_MODEL here, same as one pointing
+// at a since-removed catalog model already did - the picker's own live fetch is what
+// actually re-offers it once mounted, the user just has to reselect it once per restart.
+export function getInitialModel(): SupportedChatModelDefinition {
     const preferences = readPreferences();
     if (preferences.modelId === undefined) return DEFAULT_MODEL;
 
-    // Falls back to the default if the saved id no longer exists in the
-    // catalog (e.g. the model was removed or renamed since it was saved).
     return findSupportedChatModel(preferences.modelId) ?? DEFAULT_MODEL;
 }
 
-function persistModel(model: SupportedChatModel): void {
+function persistModel(model: SupportedChatModelDefinition): void {
     writePreferences({ modelId: model.id });
 }
 
 type ModelContextValue = {
-    model: SupportedChatModel;
-    setModel: (model: SupportedChatModel) => void;
+    model: SupportedChatModelDefinition;
+    setModel: (model: SupportedChatModelDefinition) => void;
 };
 
 const ModelContext = createContext<ModelContextValue | null>(null);
@@ -41,9 +44,9 @@ type ModelProviderProps = {
 };
 
 export function ModelProvider({ children }: ModelProviderProps) {
-    const [currentModel, setCurrentModel] = useState<SupportedChatModel>(() => getInitialModel());
+    const [currentModel, setCurrentModel] = useState<SupportedChatModelDefinition>(() => getInitialModel());
 
-    const setModel = useCallback((model: SupportedChatModel) => {
+    const setModel = useCallback((model: SupportedChatModelDefinition) => {
         setCurrentModel(model);
         persistModel(model);
     }, []);

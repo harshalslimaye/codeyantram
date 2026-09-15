@@ -14,6 +14,7 @@ import {
     listSessionsResponseSchema,
     messagePartSchema,
     messagePartsSchema,
+    modelsResponseSchema,
     providersResponseSchema,
     renameSessionRequestSchema,
     requestMessageSchema,
@@ -40,8 +41,17 @@ describe("chatModelIdSchema", () => {
         expect(chatModelIdSchema.parse("gemini-3.5-flash")).toBe("gemini-3.5-flash");
     });
 
-    test("rejects an unknown id", () => {
-        expect(chatModelIdSchema.safeParse("gpt-9").success).toBe(false);
+    // Not a closed enum: OpenRouter ids are fetched live from OpenRouter's own catalog
+    // (see openrouter-models.ts on the server), and this package has no synchronous way
+    // to enumerate them - so this schema alone can't reject an id it doesn't recognize.
+    // The server's resolveChatModel is the actual source of truth for those, at
+    // resolution time.
+    test("accepts any non-empty id - an id outside the static catalog is only checked server-side, not here", () => {
+        expect(chatModelIdSchema.safeParse("nvidia/nemotron-3.5-lightning:free").success).toBe(true);
+    });
+
+    test("rejects an empty id", () => {
+        expect(chatModelIdSchema.safeParse("").success).toBe(false);
     });
 });
 
@@ -69,6 +79,36 @@ describe("providersResponseSchema", () => {
 
     test("rejects an unknown provider", () => {
         const result = providersResponseSchema.safeParse({ configuredProviders: ["cohere"] });
+        expect(result.success).toBe(false);
+    });
+});
+
+describe("modelsResponseSchema", () => {
+    const nemotron = {
+        id: "nvidia/nemotron-3.5-lightning:free",
+        provider: "openrouter" as const,
+        supportedEffortLevels: [],
+        contextWindow: 262_144,
+    };
+
+    test("accepts a live-fetched OpenRouter model", () => {
+        expect(modelsResponseSchema.safeParse({ models: [nemotron] }).success).toBe(true);
+    });
+
+    test("accepts none fetched yet", () => {
+        expect(modelsResponseSchema.safeParse({ models: [] }).success).toBe(true);
+    });
+
+    test("accepts an optional defaultEffortLevel", () => {
+        const result = modelsResponseSchema.safeParse({
+            models: [{ ...nemotron, supportedEffortLevels: ["low", "high"], defaultEffortLevel: "high" }],
+        });
+        expect(result.success).toBe(true);
+    });
+
+    test("rejects a model missing a required field", () => {
+        const { contextWindow: _contextWindow, ...withoutContextWindow } = nemotron;
+        const result = modelsResponseSchema.safeParse({ models: [withoutContextWindow] });
         expect(result.success).toBe(false);
     });
 });
@@ -324,9 +364,13 @@ describe("chatRequestSchema", () => {
         expect(result.success).toBe(false);
     });
 
-    test("rejects an unknown model", () => {
+    // Not rejected: this schema can't tell "a real OpenRouter id" apart from "garbage"
+    // without a synchronous way to check OpenRouter's live catalog - see
+    // chatModelIdSchema's own comment. resolveChatModel is where a truly unknown model
+    // actually gets caught, server-side.
+    test("accepts a model outside the static catalog - existence is checked server-side, not here", () => {
         const result = chatRequestSchema.safeParse({ ...baseRequest, model: "gpt-9", messages: [userMessage] });
-        expect(result.success).toBe(false);
+        expect(result.success).toBe(true);
     });
 
     test("rejects a request missing cwd", () => {
@@ -443,8 +487,8 @@ describe("createSessionRequestSchema", () => {
         expect(result.error?.issues[0]?.path).toEqual(["effort"]);
     });
 
-    test("rejects an unknown model - unlike sessionSummarySchema, this validates against the live catalog", () => {
-        expect(createSessionRequestSchema.safeParse({ ...baseCreate, model: "gpt-9" }).success).toBe(false);
+    test("accepts a model outside the static catalog - unlike effort, existence isn't checked here (see chatRequestSchema's own test)", () => {
+        expect(createSessionRequestSchema.safeParse({ ...baseCreate, model: "gpt-9" }).success).toBe(true);
     });
 
     test("rejects a firstMessage that isn't a user message", () => {

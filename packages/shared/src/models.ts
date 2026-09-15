@@ -1,6 +1,6 @@
 // Values match the AI SDK's providerOptions keys exactly, so the server can build
 // `providerOptions: { [model.provider]: ... }` without a translation table.
-export const SUPPORTED_PROVIDERS = ["anthropic", "openai", "google", "deepseek"] as const;
+export const SUPPORTED_PROVIDERS = ["anthropic", "openai", "google", "deepseek", "openrouter"] as const;
 
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
@@ -12,6 +12,7 @@ export const PROVIDER_ENV_VARS: Record<SupportedProvider, string> = {
     openai: "OPENAI_API_KEY",
     google: "GOOGLE_GENERATIVE_AI_API_KEY",
     deepseek: "DEEPSEEK_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
 };
 
 // Every effort value any supported model accepts. No single provider supports
@@ -26,7 +27,13 @@ export const EFFORT_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
-type SupportedChatModelDefinition = {
+// Exported (not just used internally) so it can also describe an OpenRouter model -
+// fetched live from OpenRouter's own catalog (see the server's openrouter-models module),
+// never listed in SUPPORTED_CHAT_MODELS below. Both shapes are structurally identical;
+// only where they come from differs. OpenRouter's own ids are already vendor-namespaced
+// (e.g. "nvidia/nemotron-3.5-lightning:free"), so they can't collide with this catalog's
+// bare ids ("claude-sonnet-5") - no dedicated collision-avoidance key was needed.
+export type SupportedChatModelDefinition = {
     id: string;
     provider: SupportedProvider;
     // Empty when the model rejects the effort parameter entirely (e.g. claude-haiku-4-5).
@@ -131,12 +138,16 @@ export function findSupportedChatModel(modelId: string): SupportedChatModel | un
     return SUPPORTED_CHAT_MODELS.find(model => model.id === modelId);
 }
 
+// Both take the wider SupportedChatModelDefinition (not SupportedChatModel) so they also
+// accept a live-fetched OpenRouter model (see resolveChatModel on the server) - both
+// shapes carry supportedEffortLevels, which is all either of these needs.
+
 // Whether the model accepts an effort parameter at all (e.g. false for claude-haiku-4-5).
-export function modelHasEffortControl(model: SupportedChatModel): boolean {
+export function modelHasEffortControl(model: SupportedChatModelDefinition): boolean {
     return model.supportedEffortLevels.length > 0;
 }
 
-export function modelSupportsEffort(model: SupportedChatModel, effort: EffortLevel): boolean {
+export function modelSupportsEffort(model: SupportedChatModelDefinition, effort: EffortLevel): boolean {
     return (model.supportedEffortLevels as readonly EffortLevel[]).includes(effort);
 }
 

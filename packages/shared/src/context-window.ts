@@ -1,5 +1,5 @@
 import type { AssistantMessage, ChatMessage } from "./schemas";
-import type { SupportedChatModel } from "./models";
+import type { SupportedChatModelDefinition } from "./models";
 
 export type ContextUsage = {
     /** The provider-reported size of the current request's prompt, in tokens - already
@@ -49,7 +49,7 @@ export function latestUsageMessage(messages: readonly ChatMessage[]): AssistantM
  * errored turn produces no "done" at all, so the previous reading is left in place rather
  * than cleared.
  */
-export function contextUsage(messages: readonly ChatMessage[], model: SupportedChatModel): ContextUsage | null {
+export function contextUsage(messages: readonly ChatMessage[], model: SupportedChatModelDefinition): ContextUsage | null {
     const message = latestUsageMessage(messages);
     if (message === null) return null;
 

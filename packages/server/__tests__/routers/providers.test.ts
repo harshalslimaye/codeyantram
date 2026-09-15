@@ -33,4 +33,11 @@ describe('GET /providers', () => {
 
         expect(await res.json()).toEqual({ configuredProviders: ['anthropic'] });
     });
+
+    test('reports openrouter once its key is set, same as any other hosted provider', async () => {
+        process.env[PROVIDER_ENV_VARS.openrouter] = 'sk-or-test-key';
+        const res = await app.request('/providers');
+
+        expect(await res.json()).toEqual({ configuredProviders: ['openrouter'] });
+    });
 });
