@@ -251,12 +251,6 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
                                 {Math.round(usage.percent)}% ·
                             </text>
                         )}
-                        {/* Only once there is something to recall - on a fresh session the
-                            hint would just be crowding the footer with an unusable key. */}
-                        {history.entries.length > 0 && (
-                            <text attributes={TextAttributes.DIM}>↑ history ·</text>
-                        )}
-                        <text attributes={TextAttributes.DIM}>↵ send</text>
                     </box>
                 </box>
             </box>
