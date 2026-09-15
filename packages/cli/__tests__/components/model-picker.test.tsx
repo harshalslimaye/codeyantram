@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { afterEach, beforeEach, describe, test, expect } from 'bun:test';
 import { testRender } from '@opentui/react/test-utils';
 import { useKeyboard } from '@opentui/react';
 import { ModelPicker } from '../../src/components/model-picker';
@@ -9,8 +9,28 @@ import { KeyboardProvider, useLayerStack } from '../../src/providers/keyboard';
 import { createLayerStack, ROOT_LAYER } from '../../src/keyboard';
 import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel, SUPPORTED_CHAT_MODELS } from '@codeyantram/shared';
 import { NO_BUILTIN_CTRL_C, tick } from '../support/mount';
+import { mockFetch } from '../support/sse';
 
 const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
+
+const originalFetch = global.fetch;
+
+function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+// Every test in this file mounts a real ModelPicker, which fires off a real
+// fetchOpenRouterModels() call on mount - defaulting it to an empty, immediate success
+// keeps the catalog-only tests below deterministic rather than depending on however fast
+// a real (refused) connection to localhost happens to fail. Tests that care about
+// OpenRouter's own models or the loading/error states override this per test.
+beforeEach(() => {
+    mockFetch(async () => jsonResponse({ models: [] }));
+});
+
+afterEach(() => {
+    global.fetch = originalFetch;
+});
 
 // "m" opens the real overlay with a real ModelPicker inside it, and a
 // persisting `current:<id>` label outside the overlay makes the actual
@@ -141,6 +161,80 @@ describe('filtering', () => {
         await rendered.renderOnce();
 
         expect(rendered.captureCharFrame()).toContain('No models found');
+        rendered.renderer.destroy();
+    });
+});
+
+describe('OpenRouter models', () => {
+    const nemotron = {
+        id: 'nvidia/nemotron-3.5-lightning:free',
+        provider: 'openrouter' as const,
+        supportedEffortLevels: [],
+        contextWindow: 1_000_000,
+    };
+
+    test('shows a loading indicator while the fetch is in flight', async () => {
+        // Never resolves within the test - only what renders before that matters here.
+        mockFetch(() => new Promise<Response>(() => {}));
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('m');
+        const frame = await rendered.waitForFrame(f => f.includes('Models'));
+
+        expect(frame).toContain('Loading OpenRouter models');
+        rendered.renderer.destroy();
+    });
+
+    test('merges a fetched OpenRouter model in alongside the static catalog', async () => {
+        mockFetch(async () => jsonResponse({ models: [nemotron] }));
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('m');
+        await rendered.waitForFrame(f => f.includes('Models'));
+
+        await rendered.mockInput.typeText('nvidia', 15);
+        const frame = await rendered.waitForFrame(f => f.includes(nemotron.id));
+
+        expect(frame).toContain(nemotron.id);
+        expect(frame).toContain('openrouter');
+        rendered.renderer.destroy();
+    });
+
+    test('selecting a fetched OpenRouter model works the same as a catalog one', async () => {
+        mockFetch(async () => jsonResponse({ models: [nemotron] }));
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('m');
+        await rendered.waitForFrame(f => f.includes('Models'));
+
+        await rendered.mockInput.typeText('nvidia', 15);
+        await rendered.waitForFrame(f => f.includes(nemotron.id));
+        rendered.mockInput.pressEnter();
+        await tick(50);
+        await rendered.renderOnce();
+
+        const frame = rendered.captureCharFrame();
+        expect(frame).not.toContain('Models');
+        expect(frame).toContain(`current:${nemotron.id}`);
+        rendered.renderer.destroy();
+    });
+
+    test('shows an error, without breaking the static catalog, when the fetch fails', async () => {
+        mockFetch(async () => jsonResponse({ error: 'unreachable' }, 502));
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('m');
+        const frame = await rendered.waitForFrame(f => f.includes("Couldn't load OpenRouter models"));
+
+        expect(frame).toContain(DEFAULT_MODEL.id);
         rendered.renderer.destroy();
     });
 });

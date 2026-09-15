@@ -82,13 +82,18 @@ describe('POST /sessions', () => {
         expect(body.title).toBe('fix the socket handshake');
     });
 
-    test('rejects an unknown model', async () => {
+    // Not rejected: createSessionRequestSchema can't tell "gpt-9" apart from a real,
+    // not-yet-cached OpenRouter id without an async lookup it deliberately doesn't do -
+    // see checkModelAndEffort's own comment in @codeyantram/shared. A model that never
+    // actually resolves fails later, at chat time, the same way a session against a
+    // since-removed model already does (see sessionSummarySchema's own comment).
+    test('accepts a model outside the static catalog - existence is only checked at chat time', async () => {
         const res = await req('/sessions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...createBody, model: 'gpt-9' }),
         });
-        expect(res.status).toBe(400);
+        expect(res.status).toBe(201);
     });
 
     test('rejects an effort the model does not support', async () => {

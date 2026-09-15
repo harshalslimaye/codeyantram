@@ -5,6 +5,7 @@ import { API_ROUTES, getOrCreateServerToken, isTestEnv } from '@codeyantram/shar
 import { closeDb, getSessionStore } from '@codeyantram/sessions';
 import chatRouter from './routers/chat';
 import providersRouter from './routers/providers';
+import modelsRouter from './routers/models';
 import sessionsRouter from './routers/sessions';
 import { requireServerToken } from './lib/server-auth';
 import { serveApp, type RuntimeServerHandle } from './runtime/http';
@@ -32,6 +33,7 @@ export const app = new Hono()
     .get('/health', c => c.json({ status: 'ok' }))
     .route(API_ROUTES.chat, chatRouter)
     .route(API_ROUTES.providers, providersRouter)
+    .route(API_ROUTES.models, modelsRouter)
     .route(API_ROUTES.sessions, sessionsRouter);
 
 export type AppType = typeof app;

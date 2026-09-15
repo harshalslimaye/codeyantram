@@ -1,11 +1,11 @@
 import { createContext, useState, useContext, useCallback, type ReactNode } from 'react';
-import { modelSupportsEffort, type EffortLevel, type SupportedChatModel } from '@codeyantram/shared';
+import { modelSupportsEffort, type EffortLevel, type SupportedChatModelDefinition } from '@codeyantram/shared';
 import { getEffortForModel, setEffortForModel } from '../utils/preferences';
 import { useModel } from './model';
 
 // Persisted → model default → undefined. A persisted level is ignored if the
 // model no longer supports it (catalog changed, or the model has no effort control at all).
-function resolveEffort(model: SupportedChatModel): EffortLevel | undefined {
+function resolveEffort(model: SupportedChatModelDefinition): EffortLevel | undefined {
     const persisted = getEffortForModel(model.id);
     if (persisted !== undefined && modelSupportsEffort(model, persisted)) return persisted;
     return "defaultEffortLevel" in model ? model.defaultEffortLevel : undefined;

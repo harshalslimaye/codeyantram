@@ -9,7 +9,7 @@ import {
     type RequestMessage,
     type ToolCallPart,
 } from '@codeyantram/shared';
-import { MissingCredentialsError, resolveChatModel } from './models';
+import { MissingCredentialsError, UnknownModelError, resolveChatModel } from './models';
 import { loadPromptInstructions, type PromptInstructions } from './project-instructions';
 import { rollConversationCache, supportsCacheControl, withConversationCache } from './prompt-cache';
 import { getSystemMessages } from './system-prompt';
@@ -151,13 +151,24 @@ export async function streamChatResponse(
 
     let resolved;
     try {
-        resolved = resolveChatModel(request.model, request.effort);
+        resolved = await resolveChatModel(request.model, request.effort);
     } catch (error) {
         if (error instanceof MissingCredentialsError) {
             await send(stream, {
                 type: 'error',
                 code: 'missing_credentials',
                 message: `No API key for ${error.provider}. Set ${PROVIDER_ENV_VARS[error.provider]} or run /connect.`,
+            });
+            return;
+        }
+        // Reachable for real now that model ids aren't fully validated until here (see
+        // chatModelIdSchema's own comment in @codeyantram/shared) - a stale OpenRouter id
+        // the picker offered before its next refetch, or one typed by hand.
+        if (error instanceof UnknownModelError) {
+            await send(stream, {
+                type: 'error',
+                code: 'invalid_request',
+                message: `${error.message}. It may no longer be offered by its provider.`,
             });
             return;
         }

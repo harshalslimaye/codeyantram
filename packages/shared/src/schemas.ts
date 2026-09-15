@@ -2,14 +2,19 @@ import { z } from "zod";
 import { AGENT_NAMES } from "./agents";
 import {
     EFFORT_LEVELS,
-    SUPPORTED_CHAT_MODEL_IDS,
     SUPPORTED_PROVIDERS,
     findSupportedChatModel,
     modelSupportsEffort,
+    type EffortLevel,
 } from "./models";
 
 export const effortLevelSchema = z.enum(EFFORT_LEVELS);
-export const chatModelIdSchema = z.enum(SUPPORTED_CHAT_MODEL_IDS);
+// Not z.enum(SUPPORTED_CHAT_MODEL_IDS): that would only ever admit the static catalog's
+// four hosted providers, and OpenRouter's ids are fetched live from OpenRouter's own
+// catalog (see the server's openrouter-models module) - this package has no synchronous
+// way to enumerate them. checkModelAndEffort below validates what it can (the static
+// catalog); an OpenRouter id is checked for real at resolution time, server-side.
+export const chatModelIdSchema = z.string().min(1);
 export const providerSchema = z.enum(SUPPORTED_PROVIDERS);
 export const agentNameSchema = z.enum(AGENT_NAMES);
 
@@ -26,6 +31,34 @@ export const providersResponseSchema = z.object({
 });
 
 export type ProvidersResponse = z.infer<typeof providersResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+// One model as this app describes it - not OpenRouter's raw API shape (id, name,
+// context_length, pricing, supported_parameters, ...), which stays entirely inside the
+// server's own openrouter-models module. This is the wire contract for GET /models: the
+// CLI only ever needs to know a model in codeyantram's own vocabulary, the same shape the
+// static catalog already uses (see SupportedChatModelDefinition in models.ts).
+export const chatModelDefinitionSchema = z.object({
+    id: z.string().min(1),
+    provider: providerSchema,
+    supportedEffortLevels: z.array(effortLevelSchema),
+    defaultEffortLevel: effortLevelSchema.optional(),
+    contextWindow: z.number().int().positive(),
+});
+
+// Response for GET /models: every OpenRouter model the server's live fetch currently
+// knows about. Deliberately not the static catalog too - the CLI already has that at
+// build time (SUPPORTED_CHAT_MODELS), so this only ever carries what it can't otherwise
+// know, the same "don't resend what the client already has" reasoning providersResponseSchema's
+// own comment gives for leaving the model catalog out of GET /providers.
+export const modelsResponseSchema = z.object({
+    models: z.array(chatModelDefinitionSchema),
+});
+
+export type ModelsResponse = z.infer<typeof modelsResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Message parts
@@ -185,6 +218,29 @@ export function toRequestMessage(message: ChatMessage): RequestMessage {
     };
 }
 
+// Shared by chatRequestSchema and createSessionRequestSchema below: both accept a bare
+// model id and an optional effort. Only the static catalog can be checked synchronously
+// here - an id this package doesn't recognize isn't rejected, since it may be a live-fetched
+// OpenRouter model (see chatModelIdSchema's own comment above); the server's
+// resolveChatModel is the actual source of truth for those, at resolution time.
+function checkModelAndEffort(
+    request: { model: string; effort?: EffortLevel },
+    ctx: z.RefinementCtx,
+): void {
+    if (request.effort === undefined) return;
+
+    const model = findSupportedChatModel(request.model);
+    if (model === undefined) return;
+
+    if (!modelSupportsEffort(model, request.effort)) {
+        ctx.addIssue({
+            code: "custom",
+            message: "This model does not support the requested effort level",
+            path: ["effort"],
+        });
+    }
+}
+
 // What the CLI POSTs to the local server. `effort` is optional - omitting it
 // lets each provider apply its own default (see defaultEffortLevel in
 // models.ts). `agent` and `cwd` are required: the server needs to know
@@ -204,17 +260,7 @@ export const chatRequestSchema = z
         // that doesn't send this field sees no change in behavior.
         useProjectInstructions: z.boolean().optional(),
     })
-    .refine(
-        request => {
-            if (request.effort === undefined) return true;
-            const model = findSupportedChatModel(request.model);
-            return model !== undefined && modelSupportsEffort(model, request.effort);
-        },
-        {
-            message: "This model does not support the requested effort level",
-            path: ["effort"],
-        },
-    );
+    .superRefine(checkModelAndEffort);
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 
@@ -275,17 +321,7 @@ export const createSessionRequestSchema = z
         effort: effortLevelSchema.optional(),
         firstMessage: userMessageSchema,
     })
-    .refine(
-        request => {
-            if (request.effort === undefined) return true;
-            const model = findSupportedChatModel(request.model);
-            return model !== undefined && modelSupportsEffort(model, request.effort);
-        },
-        {
-            message: "This model does not support the requested effort level",
-            path: ["effort"],
-        },
-    );
+    .superRefine(checkModelAndEffort);
 
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
 
