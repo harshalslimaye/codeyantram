@@ -35,6 +35,13 @@ const TOOL_EXECUTORS: Record<ToolName, (input: any, cwd: string) => Promise<stri
  * Talk-visible but still needs approval, since it leaves the machine even
  * though it doesn't write to disk.
  *
+ * `skipApproval` (Yolo mode) overrides every tool's `needsApproval` to false,
+ * regardless of what toolNeedsApproval says - this, not anything in the CLI,
+ * is where the approval gate actually gets bypassed: streamText never emits a
+ * tool-approval-request part for a tool whose needsApproval is false (see
+ * chat-stream.ts). It's independent of `restricted` - the two combine freely,
+ * though in practice Yolo is always called with `restricted: false`.
+ *
  * `includeProjectInstructions` (default on) additionally controls read_file's own
  * nested-instructions discovery (see project-instructions.ts) - the same off-switch that
  * disables the global/project files in the system prompt turns this off too, one on/off
@@ -42,7 +49,7 @@ const TOOL_EXECUTORS: Record<ToolName, (input: any, cwd: string) => Promise<stri
  * buildProjectTools call per turn, so a nested file surfaces once per directory per turn
  * without any state outliving the request.
  */
-export function buildProjectTools(cwd: string, restricted = false, includeProjectInstructions = true): ToolSet {
+export function buildProjectTools(cwd: string, restricted = false, includeProjectInstructions = true, skipApproval = false): ToolSet {
     const tools: ToolSet = {};
     const seenNestedInstructions = includeProjectInstructions ? new Set<string>() : undefined;
 
@@ -60,8 +67,9 @@ export function buildProjectTools(cwd: string, restricted = false, includeProjec
             inputSchema: definition.inputSchema,
             // Tools that only read state run immediately; everything else
             // pauses the turn until the CLI approves or denies it (see
-            // chat-stream.ts and toolNeedsApproval).
-            needsApproval: toolNeedsApproval(definition.name),
+            // chat-stream.ts and toolNeedsApproval) - unless skipApproval
+            // (Yolo) overrides that for every tool, gated or not.
+            needsApproval: skipApproval ? false : toolNeedsApproval(definition.name),
             execute: async (input: any) => {
                 try {
                     return await executor(input, cwd);

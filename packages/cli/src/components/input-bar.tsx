@@ -233,7 +233,11 @@ export function InputBar({ placeholder = "ask anything ... 'fix the socket hands
                 />
                 <box flexDirection="row" justifyContent="space-between">
                     <box flexDirection="row" gap={1}>
-                        <text fg={colors.accent}>{agent.name}</text>
+                        {/* Yolo skips the approval gate every other agent goes through, so
+                            its label borrows the theme's error color instead of the
+                            ordinary accent - a glance at the footer should be enough to
+                            notice it's active. */}
+                        <text fg={agent.name === 'Yolo' ? colors.error : colors.accent}>{agent.name}</text>
                         <text attributes={TextAttributes.DIM}>›</text>
                         <text>{model.id}</text>
                         {effort !== undefined && (

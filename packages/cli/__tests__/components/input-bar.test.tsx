@@ -111,6 +111,57 @@ describe('rendering', () => {
 
 });
 
+describe('tab cycles agent', () => {
+    // Finds the one span rendering exactly this agent name, so its actual fg
+    // color can be asserted directly - mirrors percentSpan below.
+    function agentSpan(rendered: Awaited<ReturnType<typeof mount>>, name: string) {
+        for (const line of rendered.captureSpans().lines) {
+            for (const span of line.spans) {
+                if (span.text === name) return span;
+            }
+        }
+        return undefined;
+    }
+
+    test('cycles Talk -> Build -> Yolo -> Talk', async () => {
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('Talk'));
+
+        rendered.mockInput.pressTab();
+        await rendered.waitForFrame(f => f.includes('Build'));
+
+        rendered.mockInput.pressTab();
+        const yoloFrame = await rendered.waitForFrame(f => f.includes('Yolo'));
+        expect(yoloFrame).not.toContain('Build');
+
+        rendered.mockInput.pressTab();
+        const talkFrame = await rendered.waitForFrame(f => f.includes('Talk'));
+        expect(talkFrame).not.toContain('Yolo');
+
+        rendered.renderer.destroy();
+    });
+
+    test('colors the Yolo label with the theme error color, not the ordinary accent', async () => {
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('Talk'));
+
+        rendered.mockInput.pressTab();
+        await rendered.waitForFrame(f => f.includes('Build'));
+        const buildSpan = agentSpan(rendered, 'Build');
+        expect(buildSpan).toBeDefined();
+        expect(buildSpan!.fg.equals(RGBA.fromHex(DEFAULT_THEME.colors.accent))).toBe(true);
+
+        rendered.mockInput.pressTab();
+        await rendered.waitForFrame(f => f.includes('Yolo'));
+        const yoloSpan = agentSpan(rendered, 'Yolo');
+        expect(yoloSpan).toBeDefined();
+        expect(yoloSpan!.fg.equals(RGBA.fromHex(DEFAULT_THEME.colors.error))).toBe(true);
+        expect(yoloSpan!.fg.equals(RGBA.fromHex(DEFAULT_THEME.colors.accent))).toBe(false);
+
+        rendered.renderer.destroy();
+    });
+});
+
 describe('typing', () => {
     // The input is `focused` unconditionally on mount, so every test here
     // typing immediately after mount and having it register is itself the

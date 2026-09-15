@@ -147,4 +147,29 @@ describe('selecting an agent', () => {
         expect(frame).toContain(`current:${OTHER_AGENT.name}`);
         rendered.renderer.destroy();
     });
+
+    // OTHER_AGENT above resolves to whichever non-default agent AGENTS lists
+    // first (Build) - this targets Yolo specifically, so the three-agent
+    // picker's full range (not just "any non-default agent") is exercised.
+    test('can select Yolo specifically', async () => {
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('a');
+        await rendered.waitForFrame(f => f.includes('Agents'));
+
+        await rendered.mockInput.typeText('yolo', 15);
+        await tick(50);
+        await rendered.renderOnce();
+        expect(rendered.captureCharFrame()).toContain('Yolo');
+
+        rendered.mockInput.pressEnter();
+        await tick(50);
+        await rendered.renderOnce();
+
+        const frame = rendered.captureCharFrame();
+        expect(frame).not.toContain('Agents');
+        expect(frame).toContain('current:Yolo');
+        rendered.renderer.destroy();
+    });
 });

@@ -65,6 +65,26 @@ describe('buildProjectTools', () => {
         expect(tools.edit_file).toBeUndefined();
         expect(tools.undo_edit).toBeUndefined();
     });
+
+    test('skipApproval (Yolo) overrides every tool to needsApproval: false', () => {
+        const tools = buildProjectTools(projectDir, false, true, true);
+        for (const definition of TOOL_CATALOG) {
+            expect(tools[definition.name]?.needsApproval).toBe(false);
+        }
+        // Explicitly the tools that normally gate, to make the override obvious
+        // rather than relying only on the loop above.
+        expect(tools.bash?.needsApproval).toBe(false);
+        expect(tools.write_file?.needsApproval).toBe(false);
+        expect(tools.edit_file?.needsApproval).toBe(false);
+        expect(tools.web_fetch?.needsApproval).toBe(false);
+    });
+
+    test('skipApproval: false (default) leaves needsApproval untouched', () => {
+        const tools = buildProjectTools(projectDir, false, true, false);
+        for (const definition of TOOL_CATALOG) {
+            expect(tools[definition.name]?.needsApproval).toBe(toolNeedsApproval(definition.name));
+        }
+    });
 });
 
 describe('read_file', () => {
