@@ -122,7 +122,7 @@ export function OverlayList<T>({
     return (
         <box>
             <box flexDirection="row" justifyContent="space-between">
-                <input focused value={query} onInput={setQuery} placeholder={placeholder} />
+                <input focused flexGrow={1} value={query} onInput={setQuery} placeholder={placeholder} />
                 <box flexDirection="row" gap={1}>
                     {onRename !== undefined && (
                         <text attributes={TextAttributes.DIM}>ctrl+r rename</text>

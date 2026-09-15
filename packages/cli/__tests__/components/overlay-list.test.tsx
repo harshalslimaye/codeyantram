@@ -90,6 +90,29 @@ describe('filtering', () => {
         expect(frame).not.toContain('gamma');
         rendered.renderer.destroy();
     });
+
+    // Regression test: the search box previously had no width/flexGrow, so
+    // yoga gave it ~0 intrinsic width and its cursor-follow horizontal
+    // scroll only ever showed the single most-recently-typed character,
+    // hiding everything typed before it. "zx" matches nothing in
+    // THREE_ITEMS/"No results"/"Search", so it can only appear intact if
+    // the search box itself rendered both characters together.
+    test('the search box shows every character typed so far, not just the last one', async () => {
+        const { setup } = mountList();
+        const rendered = await setup;
+        await rendered.waitForFrame(f => f.includes('alpha'));
+
+        await rendered.mockInput.typeText('z', 0);
+        await tick(30);
+        await rendered.renderOnce();
+
+        await rendered.mockInput.typeText('x', 0);
+        await tick(30);
+        await rendered.renderOnce();
+
+        expect(rendered.captureCharFrame()).toContain('zx');
+        rendered.renderer.destroy();
+    });
 });
 
 describe('no matches', () => {
