@@ -26,6 +26,7 @@ function mountList(overrides: Partial<{
     emptyMessage: string;
     withOnDelete: boolean;
     withOnRename: boolean;
+    deleteLabel: string;
 }> = {}) {
     const onSelect = mock((_item: string) => {});
     const onDelete = mock((_item: string) => {});
@@ -49,6 +50,7 @@ function mountList(overrides: Partial<{
                     onSelect={onSelect}
                     onDelete={overrides.withOnDelete ? onDelete : undefined}
                     onRename={overrides.withOnRename ? onRename : undefined}
+                    deleteLabel={overrides.deleteLabel}
                     renderer={renderItem}
                     isActive={overrides.isActive}
                     maxVisible={overrides.maxVisible}
@@ -275,6 +277,16 @@ describe('onDelete', () => {
         const frame = await rendered.waitForFrame(f => f.includes('alpha'));
 
         expect(frame).toContain('ctrl+d delete');
+        rendered.renderer.destroy();
+    });
+
+    test('deleteLabel overrides the word shown after ctrl+d', async () => {
+        const { setup } = mountList({ withOnDelete: true, deleteLabel: 'clear' });
+        const rendered = await setup;
+        const frame = await rendered.waitForFrame(f => f.includes('alpha'));
+
+        expect(frame).toContain('ctrl+d clear');
+        expect(frame).not.toContain('ctrl+d delete');
         rendered.renderer.destroy();
     });
 

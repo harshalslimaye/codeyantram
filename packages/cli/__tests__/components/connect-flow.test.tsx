@@ -2,7 +2,7 @@ import { describe, test, expect, mock } from 'bun:test';
 import { testRender } from '@opentui/react/test-utils';
 import { useKeyboard } from '@opentui/react';
 import { SUPPORTED_PROVIDERS } from '@codeyantram/shared';
-import { ConnectFlow, ConnectForm } from '../../src/components/connect-flow';
+import { ConnectFlow, ConnectForm, ConnectProviderList } from '../../src/components/connect-flow';
 import { ThemeProvider } from '../../src/providers/theme';
 import { useOverlay, OverlayProvider } from '../../src/providers/overlay';
 import { ToastProvider } from '../../src/providers/toast';
@@ -151,39 +151,34 @@ describe('submitting a key', () => {
 
 // ConnectForm only needs 'overlay' on top of the layer stack (real usage
 // guarantees that by only ever mounting inside an open Overlay — see
-// overlay-list.test.tsx for the same setup), so its clear-on-blank branch
-// (only reachable when a provider is already configured, which the disk
-// guard above makes untestable end-to-end under NODE_ENV=test) is exercised
-// directly here instead of through ConnectFlow.
+// overlay-list.test.tsx for the same setup).
 describe('ConnectForm', () => {
     function mountForm(props: Partial<Parameters<typeof ConnectForm>[0]> = {}) {
         const onSaved = mock(() => {});
-        const onCleared = mock(() => {});
         const layers = createLayerStack();
         layers.push('overlay');
 
         const setup = testRender(
             <KeyboardProvider layers={layers}>
-                <ConnectForm provider="anthropic" isConfigured={true} onSaved={onSaved} onCleared={onCleared} {...props} />
+                <ConnectForm provider="anthropic" isConfigured={true} onSaved={onSaved} {...props} />
             </KeyboardProvider>,
             { width: 60, height: 20, ...NO_BUILTIN_CTRL_C }
         );
-        return setup.then(rendered => ({ ...rendered, onSaved, onCleared }));
+        return setup.then(rendered => ({ ...rendered, onSaved }));
     }
 
-    test('a blank submit on a configured provider clears the key', async () => {
+    test('a blank submit on a configured provider does nothing', async () => {
         const rendered = await mountForm();
         await rendered.waitForFrame(f => f.includes('Anthropic'));
 
         rendered.mockInput.pressEnter();
-        await rendered.waitFor(() => rendered.onCleared.mock.calls.length > 0);
+        await tick(20);
 
-        expect(rendered.onCleared).toHaveBeenCalledWith('anthropic');
         expect(rendered.onSaved).not.toHaveBeenCalled();
         rendered.renderer.destroy();
     });
 
-    test('a non-blank submit saves the key, not clears it', async () => {
+    test('a non-blank submit saves the key', async () => {
         const rendered = await mountForm();
         await rendered.waitForFrame(f => f.includes('Anthropic'));
 
@@ -193,7 +188,72 @@ describe('ConnectForm', () => {
         await rendered.waitFor(() => rendered.onSaved.mock.calls.length > 0);
 
         expect(rendered.onSaved).toHaveBeenCalledWith('anthropic');
-        expect(rendered.onCleared).not.toHaveBeenCalled();
+        rendered.renderer.destroy();
+    });
+});
+
+// ConnectProviderList mounted directly with a seeded `configured` set, same
+// reasoning as ConnectForm above: the ctrl+d clear action is only reachable
+// for a configured provider, which the disk guard makes untestable
+// end-to-end through ConnectFlow under NODE_ENV=test.
+describe('ConnectProviderList', () => {
+    function mountList(configured: Set<'anthropic' | 'openai' | 'google' | 'deepseek' | 'openrouter'> = new Set()) {
+        const onSelect = mock((_provider: string) => {});
+        const onClear = mock((_provider: string) => {});
+        const layers = createLayerStack();
+        layers.push('overlay');
+
+        const setup = testRender(
+            <KeyboardProvider layers={layers}>
+                <ThemeProvider>
+                    <ConnectProviderList configured={configured} onSelect={onSelect} onClear={onClear} />
+                </ThemeProvider>
+            </KeyboardProvider>,
+            { width: 60, height: 20, ...NO_BUILTIN_CTRL_C }
+        );
+        return setup.then(rendered => ({ ...rendered, onSelect, onClear }));
+    }
+
+    test('shows the ctrl+d clear hint', async () => {
+        const rendered = await mountList();
+        const frame = await rendered.waitForFrame(f => f.includes('Anthropic'));
+
+        expect(frame).toContain('ctrl+d clear');
+        rendered.renderer.destroy();
+    });
+
+    test('ctrl+d on a configured provider calls onClear', async () => {
+        const rendered = await mountList(new Set(['anthropic']));
+        await rendered.waitForFrame(f => f.includes('Anthropic'));
+
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await rendered.waitFor(() => rendered.onClear.mock.calls.length > 0);
+
+        expect(rendered.onClear).toHaveBeenCalledWith('anthropic');
+        expect(rendered.onSelect).not.toHaveBeenCalled();
+        rendered.renderer.destroy();
+    });
+});
+
+describe('clearing a key', () => {
+    // Unlike "configured", "unconfigured" is the guaranteed starting state
+    // under the disk guard (see the Harness comment above), so this guard —
+    // ConnectFlow.handleClear no-oping when the highlighted provider has no
+    // key — is reachable end-to-end here, unlike the "clears it" case.
+    test('ctrl+d on an unconfigured provider does nothing', async () => {
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('ready'));
+
+        rendered.mockInput.pressKey('c');
+        await rendered.waitForFrame(f => f.includes('Connect'));
+
+        rendered.mockInput.pressKey('d', { ctrl: true });
+        await tick(20);
+        await rendered.renderOnce();
+
+        const frame = rendered.captureCharFrame();
+        expect(frame).toContain('Connect');
+        expect(frame).not.toContain('cleared');
         rendered.renderer.destroy();
     });
 });

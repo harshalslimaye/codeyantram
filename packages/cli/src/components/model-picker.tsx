@@ -7,6 +7,7 @@ import { OverlayList } from './overlay-list';
 import { Spinner } from './spinner';
 import { prefixFilter } from '../utils/filter';
 import { fetchOpenRouterModels, ModelsApiError } from '../api/models';
+import { fetchConfiguredProviders, ProvidersApiError } from '../api/providers';
 
 export function ModelPicker() {
     const { model, setModel } = useModel();
@@ -18,20 +19,33 @@ export function ModelPicker() {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
 
+    // Checking which providers are configured comes first: without an OpenRouter key,
+    // every one of its hundreds of models would be unusable and unfiltered noise in a
+    // picker otherwise sized for a handful of catalog entries, so this skips fetching
+    // (and showing) that catalog entirely rather than fetching it and filtering after
+    // the fact. A failure here is treated the same as a failed models fetch - OpenRouter
+    // just doesn't show up, and the same error banner explains why.
     useEffect(() => {
         let cancelled = false;
 
-        fetchOpenRouterModels()
-            .then(models => {
+        (async () => {
+            try {
+                const configuredProviders = await fetchConfiguredProviders();
+                if (cancelled || !configuredProviders.includes('openrouter')) return;
+
+                const models = await fetchOpenRouterModels();
                 if (!cancelled) setOpenRouterModels(models);
-            })
-            .catch((error: unknown) => {
+            } catch (error) {
                 if (cancelled) return;
-                setLoadError(error instanceof ModelsApiError ? error.message : 'Failed to load OpenRouter models');
-            })
-            .finally(() => {
+                setLoadError(
+                    error instanceof ModelsApiError || error instanceof ProvidersApiError
+                        ? error.message
+                        : 'Failed to load OpenRouter models',
+                );
+            } finally {
                 if (!cancelled) setLoading(false);
-            });
+            }
+        })();
 
         return () => {
             cancelled = true;

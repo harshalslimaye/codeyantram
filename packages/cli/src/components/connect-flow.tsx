@@ -26,13 +26,12 @@ type ConnectFormProps = {
     provider: SupportedProvider;
     isConfigured: boolean;
     onSaved: (provider: SupportedProvider) => void;
-    onCleared: (provider: SupportedProvider) => void;
 };
 
-// Exported for direct testing: it takes no context, only props, so its three
-// submit branches (save / clear / no-op-on-blank-when-unconfigured) are
-// cleanly testable without needing a real disk round-trip through ConnectFlow.
-export function ConnectForm({ provider, isConfigured, onSaved, onCleared }: ConnectFormProps) {
+// Exported for direct testing: it takes no context, only props, so its two
+// submit branches (save / no-op-on-blank) are cleanly testable without
+// needing a real disk round-trip through ConnectFlow.
+export function ConnectForm({ provider, isConfigured, onSaved }: ConnectFormProps) {
     const [value, setValue] = useState('');
     const layers = useLayerStack();
 
@@ -43,22 +42,16 @@ export function ConnectForm({ provider, isConfigured, onSaved, onCleared }: Conn
     // owning the layer stack, which only holds while this form is mounted
     // inside an open Overlay.
     //
-    // Submitting blank is only meaningful for a provider that already has a
-    // key — it clears it, mirroring OpenCode's separate `auth logout`
-    // without needing a second command or keybinding here. For an
-    // unconfigured provider, a blank submit does nothing.
+    // A blank submit is always a no-op here — clearing an existing key is a
+    // separate, visible action (ctrl+d on the provider list, see
+    // ConnectProviderList below), not something buried in this form.
     useKeyboard(key => {
         if (!layers.isOnTop('overlay')) return;
         if (key.name !== 'return') return;
         key.preventDefault();
 
         const trimmed = value.trim();
-        if (trimmed === '') {
-            if (!isConfigured) return;
-            removeAuthKey(provider);
-            onCleared(provider);
-            return;
-        }
+        if (trimmed === '') return;
 
         writeAuthKey(provider, trimmed);
         onSaved(provider);
@@ -72,10 +65,42 @@ export function ConnectForm({ provider, isConfigured, onSaved, onCleared }: Conn
                     focused
                     value={value}
                     onInput={setValue}
-                    placeholder={isConfigured ? 'New key, or blank + enter to clear' : 'Paste your API key'}
+                    placeholder={isConfigured ? 'New key' : 'Paste your API key'}
                 />
             </box>
         </box>
+    );
+}
+
+type ConnectProviderListProps = {
+    configured: Set<SupportedProvider>;
+    onSelect: (provider: SupportedProvider) => void;
+    onClear: (provider: SupportedProvider) => void;
+};
+
+// Exported for direct testing, same reasoning as ConnectForm: mounting it
+// directly with a seeded `configured` set is the only way to exercise the
+// ctrl+d clear action, since getConfiguredProviders() (real disk I/O) is
+// stubbed to always return empty under NODE_ENV=test.
+export function ConnectProviderList({ configured, onSelect, onClear }: ConnectProviderListProps) {
+    return (
+        <OverlayList<SupportedProvider>
+            items={[...SUPPORTED_PROVIDERS]}
+            getKey={provider => provider}
+            filter={prefixFilter(provider => PROVIDER_LABELS[provider])}
+            onSelect={onSelect}
+            onDelete={onClear}
+            deleteLabel="clear"
+            renderer={provider => (
+                <box flexDirection="row" gap={1} justifyContent="space-between">
+                    <text>{PROVIDER_LABELS[provider]}</text>
+                    <text attributes={TextAttributes.DIM}>
+                        {configured.has(provider) ? '● configured' : 'not set'}
+                    </text>
+                </box>
+            )}
+            emptyMessage="No providers found"
+        />
     );
 }
 
@@ -94,22 +119,29 @@ export function ConnectFlow() {
         () => new Set(getConfiguredProviders()),
     );
 
+    // Mirrors the old "blank submit on an unconfigured provider does
+    // nothing" behavior: ctrl+d only does something for a row that actually
+    // has a key to clear. Stays on the list afterward (same as /sessions'
+    // ctrl+d delete), so clearing several providers in a row doesn't require
+    // reopening the overlay each time.
+    const handleClear = (provider: SupportedProvider) => {
+        if (!configured.has(provider)) return;
+
+        removeAuthKey(provider);
+        setConfigured(current => {
+            const next = new Set(current);
+            next.delete(provider);
+            return next;
+        });
+        toast.info(`${PROVIDER_LABELS[provider]} key cleared`);
+    };
+
     if (selected === null) {
         return (
-            <OverlayList<SupportedProvider>
-                items={[...SUPPORTED_PROVIDERS]}
-                getKey={provider => provider}
-                filter={prefixFilter(provider => PROVIDER_LABELS[provider])}
+            <ConnectProviderList
+                configured={configured}
                 onSelect={provider => setSelected(provider)}
-                renderer={provider => (
-                    <box flexDirection="row" gap={1} justifyContent="space-between">
-                        <text>{PROVIDER_LABELS[provider]}</text>
-                        <text attributes={TextAttributes.DIM}>
-                            {configured.has(provider) ? '● configured' : 'not set'}
-                        </text>
-                    </box>
-                )}
-                emptyMessage="No providers found"
+                onClear={handleClear}
             />
         );
     }
@@ -121,15 +153,6 @@ export function ConnectFlow() {
             onSaved={provider => {
                 setConfigured(current => new Set(current).add(provider));
                 toast.info(`${PROVIDER_LABELS[provider]} key saved`);
-                overlay.close();
-            }}
-            onCleared={provider => {
-                setConfigured(current => {
-                    const next = new Set(current);
-                    next.delete(provider);
-                    return next;
-                });
-                toast.info(`${PROVIDER_LABELS[provider]} key cleared`);
                 overlay.close();
             }}
         />
