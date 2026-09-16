@@ -20,12 +20,24 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 // Every test in this file mounts a real ModelPicker, which fires off a real
-// fetchOpenRouterModels() call on mount - defaulting it to an empty, immediate success
-// keeps the catalog-only tests below deterministic rather than depending on however fast
-// a real (refused) connection to localhost happens to fail. Tests that care about
-// OpenRouter's own models or the loading/error states override this per test.
+// fetchConfiguredProviders() call followed by fetchOpenRouterModels() on mount -
+// dispatching on the URL (same approach as mockChatFetch in support/sse.ts) so both
+// endpoints get sane defaults: OpenRouter counted as configured (so the catalog-merge
+// behavior below is exercised by default) with an empty model list, rather than
+// depending on however fast a real (refused) connection to localhost happens to fail.
+// Tests that care about OpenRouter's own models, its configured state, or the
+// loading/error states override this per test.
+function mockModelsFetch(overrides: { configuredProviders?: string[]; models?: unknown[] } = {}) {
+    const { configuredProviders = ['openrouter'], models = [] } = overrides;
+    mockFetch(async input => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes('/providers')) return jsonResponse({ configuredProviders });
+        return jsonResponse({ models });
+    });
+}
+
 beforeEach(() => {
-    mockFetch(async () => jsonResponse({ models: [] }));
+    mockModelsFetch();
 });
 
 afterEach(() => {
@@ -188,7 +200,7 @@ describe('OpenRouter models', () => {
     });
 
     test('merges a fetched OpenRouter model in alongside the static catalog', async () => {
-        mockFetch(async () => jsonResponse({ models: [nemotron] }));
+        mockModelsFetch({ models: [nemotron] });
 
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('current:'));
@@ -205,7 +217,7 @@ describe('OpenRouter models', () => {
     });
 
     test('selecting a fetched OpenRouter model works the same as a catalog one', async () => {
-        mockFetch(async () => jsonResponse({ models: [nemotron] }));
+        mockModelsFetch({ models: [nemotron] });
 
         const rendered = await mount();
         await rendered.waitForFrame(f => f.includes('current:'));
@@ -222,6 +234,29 @@ describe('OpenRouter models', () => {
         const frame = rendered.captureCharFrame();
         expect(frame).not.toContain('Models');
         expect(frame).toContain(`current:${nemotron.id}`);
+        rendered.renderer.destroy();
+    });
+
+    test('does not fetch or show OpenRouter models when the provider is not configured', async () => {
+        mockModelsFetch({ configuredProviders: [], models: [nemotron] });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('current:'));
+
+        rendered.mockInput.pressKey('m');
+        await rendered.waitForFrame(f => f.includes('Models'));
+        // Nothing to wait on beyond a tick - the provider check resolves immediately,
+        // and (this is the point of the test) fetchOpenRouterModels never runs.
+        await tick(50);
+        await rendered.renderOnce();
+
+        await rendered.mockInput.typeText('nvidia', 15);
+        await tick(50);
+        await rendered.renderOnce();
+
+        const frame = rendered.captureCharFrame();
+        expect(frame).not.toContain(nemotron.id);
+        expect(frame).not.toContain("Couldn't load OpenRouter models");
         rendered.renderer.destroy();
     });
 

@@ -65,7 +65,7 @@ bun install
 
 Keys can be provided either way (checked in this order):
 
-1. **In-app** — run `/connect` in the CLI, pick a provider, and paste a key. Stored in `~/.codeyantram/auth.json` with `0600` permissions.
+1. **In-app** — run `/connect` in the CLI, pick a provider, and paste a key. Stored in `~/.codeyantram/auth.json` with `0600` permissions. `ctrl+d` on a configured provider's row clears its key.
 2. **Environment variables** — copy `.env.example` to `.env` and fill in keys:
 
 ```bash

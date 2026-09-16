@@ -34,6 +34,10 @@ type OverlayListProps<T> = {
      * onDelete above, just a different chord for a different action. Shows a
      * "ctrl+r rename" hint next to onDelete's own when provided. */
     onRename?: (item: T) => void;
+    /** Overrides the word shown after "ctrl+d" in onDelete's hint - e.g. "clear" for a
+     * list where the action removes a value rather than deleting an item outright.
+     * Defaults to 'delete', so /sessions' existing hint is unchanged. */
+    deleteLabel?: string;
 };
 
 /**
@@ -53,6 +57,7 @@ export function OverlayList<T>({
     emptyMessage = 'No results',
     onDelete,
     onRename,
+    deleteLabel = 'delete',
 }: OverlayListProps<T>) {
     const { colors } = useTheme();
     const layers = useLayerStack();
@@ -128,7 +133,7 @@ export function OverlayList<T>({
                         <text attributes={TextAttributes.DIM}>ctrl+r rename</text>
                     )}
                     {onDelete !== undefined && (
-                        <text attributes={TextAttributes.DIM}>ctrl+d delete</text>
+                        <text attributes={TextAttributes.DIM}>ctrl+d {deleteLabel}</text>
                     )}
                 </box>
             </box>
