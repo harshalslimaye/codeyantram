@@ -45,6 +45,47 @@ describe('getSystemPrompt', () => {
         expect(prompt).toContain('web_fetch');
         expect(prompt).toContain('curl');
     });
+
+    // The tool description alone routes badly: grep is right there in the catalog and is
+    // the obvious reach for any search. These four points are what make delegation happen
+    // at all, and what keep it from happening in the cases where it costs more than it
+    // saves - see the explore entry in shared's TOOL_CATALOG.
+    describe('explore guidance', () => {
+        // The assistant has no search tools of its own (see WORKER_ONLY_TOOLS), so the
+        // prompt states that outright rather than describing a choice it doesn't have.
+        test.each(['Talk', 'Build', 'Yolo'] as const)('%s is told it cannot search for itself', agent => {
+            const prompt = getSystemPrompt(agent);
+            expect(prompt).toContain('explore');
+            expect(prompt).toContain('cannot search the project yourself');
+        });
+
+        // The measured failure this exists to stop: taking the worker's answer and then
+        // re-deriving it. With nothing to re-derive it with, the instruction is to sharpen
+        // the task instead.
+        test.each(['Talk', 'Build', 'Yolo'] as const)('%s is told to re-ask rather than re-check', agent => {
+            expect(getSystemPrompt(agent)).toContain('another explore with a sharper task');
+        });
+
+        // read_file deliberately stays on this side of the line - edit_file matches
+        // byte-exactly, and a worker's summary is another model's words.
+        test.each(['Talk', 'Build', 'Yolo'] as const)('%s is told to read cited lines itself', agent => {
+            const prompt = getSystemPrompt(agent);
+            expect(prompt).toContain('never delegate the bytes');
+            expect(prompt).toContain('offset and limit');
+        });
+
+        test('names explore among the tools each agent is told it has', () => {
+            expect(getSystemPrompt('Talk')).toContain('explore finds things');
+            expect(getSystemPrompt('Build')).toContain('explore to find one you don\'t');
+        });
+
+        // bash can grep, which is both unbounded and outside the tool accounting - the one
+        // hole the catalog cannot close, so the prompt closes it by hand.
+        test.each(['Build', 'Yolo'] as const)('%s is steered off searching with bash', agent => {
+            expect(getSystemPrompt(agent)).toContain('bash');
+            expect(getSystemPrompt(agent)).toMatch(/grep/);
+        });
+    });
 });
 
 describe('getSystemMessages', () => {

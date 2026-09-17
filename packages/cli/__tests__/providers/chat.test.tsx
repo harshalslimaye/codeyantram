@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { useKeyboard } from '@opentui/react';
 import { testRender } from '@opentui/react/test-utils';
-import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel, type Session } from '@codeyantram/shared';
+import { DEFAULT_CHAT_MODEL_ID, DEFAULT_WORKER_MODEL_ID, findSupportedChatModel, type Session } from '@codeyantram/shared';
 import { ThemeProvider } from '../../src/providers/theme';
 import { ModelProvider } from '../../src/providers/model';
 import { EffortProvider } from '../../src/providers/effort';
@@ -212,6 +212,151 @@ describe('sendMessage', () => {
         await tick(50);
 
         expect(captured?.isStreaming).toBe(false);
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('worker model', () => {
+    test("sends the worker's own model and effort alongside the orchestrator's", async () => {
+        const requests: any[] = [];
+        mockChatFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(60);
+
+        // Two independent choices on one request: the worker defaults to a different
+        // model than the orchestrator, which is the whole point of the split.
+        expect(requests[0].model).toBe(DEFAULT_CHAT_MODEL_ID);
+        expect(requests[0].workerModel).toBe(DEFAULT_WORKER_MODEL_ID);
+        expect(requests[0].workerModel).not.toBe(requests[0].model);
+
+        rendered.renderer.destroy();
+    });
+
+    // The default worker model takes no effort parameter at all, so this is the ordinary
+    // case rather than an edge one - and sending a level it rejects would fail validation
+    // server-side before the turn ever started.
+    test('omits workerEffort for a worker model with no effort control', async () => {
+        const requests: any[] = [];
+        mockChatFetch(async (_url, init) => {
+            requests.push(JSON.parse(init?.body as string));
+            return sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]);
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(60);
+
+        expect(requests[0].workerEffort).toBeUndefined();
+
+        rendered.renderer.destroy();
+    });
+
+    test("folds a turn's worker spend onto the message it belongs to", async () => {
+        mockChatFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"done","durationMs":5,"usage":{"inputTokens":900},"subagents":{"count":3,"inputTokens":41000,"outputTokens":600}}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(60);
+
+        const assistant = captured?.messages.find(m => m.role === 'assistant');
+        expect(assistant?.role === 'assistant' && assistant.subagents).toEqual({
+            count: 3,
+            inputTokens: 41_000,
+            outputTokens: 600,
+        });
+        // Kept out of `usage`, which is what the context-window reading is built on -
+        // worker tokens never entered this turn's window.
+        expect(assistant?.role === 'assistant' && assistant.usage?.inputTokens).toBe(900);
+
+        rendered.renderer.destroy();
+    });
+});
+
+describe('cancelling mid-tool', () => {
+    // Regression: the cleanup that drops an unresolved tool-call used to live only in the
+    // "error" branch, so cancelling between a "tool-call" event and its "tool-result" left
+    // a tool-call with no result in history - which every later turn would then replay,
+    // making the whole session unsendable, not just the cancelled turn.
+    //
+    // Latent while every tool finished in milliseconds. A subagent tool runs for seconds,
+    // which makes the window ordinary rather than vanishing.
+    test('drops an assistant message holding a tool-call the stream never resolved', async () => {
+        const pending = pendingSseResponse();
+        // A hand-built body doesn't reject on abort the way a real fetch()'d one does -
+        // without this the stream simply hangs and the cancel path is never exercised.
+        mockChatFetch(async (_url, init) => {
+            pending.abortOn(init?.signal);
+            return pending.response;
+        });
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(50);
+
+        pending.push('data: {"type":"start","messageId":"m1"}\n\n');
+        pending.push(
+            'data: {"type":"tool-call","toolCallId":"call_1","toolName":"explore","args":{"task":"find the approval gate"}}\n\n',
+        );
+        await tick(50);
+
+        // The call is on screen while it runs - that is what the spinner renders.
+        const streaming = captured?.messages.find(m => m.role === 'assistant');
+        expect(streaming?.role === 'assistant' && streaming.parts.some(p => p.type === 'tool-call')).toBe(true);
+
+        rendered.mockInput.pressKey('c');
+        await tick(50);
+
+        const assistants = captured?.messages.filter(m => m.role === 'assistant') ?? [];
+        expect(assistants).toHaveLength(0);
+        expect(captured?.isStreaming).toBe(false);
+
+        rendered.renderer.destroy();
+    });
+
+    test('keeps a completed turn, whose tool calls all have results', async () => {
+        mockChatFetch(async () =>
+            sseResponse([
+                'data: {"type":"start","messageId":"m1"}\n\n',
+                'data: {"type":"tool-call","toolCallId":"call_1","toolName":"explore","args":{"task":"find the approval gate"}}\n\n',
+                'data: {"type":"tool-result","toolCallId":"call_1","result":"tools.ts:188 - READ_ONLY_TOOLS"}\n\n',
+                'data: {"type":"text-delta","text":"Found it."}\n\n',
+                'data: {"type":"done","durationMs":5}\n\n',
+            ]),
+        );
+
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('streaming:false'));
+
+        rendered.mockInput.pressKey('s');
+        await tick(80);
+
+        const assistants = captured?.messages.filter(m => m.role === 'assistant') ?? [];
+        expect(assistants).toHaveLength(1);
 
         rendered.renderer.destroy();
     });

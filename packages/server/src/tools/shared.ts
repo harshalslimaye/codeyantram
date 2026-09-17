@@ -4,6 +4,45 @@ import { dirname, relative, resolve, sep } from 'node:path';
 
 export const BASH_TIMEOUT_MS = 30_000;
 export const MAX_OUTPUT_CHARS = 20_000;
+/** What one worker may hand back, enforced in the executor rather than asked for in its
+ * prompt - a prompt-only limit is a request, and a small model will exceed it. Two orders
+ * of magnitude under MAX_OUTPUT_CHARS on purpose: a worker exists to return a handful of
+ * cited lines, and anything approaching a raw tool result means it has stopped
+ * summarizing. */
+export const MAX_SUBAGENT_OUTPUT_CHARS = 2_000;
+/**
+ * How many model calls one worker gets before its loop is cut off (see MAX_TOOL_STEPS in
+ * chat-stream.ts for the orchestrator's own, much larger, budget).
+ *
+ * Four, not six. A locate-and-cite task finishes in three - search, look, report - and the
+ * fourth is room for one wrong first guess. This is the tightest of the three caps on
+ * purpose, because a worker's steps are what a turn actually *waits* on: each one is a full
+ * provider round trip with nothing streaming to the user meanwhile, so every extra step
+ * allowed is seconds of silence bought for a worker that is, by this point, lost. Each step
+ * also re-sends everything the worker has accumulated, so its cost grows faster than the
+ * count suggests.
+ *
+ * Raising this is the wrong fix for a worker that runs out of steps - the task string was
+ * too vague, or the answer needs two workers rather than one.
+ */
+export const MAX_SUBAGENT_STEPS = 4;
+/**
+ * How many workers one turn may spawn in total, across every worker type.
+ *
+ * Not derivable from the two step caps, which is the thing to understand before touching
+ * it: a step is one model call *plus every tool call that came back with it*, so parallel
+ * spawns all land inside a single step and `stepCountIs` never sees them. It bounds the
+ * depth of one loop and says nothing about how many loops run beside it - each worker
+ * starts its own step count at zero. Without this, one turn could spawn an unbounded
+ * number of workers: 15 orchestrator steps x however many the model emits per step.
+ *
+ * Per turn rather than per step, and shared rather than per worker type, because a turn is
+ * one user message - which is the unit an unexpected bill actually shows up in.
+ *
+ * A typical locate-and-report turn spends one to four, so this only ever binds on a
+ * runaway - the same role MAX_TOOL_STEPS plays.
+ */
+export const MAX_SUBAGENT_SPAWNS_PER_TURN = 10;
 // edit_file loads the whole file into memory and writes it back out for even a
 // one-line change, so it needs its own ceiling well below what read_file/write_file
 // would otherwise allow through.

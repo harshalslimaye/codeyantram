@@ -87,12 +87,23 @@ describe('with a completed turn', () => {
         global.fetch = originalFetch;
     });
 
-    function stubServerWithUsage(usage: Record<string, number>) {
+    function stubServerWithUsage(
+        usage: Record<string, number>,
+        toolUsage?: { toolName: string; calls: number; resultChars: number }[],
+        subagents?: { count: number; inputTokens: number; outputTokens: number },
+    ) {
+        const done = {
+            type: 'done',
+            durationMs: 5,
+            usage,
+            ...(toolUsage !== undefined && { toolUsage }),
+            ...(subagents !== undefined && { subagents }),
+        };
         mockChatFetch(() =>
             Promise.resolve(
                 sseResponse([
                     'data: {"type":"start","messageId":"m1"}\n\n',
-                    `data: {"type":"done","durationMs":5,"usage":${JSON.stringify(usage)}}\n\n`,
+                    `data: ${JSON.stringify(done)}\n\n`,
                 ]),
             ),
         );
@@ -169,6 +180,68 @@ describe('with a completed turn', () => {
 
         expect(barLine).toBeDefined();
         expect(barLine!.fg.equals(RGBA.fromHex(DEFAULT_THEME.colors.error))).toBe(true);
+        rendered.renderer.destroy();
+    });
+
+    test('attributes window occupancy to the tools that produced it', async () => {
+        stubServerWithUsage({ inputTokens: 0.3 * CONTEXT_WINDOW }, [
+            { toolName: 'grep', calls: 2, resultChars: 8_000 },
+            { toolName: 'read_file', calls: 1, resultChars: 20_000 },
+        ]);
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('ready'));
+
+        const frame = await sendAndOpen(rendered);
+
+        expect(frame).toContain('Tool output (session)');
+        expect(frame).toContain('read_file');
+        expect(frame).toContain('grep');
+        // Sorted by size, so the tool actually filling the window reads first.
+        expect(frame.indexOf('read_file')).toBeLessThan(frame.indexOf('grep'));
+        // Call counts ride along with the name, so one huge read is distinguishable
+        // from many small ones.
+        expect(frame).toContain('grep \u00d72');
+        rendered.renderer.destroy();
+    });
+
+    test('reports worker spend separately from the window', async () => {
+        stubServerWithUsage({ inputTokens: 0.3 * CONTEXT_WINDOW }, undefined, {
+            count: 3,
+            inputTokens: 41_000,
+            outputTokens: 600,
+        });
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('ready'));
+
+        const frame = await sendAndOpen(rendered);
+
+        expect(frame).toContain('Subagents (session)');
+        expect(frame).toContain('Workers spawned');
+        // The distinction the section exists to make: this spend is real money that never
+        // occupied a byte of the window the rest of the overlay describes.
+        expect(frame).toContain('outside this window');
+        rendered.renderer.destroy();
+    });
+
+    test('omits the subagent section for a session that spawned none', async () => {
+        stubServerWithUsage({ inputTokens: 0.3 * CONTEXT_WINDOW });
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('ready'));
+
+        const frame = await sendAndOpen(rendered);
+
+        expect(frame).not.toContain('Subagents');
+        rendered.renderer.destroy();
+    });
+
+    test('omits the tool-output section for a turn that ran no tools', async () => {
+        stubServerWithUsage({ inputTokens: 0.3 * CONTEXT_WINDOW });
+        const rendered = await mount();
+        await rendered.waitForFrame(f => f.includes('ready'));
+
+        const frame = await sendAndOpen(rendered);
+
+        expect(frame).not.toContain('Tool output');
         rendered.renderer.destroy();
     });
 });

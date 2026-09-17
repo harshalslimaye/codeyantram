@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { TextAttributes, type SyntaxStyle, type TreeSitterClient } from '@opentui/core';
 import type { AssistantMessage, ChatMessage, MessagePart, TokenUsage, ToolCallPart } from '@codeyantram/shared';
 import { useTheme } from '../providers/theme';
+import { Spinner } from './spinner';
 import { getAppTreeSitterClient } from '../tree-sitter-client';
 import type { ThemeColors } from '../theme';
 import { formatTokenCount } from '../utils/format';
@@ -33,6 +35,17 @@ function usageSummary(message: AssistantMessage): string | null {
         parts.push(`${formatTokenCount(message.usage.inputTokens)} in${cacheSummary(message.usage)}`);
     }
     if (message.usage?.outputTokens !== undefined) parts.push(`${formatTokenCount(message.usage.outputTokens)} out`);
+
+    // Worker spend, deliberately reported separately from the `in`/`out` above rather
+    // than summed into them: those are what this turn's prompt cost, and worker tokens
+    // never entered this turn's context window at all. They are still real money, which
+    // is the whole reason to show them - without this line a turn that spent 40k tokens
+    // on three workers looks identical to one that spent none.
+    if (message.subagents !== undefined) {
+        const { count, inputTokens, outputTokens } = message.subagents;
+        const worker = count === 1 ? 'worker' : 'workers';
+        parts.push(`${count} ${worker} ${formatTokenCount(inputTokens + outputTokens)}`);
+    }
 
     if (message.projectInstructions !== undefined) {
         const { filename, bytes, truncated } = message.projectInstructions;
@@ -144,9 +157,74 @@ function toolArgsSummary(part: ToolCallPart): string | null {
             return notes.length > 0 ? `${display} (${notes.join(', ')})` : display;
         }
 
+        case 'explore': {
+            const task = stringArg(args, 'task');
+            if (task === null) return null;
+
+            // The whole point of showing this: the turn goes silent for five to fifteen
+            // seconds while the worker runs, and this line is the only thing saying what
+            // is being looked for.
+            const MAX_DISPLAY_LENGTH = 70;
+            return task.length > MAX_DISPLAY_LENGTH ? `${task.slice(0, MAX_DISPLAY_LENGTH - 1)}…` : task;
+        }
+
         default:
             return null;
     }
+}
+
+/** Tools slow enough that a static "running…" reads as hung rather than working. Every
+ * other tool finishes in milliseconds, so its label is never on screen long enough to
+ * matter; a subagent runs a whole model loop of its own. */
+function isSlowTool(name: string): boolean {
+    return name === 'explore';
+}
+
+/**
+ * Whether a finished call's own result is worth printing under it.
+ *
+ * Almost never: a grep's hundred matches or a five-hundred-line read would bury the
+ * conversation, which is why no tool has ever rendered its output here. A subagent's
+ * answer is the exception, and for the same reason it exists - it is a handful of cited
+ * lines, bounded by MAX_SUBAGENT_OUTPUT_CHARS, and it is the only place those citations
+ * ever appear. Hiding it would leave the user watching a spinner for fifteen seconds and
+ * then reading a paraphrase of what the worker already said.
+ */
+function showsResult(part: ToolCallPart): boolean {
+    return part.result !== undefined && part.result !== '' && isSlowTool(part.toolName);
+}
+
+/** Seconds since mount, ticking once a second. Only rendered for a call still in flight,
+ * so the interval lives exactly as long as the call does. */
+function useElapsedSeconds(): number {
+    const [seconds, setSeconds] = useState(0);
+
+    useEffect(() => {
+        const startedAt = Date.now();
+        const id = setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+        return () => clearInterval(id);
+    }, []);
+
+    return seconds;
+}
+
+/**
+ * The running state of a slow tool call: a spinner and an elapsed count.
+ *
+ * Its own component so the once-a-second re-render stays scoped to this line rather than
+ * repainting the whole message list, and so the interval is mounted only while a call is
+ * actually in flight - React unmounts this the moment the result arrives.
+ *
+ * A spinner alone doesn't distinguish "working" from "stuck" on a wait this long, which is
+ * what the seconds are for. There is nothing more specific to show: the worker deliberately
+ * doesn't stream, so the CLI knows only that it is alive, not what it is doing.
+ */
+function RunningToolLabel() {
+    const elapsed = useElapsedSeconds();
+
+    // Spinner runs its own frame interval, so the animation doesn't depend on this
+    // component re-rendering - which it only does once a second, for the count.
+    return <Spinner label={elapsed > 0 ? `running… ${elapsed}s` : 'running…'} />;
 }
 
 function MessagePartView({
@@ -189,16 +267,26 @@ function MessagePartView({
 
         case 'tool-call': {
             const argsSummary = toolArgsSummary(part);
+            // Animated only while a slow call is genuinely unresolved - a finished call
+            // renders its plain label, and every other tool is far too quick for the
+            // difference to be visible.
+            const isRunningSlowly = part.result === undefined && part.approvalStatus === undefined && isSlowTool(part.toolName);
+
             return (
                 <box flexDirection="column">
                     <box flexDirection="row" gap={1}>
                         <text fg={colors.accent}>■</text>
                         <text attributes={TextAttributes.BOLD}>{part.toolName}</text>
-                        <text attributes={TextAttributes.DIM}>{toolStatusLabel(part)}</text>
+                        {isRunningSlowly ? <RunningToolLabel /> : <text attributes={TextAttributes.DIM}>{toolStatusLabel(part)}</text>}
                     </box>
                     {argsSummary !== null && (
                         <text wrapMode="word" attributes={TextAttributes.DIM}>
                             {argsSummary}
+                        </text>
+                    )}
+                    {showsResult(part) && (
+                        <text wrapMode="word" attributes={TextAttributes.DIM}>
+                            {part.result}
                         </text>
                     )}
                 </box>

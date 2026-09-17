@@ -1,11 +1,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import type { ToolSet } from 'ai';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { TOOL_CATALOG, isTalkTool, toolNeedsApproval } from '@codeyantram/shared';
-import { buildProjectTools } from '../../src/tools';
+import { SUBAGENT_REGISTRY, SUPPORTED_TOOL_NAMES, TOOL_CATALOG, WORKER_ONLY_TOOLS, isOrchestratorTool, isTalkTool, toolNeedsApproval } from '@codeyantram/shared';
+import { buildProjectTools, createTurnToolAccounting, toToolUsage } from '../../src/tools';
 import { MAX_EDIT_FILE_BYTES, MAX_NEW_DIR_DEPTH, MAX_OUTPUT_CHARS, MAX_PATH_SEGMENTS, MAX_READ_FILE_BYTES, MAX_WRITE_FILE_BYTES } from '../../src/tools/shared';
 import { __resetWebFetchCacheForTests } from '../../src/tools/web-cache';
 import { __resetWebFetchThrottleForTests, UNTRUSTED_CONTENT_BEGIN, UNTRUSTED_CONTENT_END } from '../../src/tools/web-fetch';
@@ -25,32 +26,69 @@ afterEach(() => {
 // (ToolExecutionOptions) is required by the type but unused here.
 const NO_OPTIONS = {} as never;
 
+// Every tool in the catalog, so a per-tool suite below can exercise one regardless of
+// which caller would actually be offered it - the search tools reach the assistant only
+// through a worker now (see WORKER_ONLY_TOOLS), and that routing is asserted in its own
+// block rather than re-litigated by every grep test.
 async function run(cwd: string, name: string, input: unknown): Promise<string> {
-    const tools = buildProjectTools(cwd);
+    const tools = buildProjectTools({ cwd, only: SUPPORTED_TOOL_NAMES });
     const execute = tools[name]?.execute;
     if (execute === undefined) throw new Error(`no executable tool named "${name}"`);
     return (await execute(input, NO_OPTIONS)) as string;
 }
 
 describe('buildProjectTools', () => {
-    test('declares every catalog tool', () => {
-        const tools = buildProjectTools(projectDir);
+    test('declares every catalog tool the assistant itself may call', () => {
+        const tools = buildProjectTools({ cwd: projectDir });
         for (const definition of TOOL_CATALOG) {
-            expect(tools[definition.name]).toBeDefined();
+            if (isOrchestratorTool(definition.name)) expect(tools[definition.name]).toBeDefined();
+            else expect(tools[definition.name]).toBeUndefined();
         }
     });
 
+    // WORKER_ONLY_TOOLS is empty today - the experiment that filled it was reversed (its
+    // own comment has the numbers). The filter stays wired up and asserted so re-running
+    // that experiment is a one-line change rather than a refactor.
+    test('withholds exactly what WORKER_ONLY_TOOLS names, and nothing else', () => {
+        for (const options of [{}, { restricted: true }, { skipApproval: true }]) {
+            const tools = buildProjectTools({ cwd: projectDir, ...options });
+            for (const name of WORKER_ONLY_TOOLS) {
+                expect(tools[name]).toBeUndefined();
+            }
+        }
+    });
+
+    // read_file stays on the assistant's side of the line: edit_file matches oldText
+    // byte-exactly, and without it the only bytes available are a worker's account of the
+    // file. It was briefly withheld too, and that is what brought it back.
+    test('keeps read_file and explore with the assistant', () => {
+        const tools = buildProjectTools({ cwd: projectDir });
+        expect(tools.read_file).toBeDefined();
+        expect(tools.explore).toBeDefined();
+        expect(tools.grep).toBeUndefined();
+        expect(tools.glob).toBeUndefined();
+        expect(tools.list_dir).toBeUndefined();
+    });
+
+    test('a worker still gets them, since `only` names its toolset outright', () => {
+        const tools = buildProjectTools({ cwd: projectDir, only: SUBAGENT_REGISTRY.explore.tools });
+        for (const name of SUBAGENT_REGISTRY.explore.tools) {
+            expect(tools[name]).toBeDefined();
+        }
+        expect(tools.explore).toBeUndefined();
+    });
+
     test('only mutating tools need approval', () => {
-        const tools = buildProjectTools(projectDir);
+        const tools = buildProjectTools({ cwd: projectDir, only: SUPPORTED_TOOL_NAMES });
         for (const definition of TOOL_CATALOG) {
             expect(tools[definition.name]?.needsApproval).toBe(toolNeedsApproval(definition.name));
         }
     });
 
-    test('restricted mode (Talk) only exposes Talk-visible tools', () => {
-        const tools = buildProjectTools(projectDir, true);
+    test('restricted mode (Talk) only exposes Talk-visible tools it may call itself', () => {
+        const tools = buildProjectTools({ cwd: projectDir, restricted: true });
         for (const definition of TOOL_CATALOG) {
-            if (isTalkTool(definition.name)) {
+            if (isTalkTool(definition.name) && isOrchestratorTool(definition.name)) {
                 expect(tools[definition.name]).toBeDefined();
             } else {
                 expect(tools[definition.name]).toBeUndefined();
@@ -59,7 +97,7 @@ describe('buildProjectTools', () => {
     });
 
     test('restricted mode (Talk) still excludes every mutating tool', () => {
-        const tools = buildProjectTools(projectDir, true);
+        const tools = buildProjectTools({ cwd: projectDir, restricted: true });
         expect(tools.bash).toBeUndefined();
         expect(tools.write_file).toBeUndefined();
         expect(tools.edit_file).toBeUndefined();
@@ -67,7 +105,7 @@ describe('buildProjectTools', () => {
     });
 
     test('skipApproval (Yolo) overrides every tool to needsApproval: false', () => {
-        const tools = buildProjectTools(projectDir, false, true, true);
+        const tools = buildProjectTools({ cwd: projectDir, skipApproval: true, only: SUPPORTED_TOOL_NAMES });
         for (const definition of TOOL_CATALOG) {
             expect(tools[definition.name]?.needsApproval).toBe(false);
         }
@@ -80,10 +118,79 @@ describe('buildProjectTools', () => {
     });
 
     test('skipApproval: false (default) leaves needsApproval untouched', () => {
-        const tools = buildProjectTools(projectDir, false, true, false);
+        const tools = buildProjectTools({ cwd: projectDir, skipApproval: false, only: SUPPORTED_TOOL_NAMES });
         for (const definition of TOOL_CATALOG) {
             expect(tools[definition.name]?.needsApproval).toBe(toolNeedsApproval(definition.name));
         }
+    });
+});
+
+describe('turn tool accounting', () => {
+    async function call(tools: ToolSet, name: string, input: unknown): Promise<string> {
+        const result = await tools[name]!.execute!(input as never, NO_OPTIONS);
+        return typeof result === 'string' ? result : JSON.stringify(result);
+    }
+
+    test('records one entry per tool, summing calls and result characters', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'alpha\n');
+        await Bun.write(join(projectDir, 'b.txt'), 'beta\n');
+
+        const accounting = createTurnToolAccounting();
+        const tools = buildProjectTools({ cwd: projectDir, accounting, only: SUPPORTED_TOOL_NAMES });
+
+        const first = await call(tools, 'read_file', { path: 'a.txt' });
+        const second = await call(tools, 'read_file', { path: 'b.txt' });
+        const listing = await call(tools, 'list_dir', { path: '.' });
+
+        expect(toToolUsage(accounting)).toEqual([
+            { toolName: 'read_file', calls: 2, resultChars: first.length + second.length },
+            { toolName: 'list_dir', calls: 1, resultChars: listing.length },
+        ]);
+    });
+
+    test('orders entries by first call, not alphabetically', async () => {
+        const accounting = createTurnToolAccounting();
+        const tools = buildProjectTools({ cwd: projectDir, accounting, only: SUPPORTED_TOOL_NAMES });
+
+        await call(tools, 'list_dir', { path: '.' });
+        await call(tools, 'glob', { pattern: '*' });
+
+        expect(toToolUsage(accounting).map(entry => entry.toolName)).toEqual(['list_dir', 'glob']);
+    });
+
+    // A failed call still puts its error string into the conversation, and that string is
+    // replayed on every later request exactly like a successful result - so it counts.
+    test('counts a failed call and its error string', async () => {
+        const accounting = createTurnToolAccounting();
+        const tools = buildProjectTools({ cwd: projectDir, accounting, only: SUPPORTED_TOOL_NAMES });
+
+        const result = await call(tools, 'read_file', { path: 'does-not-exist.txt' });
+
+        expect(result.startsWith('Error:')).toBe(true);
+        expect(toToolUsage(accounting)).toEqual([{ toolName: 'read_file', calls: 1, resultChars: result.length }]);
+    });
+
+    // "Ran and found nothing" is a row; "never ran" is absence from the array. Every tool
+    // reports an empty search in words ("No matches."), so the row is small but never
+    // zero - the two cases are told apart by presence, not by a char count of 0.
+    test('records a search that matched nothing as its own row', async () => {
+        const accounting = createTurnToolAccounting();
+        const tools = buildProjectTools({ cwd: projectDir, accounting, only: SUPPORTED_TOOL_NAMES });
+
+        const result = await call(tools, 'glob', { pattern: 'nothing-matches-this-*' });
+
+        expect(result).toBe('No matches.');
+        expect(toToolUsage(accounting)).toEqual([{ toolName: 'glob', calls: 1, resultChars: result.length }]);
+    });
+
+    test('reports nothing for a turn in which no tool ran', () => {
+        expect(toToolUsage(createTurnToolAccounting())).toEqual([]);
+    });
+
+    // The accumulator is optional, and every existing call site omits it.
+    test('tools work unchanged when no accounting is passed', async () => {
+        await Bun.write(join(projectDir, 'a.txt'), 'alpha\n');
+        expect(await run(projectDir, 'read_file', { path: 'a.txt' })).toBe('1\talpha');
     });
 });
 
@@ -278,7 +385,7 @@ describe('read_file', () => {
             await Bun.write(join(projectDir, 'packages', 'b.ts'), 'b');
 
             // One buildProjectTools call = one turn - both reads share its dedup set.
-            const tools = buildProjectTools(projectDir);
+            const tools = buildProjectTools({ cwd: projectDir });
             const readFile = tools.read_file?.execute;
             if (readFile === undefined) throw new Error('no read_file tool');
             const first = (await readFile({ path: 'packages/a.ts' }, NO_OPTIONS)) as string;
@@ -302,7 +409,7 @@ describe('read_file', () => {
             await Bun.write(join(projectDir, 'packages', 'AGENTS.md'), 'packages-level rules');
             await Bun.write(join(projectDir, 'packages', 'a.ts'), 'export {}');
 
-            const tools = buildProjectTools(projectDir, false, false);
+            const tools = buildProjectTools({ cwd: projectDir, includeProjectInstructions: false });
             const readFile = tools.read_file?.execute;
             if (readFile === undefined) throw new Error('no read_file tool');
             const result = (await readFile({ path: 'packages/a.ts' }, NO_OPTIONS)) as string;
@@ -315,7 +422,7 @@ describe('read_file', () => {
             await Bun.write(join(projectDir, 'packages', 'AGENTS.md'), 'packages-level rules');
             await Bun.write(join(projectDir, 'packages', 'a.ts'), 'export {}');
 
-            const tools = buildProjectTools(projectDir, true);
+            const tools = buildProjectTools({ cwd: projectDir, restricted: true });
             const readFile = tools.read_file?.execute;
             if (readFile === undefined) throw new Error('no read_file tool');
             const result = (await readFile({ path: 'packages/a.ts' }, NO_OPTIONS)) as string;

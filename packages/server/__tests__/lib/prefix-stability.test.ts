@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { z } from 'zod';
 import type { ModelMessage } from 'ai';
-import { TOOL_CATALOG, isTalkTool, type AgentName, type RequestMessage } from '@codeyantram/shared';
+import { TOOL_CATALOG, isOrchestratorTool, isTalkTool, type AgentName, type RequestMessage } from '@codeyantram/shared';
 import { toModelMessages } from '../../src/lib/chat-stream';
 import { withConversationCache } from '../../src/lib/prompt-cache';
 import { getSystemMessages } from '../../src/lib/system-prompt';
@@ -39,7 +39,7 @@ function withoutMarkers(message: ModelMessage): unknown {
  * 0, so a change there invalidates every cache tier on every provider.
  */
 function renderedPrefix(agent: AgentName, cwd: string, messages: RequestMessage[]): string[] {
-    const tools = buildProjectTools(cwd, agent === 'Talk', true);
+    const tools = buildProjectTools({ cwd, restricted: agent === 'Talk' });
 
     return [
         ...Object.entries(tools).map(([name, definition]) =>
@@ -123,12 +123,17 @@ describe('prefix stability', () => {
     });
 
     test('the tool set renders in catalog order, the same order every build', () => {
-        const build = Object.keys(buildProjectTools('/projects/demo'));
-        const talk = Object.keys(buildProjectTools('/projects/demo', true));
+        const build = Object.keys(buildProjectTools({ cwd: '/projects/demo' }));
+        const talk = Object.keys(buildProjectTools({ cwd: '/projects/demo', restricted: true }));
 
-        expect(build).toEqual(TOOL_CATALOG.map(tool => tool.name));
-        expect(talk).toEqual(TOOL_CATALOG.filter(tool => isTalkTool(tool.name)).map(tool => tool.name));
-        expect(Object.keys(buildProjectTools('/projects/demo'))).toEqual(build);
+        // The search tools are reachable only through a worker (see WORKER_ONLY_TOOLS), so
+        // neither agent's own set includes them - but both still render in catalog order,
+        // which is what this test is about.
+        expect(build).toEqual(TOOL_CATALOG.filter(tool => isOrchestratorTool(tool.name)).map(tool => tool.name));
+        expect(talk).toEqual(
+            TOOL_CATALOG.filter(tool => isTalkTool(tool.name) && isOrchestratorTool(tool.name)).map(tool => tool.name),
+        );
+        expect(Object.keys(buildProjectTools({ cwd: '/projects/demo' }))).toEqual(build);
     });
 
     test('the project root binds executors only - it never reaches the rendered prefix', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TextAttributes } from '@opentui/core';
 import { SUPPORTED_CHAT_MODELS, type SupportedChatModelDefinition } from '@codeyantram/shared';
-import { useModel } from '../providers/model';
+import { useModelByRole, type ModelRole } from '../providers/model';
 import { useOverlay } from '../providers/overlay';
 import { OverlayList } from './overlay-list';
 import { Spinner } from './spinner';
@@ -9,8 +9,16 @@ import { prefixFilter } from '../utils/filter';
 import { fetchOpenRouterModels, ModelsApiError } from '../api/models';
 import { fetchConfiguredProviders, ProvidersApiError } from '../api/providers';
 
-export function ModelPicker() {
-    const { model, setModel } = useModel();
+/**
+ * The model picker, serving both roles from one implementation.
+ *
+ * Deliberately not forked per role: the live OpenRouter fetch, the key-availability gate
+ * and the filtering below are what decide *which models exist to choose from*, and a
+ * second copy would drift - at which point "a worker can be any model the orchestrator can
+ * be" would quietly stop being true.
+ */
+export function ModelPicker({ role = 'orchestrator' }: { role?: ModelRole } = {}) {
+    const { model, setModel } = useModelByRole(role);
     const overlay = useOverlay();
     // The static catalog renders instantly (SUPPORTED_CHAT_MODELS is known at build
     // time); OpenRouter's is fetched live and merged in once it lands, rather than
