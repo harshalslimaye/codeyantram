@@ -163,3 +163,18 @@ export function isModelAvailable(
 
 // Named explicitly (not SUPPORTED_CHAT_MODELS[0].id) so reordering the list above can't silently change the default.
 export const DEFAULT_CHAT_MODEL_ID: SupportedChatModelId = "claude-sonnet-5";
+
+/**
+ * What a subagent worker runs on when the user hasn't picked something else.
+ *
+ * A default, not a hardcode: the worker model is a user preference like the orchestrator's
+ * (see the CLI's /models picker), sent per request, and can be any model in this catalog or
+ * any OpenRouter id - resolution is the same code path either way, so a worker is never
+ * restricted to a provider or a tier the orchestrator isn't.
+ *
+ * Cheap and fast is the right shape for the role, which is high-volume searching and
+ * reading with little judgment - that asymmetry is the whole point of running workers on a
+ * separate model. Haiku takes no effort parameter at all (supportedEffortLevels is empty
+ * above), which is fine here: there is nothing to tune for a locate-and-cite task.
+ */
+export const DEFAULT_WORKER_MODEL_ID: SupportedChatModelId = "claude-haiku-4-5";

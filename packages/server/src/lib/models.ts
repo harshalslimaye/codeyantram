@@ -1,6 +1,8 @@
 import type { LanguageModel } from 'ai';
 import type { ProviderOptions } from '@ai-sdk/provider-utils';
 import {
+    DEFAULT_WORKER_MODEL_ID,
+    EFFORT_LEVELS,
     findSupportedChatModel,
     modelSupportsEffort,
     type EffortLevel,
@@ -104,4 +106,82 @@ export async function resolveChatModel(
         languageModel: MODEL_BUILDERS[model.provider](apiKey, model.id),
         providerOptions: effectiveEffort === undefined ? undefined : buildProviderOptions(model, effectiveEffort),
     };
+}
+
+/**
+ * Which model a turn's subagent workers should run on, as the request describes it.
+ *
+ * `orchestratorModelId` is not a preference but a fallback of last resort: the worker
+ * model is chosen independently of the orchestrator's and may sit on an entirely different
+ * provider, so a user with (say) only an OpenRouter key configured would otherwise hit
+ * MissingCredentialsError on the default worker - mid-turn, inside a tool call, where
+ * there is no approval prompt and no good error path. Falling back to a model we already
+ * know resolves keeps the turn alive at the cost of a more expensive worker.
+ */
+export type WorkerModelChoice = {
+    /** What the user picked (ChatRequest.workerModel). Absent means "use the default". */
+    requested?: string;
+    /** Its effort level, if that model takes one (ChatRequest.workerEffort). */
+    effort?: EffortLevel;
+    /** The model this turn's orchestrator is running on, used only if the above fails. */
+    orchestratorModelId: string;
+};
+
+/**
+ * Resolves the model one worker runs on: what the user picked, else
+ * DEFAULT_WORKER_MODEL_ID, else the orchestrator's own model.
+ *
+ * Deliberately built on resolveChatModel rather than beside it. The OpenRouter
+ * live-catalog lookup, the API-key check and the unsupported-effort guard all apply
+ * identically to a worker, so going through the same path is what makes "a worker can be
+ * any model the orchestrator can be" true rather than merely intended - a second
+ * implementation would drift, and would quietly become "any model from the static
+ * catalog".
+ *
+ * The fallback drops `effort` rather than carrying it over: it belongs to the model the
+ * user picked, and the orchestrator's model may not accept it at all.
+ */
+/**
+ * The cheapest effort level a model will accept, or undefined if it takes none at all.
+ *
+ * EFFORT_LEVELS is ordered from least to most, so the first supported entry is the
+ * shallowest thinking the model offers.
+ */
+function lowestEffort(modelId: string): EffortLevel | undefined {
+    const model = findSupportedChatModel(modelId);
+    if (model === undefined) return undefined;
+
+    return EFFORT_LEVELS.find(level => modelSupportsEffort(model, level));
+}
+
+export async function resolveWorkerModel({
+    requested,
+    effort,
+    orchestratorModelId,
+}: WorkerModelChoice): Promise<ResolvedChatModel> {
+    const preferred = requested ?? DEFAULT_WORKER_MODEL_ID;
+
+    // A worker that isn't told an effort level gets the model's *lowest*, not the
+    // provider's default - which is not the same thing and is often much more. DeepSeek's
+    // catalog default is "high", so an unconfigured worker would sit and reason at high
+    // effort before emitting its first grep, on every spawn, several times a turn.
+    //
+    // Deliberate for this role rather than a general cost saving: a worker greps, looks,
+    // and cites. That is mechanical work where latency is the whole cost and deep
+    // reasoning buys nothing - the judgment lives in the orchestrator, which keeps its own
+    // effort setting untouched. A user who wants a thinking worker can still pick one
+    // explicitly (/effort -> Worker Effort); this only changes what "unset" means.
+    const effectiveEffort = effort ?? lowestEffort(preferred);
+
+    try {
+        return await resolveChatModel(preferred, effectiveEffort);
+    } catch (error) {
+        // Only these two are worth a second attempt: no key for that provider, or an id
+        // the catalogs no longer know. Anything else (a provider client failing to
+        // construct, say) would fail identically on the fallback, so let it through.
+        const recoverable = error instanceof MissingCredentialsError || error instanceof UnknownModelError;
+        if (!recoverable || preferred === orchestratorModelId) throw error;
+
+        return await resolveChatModel(orchestratorModelId, undefined);
+    }
 }

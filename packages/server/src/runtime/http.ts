@@ -16,6 +16,25 @@ export interface ServeOptions {
     hostname: string;
 }
 
+/**
+ * How long a connection may go without traffic before the runtime drops it.
+ *
+ * Bun defaults to 10 seconds, which a chat stream can now exceed legitimately: a subagent
+ * call (see the explore tool) runs a whole model loop of its own and deliberately streams
+ * nothing while it does, so the SSE connection sits silent for as long as the worker takes.
+ * At the default the server severed the stream mid-turn and the CLI saw an ECONNRESET with
+ * no error event - the one failure shape this codebase's "errors are SSE events, never
+ * transport failures" rule is meant to rule out.
+ *
+ * 255 is Bun's own hard ceiling for this option, not a tuned figure - it rejects anything
+ * larger outright. It is comfortably above what a worker needs (MAX_SUBAGENT_STEPS model
+ * calls, or several workers running at once with the slowest setting the pace) while still
+ * bounded, so a genuinely wedged connection is eventually reclaimed. If a turn ever
+ * legitimately needs longer than this, the fix is a keep-alive event on the stream rather
+ * than a bigger number - there isn't one available.
+ */
+const IDLE_TIMEOUT_SECONDS = 255;
+
 type FetchHandler = (request: Request) => Response | Promise<Response>;
 
 export async function serveApp(fetch: FetchHandler, options: ServeOptions): Promise<RuntimeServerHandle> {
@@ -24,6 +43,7 @@ export async function serveApp(fetch: FetchHandler, options: ServeOptions): Prom
             fetch,
             port: options.port,
             hostname: options.hostname,
+            idleTimeout: IDLE_TIMEOUT_SECONDS,
         });
         return {
             // Bun.serve()'s .stop() is synchronous and returns void, not a promise - wrapped

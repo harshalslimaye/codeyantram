@@ -52,6 +52,99 @@ function sessionTotals(messages: ChatMessage[]): { turns: number; inputTokens: n
     return { turns, inputTokens, outputTokens };
 }
 
+/** Roughly four characters to a token. Deliberately crude: the server counts tool output
+ * in characters (see toolUsageSchema) rather than shipping a tokenizer per provider for a
+ * figure only ever read as a proportion. Everything derived from this is labelled with a
+ * "~" and never presented as a measured count. */
+const CHARS_PER_TOKEN = 4;
+
+/**
+ * Tool output summed across the whole session, not just the last turn - deliberately.
+ * Every tool result is replayed verbatim on every later request, so a grep from six turns
+ * ago is still occupying the window right now; a per-turn figure would understate it badly.
+ * Sorted by size so the tool actually filling the window is the first line read.
+ */
+function sessionToolUsage(messages: ChatMessage[]): { toolName: string; calls: number; resultChars: number }[] {
+    const totals = new Map<string, { toolName: string; calls: number; resultChars: number }>();
+
+    for (const message of messages) {
+        if (message.role !== 'assistant' || message.toolUsage === undefined) continue;
+        for (const entry of message.toolUsage) {
+            const running = totals.get(entry.toolName);
+            if (running === undefined) {
+                totals.set(entry.toolName, { ...entry });
+                continue;
+            }
+            running.calls += entry.calls;
+            running.resultChars += entry.resultChars;
+        }
+    }
+
+    return [...totals.values()].sort((a, b) => b.resultChars - a.resultChars);
+}
+
+/** Which tools put the bytes in the window. Absent entirely for a session that has run no
+ * tools, rather than rendering an empty heading. */
+function ToolOutputSection({ messages, usedTokens }: { messages: ChatMessage[]; usedTokens: number }) {
+    const perTool = sessionToolUsage(messages);
+    if (perTool.length === 0) return null;
+
+    const totalChars = perTool.reduce((sum, entry) => sum + entry.resultChars, 0);
+    const totalTokens = Math.round(totalChars / CHARS_PER_TOKEN);
+    // Against the current window reading rather than the session's summed input: the
+    // question this answers is "how much of what I'm carrying right now is tool output",
+    // and usedTokens is what the window is actually holding.
+    const share = usedTokens > 0 ? Math.min(100, Math.round((totalTokens / usedTokens) * 100)) : 0;
+
+    return (
+        <box flexDirection="column">
+            <SectionHeading>Tool output (session)</SectionHeading>
+            {perTool.map(entry => (
+                <Row
+                    key={entry.toolName}
+                    label={`${entry.toolName} ×${entry.calls}`}
+                    value={`~${formatTokenCount(Math.round(entry.resultChars / CHARS_PER_TOKEN))}`}
+                />
+            ))}
+            <Row label="Share of window" value={`~${formatTokenCount(totalTokens)} · ${share}%`} />
+        </box>
+    );
+}
+
+/**
+ * Worker spend across the session.
+ *
+ * Kept visually and numerically apart from everything above it, because it is the one
+ * figure here that is *not* about the context window: worker tokens are spent in a
+ * separate context that is thrown away, so they never occupy a byte of the window this
+ * overlay is otherwise describing. They are still real money, and without this line the
+ * only number the UI shows - the context percentage - would make a turn that spent 40k on
+ * three workers look identical to one that spent nothing.
+ */
+function SubagentSection({ messages }: { messages: ChatMessage[] }) {
+    let count = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    for (const message of messages) {
+        if (message.role !== 'assistant' || message.subagents === undefined) continue;
+        count += message.subagents.count;
+        inputTokens += message.subagents.inputTokens;
+        outputTokens += message.subagents.outputTokens;
+    }
+
+    if (count === 0) return null;
+
+    return (
+        <box flexDirection="column">
+            <SectionHeading>Subagents (session)</SectionHeading>
+            <Row label="Workers spawned" value={String(count)} />
+            <Row label="Worker tokens" value={`${formatTokenCount(inputTokens)} in · ${formatTokenCount(outputTokens)} out`} />
+            <text attributes={TextAttributes.DIM}>Spent outside this window - workers keep their own context.</text>
+        </box>
+    );
+}
+
 /** The last turn's own input breakdown - cache read/write are a subset of inputTokens, not
  * an addition to it (same convention as message-list's cacheSummary), so this only ever
  * adds a cache-hit-rate line, never a second input figure. */
@@ -120,6 +213,10 @@ export function ContextOverlay() {
 
             <LastTurnSection message={lastMessage} />
 
+            <ToolOutputSection messages={messages} usedTokens={usage.usedTokens} />
+
+            <SubagentSection messages={messages} />
+
             {/* Summed across every turn - unlike the fullness reading above, which is
                 never a sum (see contextUsage's own comment on why). This is cost, not
                 how full the window is. */}
@@ -137,7 +234,7 @@ export function ContextOverlay() {
                 />
             )}
 
-            <text attributes={TextAttributes.DIM}>Reflects the last completed turn - your current draft isn't counted yet.</text>
+            <text attributes={TextAttributes.DIM}>Reflects the last completed turn - your current draft isn't counted yet. Tool-output figures are estimated from characters, not counted.</text>
         </box>
     );
 }

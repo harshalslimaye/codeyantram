@@ -5,8 +5,14 @@ const PREFERENCES_FILE = 'preferences.json';
 export type Preferences = {
     themeName?: string;
     modelId?: string;
+    // Which model subagent workers run on (see the explore tool). Chosen independently of
+    // modelId above and stored beside it rather than inside it - the two are separate
+    // choices the user makes separately, and either may be any model in the catalog.
+    workerModelId?: string;
     agentName?: string;
-    // Keyed by model id so switching models remembers each one's own effort choice.
+    // Keyed by model id so switching models remembers each one's own effort choice. Shared
+    // by both roles on purpose: effort is a property of the model, not of what it is being
+    // used for, so an orchestrator and a worker set to the same model share one value.
     effortByModel?: Record<string, EffortLevel>;
     // Off-switch for loading the project's AGENTS.md/CLAUDE.md into every turn - undefined
     // (nothing ever saved) means enabled, the default.

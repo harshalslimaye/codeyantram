@@ -252,6 +252,20 @@ describe("chatMessageSchema", () => {
         expect(chatMessageSchema.safeParse({ id: "m2", role: "assistant", parts: [], usage: { inputTokens: 1 } }).success).toBe(true);
     });
 
+    // toolUsage travels with the message (like usage above) rather than only on the wire,
+    // so a stored session can still say which tool filled the window.
+    test("accepts an assistant message carrying toolUsage", () => {
+        const result = chatMessageSchema.safeParse({
+            id: "m2",
+            role: "assistant",
+            parts: [{ type: "text", text: "found it" }],
+            usage: { inputTokens: 1 },
+            toolUsage: [{ toolName: "grep", calls: 1, resultChars: 2048 }],
+        });
+
+        expect(result.success).toBe(true);
+    });
+
     test("rejects an unknown role", () => {
         expect(chatMessageSchema.safeParse({ id: "m1", role: "system", parts: [] }).success).toBe(false);
     });
@@ -323,6 +337,70 @@ describe("chatRequestSchema", () => {
 
         expect(result.success).toBe(false);
         expect(result.error?.issues[0]?.path).toEqual(["effort"]);
+    });
+
+    test("accepts a worker model on a different provider than the orchestrator", () => {
+        const result = chatRequestSchema.safeParse({
+            ...baseRequest,
+            model: "claude-opus-5",
+            messages: [userMessage],
+            workerModel: "gemini-3.5-flash",
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("accepts a request with no worker model - the server falls back to its default", () => {
+        const result = chatRequestSchema.safeParse({
+            ...baseRequest,
+            model: "claude-opus-5",
+            messages: [userMessage],
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    // The two pairs are checked independently: a worker can be a different model, on a
+    // different provider, with a different set of supported levels.
+    test("rejects a worker effort the worker model does not support, blaming workerEffort", () => {
+        const result = chatRequestSchema.safeParse({
+            ...baseRequest,
+            model: "claude-opus-5",
+            messages: [userMessage],
+            effort: "max",
+            workerModel: "gemini-3.5-flash",
+            workerEffort: "max",
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error?.issues[0]?.path).toEqual(["workerEffort"]);
+    });
+
+    test("a valid worker effort does not rescue an invalid orchestrator effort", () => {
+        const result = chatRequestSchema.safeParse({
+            ...baseRequest,
+            model: "gemini-3.5-flash",
+            messages: [userMessage],
+            effort: "max",
+            workerModel: "claude-opus-5",
+            workerEffort: "max",
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error?.issues[0]?.path).toEqual(["effort"]);
+    });
+
+    // The default worker model takes no effort parameter at all, so this is the ordinary
+    // case rather than an edge one.
+    test("accepts a worker model with no effort control when no worker effort is sent", () => {
+        const result = chatRequestSchema.safeParse({
+            ...baseRequest,
+            model: "claude-opus-5",
+            messages: [userMessage],
+            workerModel: "claude-haiku-4-5",
+        });
+
+        expect(result.success).toBe(true);
     });
 
     test("rejects any effort for a model with no effort control", () => {
@@ -675,6 +753,81 @@ describe("chatStreamEventSchema", () => {
         });
 
         expect(result.success).toBe(true);
+    });
+
+    test("accepts a done event carrying per-tool output attribution", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "done",
+            durationMs: 1234,
+            usage: { inputTokens: 48200, outputTokens: 1300 },
+            toolUsage: [
+                { toolName: "grep", calls: 2, resultChars: 8140 },
+                { toolName: "read_file", calls: 1, resultChars: 19_980 },
+            ],
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("accepts a done event from a turn that ran no tools", () => {
+        expect(chatStreamEventSchema.safeParse({ type: "done", durationMs: 12 }).success).toBe(true);
+    });
+
+    // A tool that ran but produced nothing is a real outcome (grep with no matches), and
+    // has to stay distinguishable from a tool that never ran at all - which is absence
+    // from the array, not a zero row.
+    test("accepts a tool that ran and returned nothing", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "done",
+            durationMs: 12,
+            toolUsage: [{ toolName: "grep", calls: 1, resultChars: 0 }],
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("rejects negative or fractional tool-usage counts", () => {
+        for (const entry of [
+            { toolName: "grep", calls: -1, resultChars: 10 },
+            { toolName: "grep", calls: 1.5, resultChars: 10 },
+            { toolName: "grep", calls: 1, resultChars: -10 },
+        ]) {
+            expect(chatStreamEventSchema.safeParse({ type: "done", durationMs: 12, toolUsage: [entry] }).success).toBe(false);
+        }
+    });
+
+    test("accepts a done event carrying subagent spend", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "done",
+            durationMs: 1234,
+            usage: { inputTokens: 48200, outputTokens: 1300 },
+            subagents: { count: 3, inputTokens: 41000, outputTokens: 600 },
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    // Workers routinely burn more than the turn's own prompt - that asymmetry is the point,
+    // and the schema must not quietly treat it as impossible.
+    test("accepts subagent spend larger than the turn's own usage", () => {
+        const result = chatStreamEventSchema.safeParse({
+            type: "done",
+            durationMs: 1234,
+            usage: { inputTokens: 1000 },
+            subagents: { count: 1, inputTokens: 95000, outputTokens: 200 },
+        });
+
+        expect(result.success).toBe(true);
+    });
+
+    test("rejects a negative or fractional subagent count", () => {
+        for (const subagents of [
+            { count: -1, inputTokens: 10, outputTokens: 1 },
+            { count: 1.5, inputTokens: 10, outputTokens: 1 },
+            { count: 1, inputTokens: -10, outputTokens: 1 },
+        ]) {
+            expect(chatStreamEventSchema.safeParse({ type: "done", durationMs: 1, subagents }).success).toBe(false);
+        }
     });
 
     test("accepts an error event carrying a known code", () => {

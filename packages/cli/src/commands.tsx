@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ThemePicker } from './components/theme-picker';
 import { ModelPicker } from './components/model-picker';
 import { EffortPicker } from './components/effort-picker';
+import { EffortRoleMenu, ModelRoleMenu } from './components/role-picker';
 import { AgentPicker } from './components/agent-picker';
 import { ConnectFlow } from './components/connect-flow';
 import { ContextOverlay } from './components/context-overlay';
@@ -41,14 +42,25 @@ export const SLASH_COMMANDS: Command[] = [
         action: args => args.overlay('Agents', <AgentPicker />)
     },
     {
+        // Two models now: the assistant's own, and the one its subagent workers run on
+        // (see the explore tool). One command with a role step rather than two commands,
+        // so the menu doesn't double for a choice most users make once.
         name: 'models',
-        description: 'Switch model',
-        action: args => args.overlay('Models', <ModelPicker />)
+        description: 'Switch model (orchestrator or worker)',
+        action: args =>
+            args.overlay(
+                'Models',
+                <ModelRoleMenu orchestrator={<ModelPicker role="orchestrator" />} worker={<ModelPicker role="worker" />} />,
+            )
     },
     {
         name: 'effort',
-        description: 'Switch effort level',
-        action: args => args.overlay('Effort', <EffortPicker />)
+        description: 'Switch effort level (orchestrator or worker)',
+        action: args =>
+            args.overlay(
+                'Effort',
+                <EffortRoleMenu orchestrator={<EffortPicker role="orchestrator" />} worker={<EffortPicker role="worker" />} />,
+            )
     },
     {
         name: 'connect',

@@ -75,7 +75,7 @@ export const TOOL_CATALOG = [
     {
         name: "glob",
         description:
-            "Find files matching a glob pattern, relative to the project root. Automatically skips node_modules, .git, dist, build, and gitignored paths. Hides dotfiles/dotdirs unless dot is set.",
+            "Find files matching a glob pattern, relative to the project root. Best when you already know roughly what the path looks like; to work out where a feature lives, prefer explore. Automatically skips node_modules, .git, dist, build, and gitignored paths. Hides dotfiles/dotdirs unless dot is set.",
         inputSchema: z.object({
             pattern: z.string().min(1),
             dot: z.boolean().optional().describe("Include dotfiles and dotdirs, which are hidden by default."),
@@ -85,7 +85,7 @@ export const TOOL_CATALOG = [
     {
         name: "grep",
         description:
-            "Search file contents for a regex pattern, relative to the project root, using ripgrep. Automatically skips node_modules, .git, dist, build, gitignored paths, and binary files. Pattern syntax is Rust regex, not POSIX ERE - no backreferences or lookaround. Use the ignoreCase, glob, contextLines, filesOnly, and maxResults options to filter and shape results instead of chaining separate glob+grep calls. Prefer read_file/glob for known paths - use this to search across files.",
+            "Search file contents for a regex pattern, relative to the project root, using ripgrep. Best for a pattern you can already aim - a known file, directory, or symbol you expect to exist. To find out *where* something lives when you don't know yet, prefer explore: a broad grep here returns every match in full and keeps them in this conversation for the rest of the session, which is the cost explore exists to avoid. Automatically skips node_modules, .git, dist, build, gitignored paths, and binary files. Pattern syntax is Rust regex, not POSIX ERE - no backreferences or lookaround. Use the ignoreCase, glob, contextLines, filesOnly, and maxResults options to filter and shape results instead of chaining separate glob+grep calls.",
         inputSchema: z.object({
             pattern: z.string().min(1),
             path: z.string().min(1).default("."),
@@ -176,6 +176,19 @@ export const TOOL_CATALOG = [
             refresh: z.boolean().optional().describe("Bypass the cache and re-fetch the URL even if a recent copy is already cached."),
         }),
     },
+    {
+        name: "explore",
+        description:
+            "Delegate a search of the project to a separate agent that runs on its own, with its own context, and reports back. Use it for a broad or unfamiliar question - where something lives, which files are involved, how a feature hangs together - where you'd otherwise run several greps and read whole files to find out. It searches and reads the working tree (glob, grep, list_dir, read_file); it cannot see git history, reach the network, run commands, or change anything. It answers with a short summary: a few lines, each citing path:line, plus \"not found\" when that's the honest answer. It never returns code verbatim - read the lines it cites yourself. That summary is all you get back: the matches it sifted through and the files it opened stay in its context, not yours, which is the point. Give one self-contained task per call - it cannot see this conversation, the user's request, or anything you haven't put in the task string, and it cannot ask you a follow-up question. Several calls in one step run concurrently, so a question with two or three independent parts is better as two or three tasks than one broad one. Don't reach for it when you already know the file and line: read that directly. Its answer is a summary written by another model, so treat a citation as a place to look, not as a fact to act on unread.",
+        inputSchema: z.object({
+            task: z
+                .string()
+                .min(10)
+                .describe(
+                    "One self-contained instruction, written for someone who knows the codebase but not this conversation - name what to find and what to report back, e.g. \"Find where the list of entitlements is fetched and assembled; report the function and path:line\". A bare keyword is not enough.",
+                ),
+        }),
+    },
 ] as const satisfies readonly ToolDefinition[];
 
 export type ToolName = (typeof TOOL_CATALOG)[number]["name"];
@@ -184,8 +197,14 @@ export type ToolName = (typeof TOOL_CATALOG)[number]["name"];
 // mutates the project or the machine and needs approval before it runs. `git` belongs
 // here rather than with bash because its subcommand allowlist is what makes it read-only
 // - it cannot reach a writing git command at all, so there's nothing for an approval
-// prompt to protect (see GIT_READ_ONLY_SUBCOMMANDS).
-export const READ_ONLY_TOOLS: readonly ToolName[] = ["read_file", "list_dir", "glob", "grep", "git"];
+// prompt to protect (see GIT_READ_ONLY_SUBCOMMANDS). `explore` belongs here for the same
+// kind of reason: it spawns a worker whose own toolset (SUBAGENT_REGISTRY below) is itself
+// read-only, so the worst it can do is read things the caller could already read for
+// itself - there is nothing for an approval prompt to protect. That guarantee is
+// structural, not incidental: subagent tools cannot use the approval gate at all (the AI
+// SDK runs them unconditionally), which is exactly why no worker toolset may ever contain
+// a mutating tool.
+export const READ_ONLY_TOOLS: readonly ToolName[] = ["read_file", "list_dir", "glob", "grep", "git", "explore"];
 
 // Tools that touch the network instead of the local filesystem or shell. Distinct from
 // READ_ONLY_TOOLS: a network tool mutates nothing on disk (so Talk can use it, see
@@ -211,6 +230,95 @@ export function isTalkTool(name: ToolName): boolean {
  * silently changing the other's meaning. */
 export function toolNeedsApproval(name: ToolName): boolean {
     return !isReadOnlyTool(name);
+}
+
+// ---------------------------------------------------------------------------
+// Subagents
+// ---------------------------------------------------------------------------
+
+/**
+ * The worker types a turn can spawn, and the tools each one gets. One entry today; the
+ * registry is what matters, not the count - adding, removing, or re-partitioning a worker
+ * is a data change here rather than a refactor of the executor, and every invariant test
+ * below iterates over it so a new entry is covered the moment it's added.
+ *
+ * Each toolset is deliberately written out rather than derived from READ_ONLY_TOOLS. The
+ * worker tools themselves (explore, and any sibling) are read-only too, so deriving would
+ * silently hand a worker the ability to spawn workers - see the recursion guard in
+ * tools.test.ts. It also keeps "what may a worker touch" a decision rather than a
+ * consequence: READ_ONLY_TOOLS gaining a member must never widen a worker by accident.
+ *
+ * A worker needs enough tools to iterate *within its own question* and no more. One tool
+ * would be too few: compressing means discarding, discarding means knowing what's
+ * relevant, and confirming that means looking - which takes a second tool. It also
+ * couldn't retry its own failed first guess, turning a wrong grep pattern into a full
+ * orchestrator round trip instead of a cheap internal one.
+ */
+export const SUBAGENT_REGISTRY = {
+    // Where does X live, and what does it do? Searches and reads the working tree; cannot
+    // see git history, cannot reach the network, cannot mutate anything.
+    explore: { tools: ["glob", "grep", "list_dir", "read_file"] },
+    // A `history` worker (git + read_file, for when/why something changed) is the obvious
+    // second entry and this shape is ready for it - but it is not built, deliberately. Git
+    // output is small where search output is large, so it earns its place on scoping
+    // grounds rather than context-compression ones, and that case is untested until a
+    // worker model is measured against it.
+} as const satisfies Record<string, { tools: readonly ToolName[] }>;
+
+export type SubagentName = keyof typeof SUBAGENT_REGISTRY;
+
+/**
+ * Tools only a subagent worker may call - never the assistant itself.
+ *
+ * Searching is a worker's job; reading a known path is not. The assistant cannot grep,
+ * glob, or list a directory - it asks `explore` where something is - but it keeps
+ * `read_file`, so once it has a path it opens the file itself.
+ *
+ * Why the split is in the catalog rather than in the prompt: with these tools available,
+ * the model reaches for them directly. Measured repeatedly - a three-turn run delegated
+ * once and, on that turn, ran its own grep and four reads on top of the worker's answer
+ * anyway. Pointing the tool descriptions and the system prompt at `explore` did not change
+ * it. A description asking the model not to use a tool is a request; a catalog without the
+ * tool is a guarantee.
+ *
+ * Why `read_file` stays on the assistant's side, having briefly been moved here too:
+ * `edit_file` matches `oldText` byte-exactly, and a worker's answer is model-generated text
+ * with no guarantee of matching the file character for character. Without `read_file` the
+ * assistant has no way to obtain the real bytes it is about to replace, and editing stops
+ * being reliable. It also draws the same line the system prompt already draws - delegate
+ * discovery, never delegate the bytes you are about to change.
+ *
+ * The cost, accepted deliberately: a lookup that a single aimed grep would have answered in
+ * a second now costs a worker spawn of several. Known-path reads are unaffected.
+ *
+ * Not a security boundary: `bash` can still `grep`, so for Build and Yolo this shapes the
+ * default path rather than closing it. For Talk, which has no bash, the split is absolute.
+ *
+ * This list is the whole mechanism - moving a tool in or out is a one-line change, and the
+ * invariants over it are asserted in tools.test.ts.
+ */
+export const WORKER_ONLY_TOOLS: readonly ToolName[] = ["glob", "grep", "list_dir"];
+
+export function isWorkerOnlyTool(name: ToolName): boolean {
+    return WORKER_ONLY_TOOLS.includes(name);
+}
+
+/** Whether the assistant itself may call this tool. Everything in the catalog except the
+ * search tools above, which are reachable only through a worker. */
+export function isOrchestratorTool(name: ToolName): boolean {
+    return !isWorkerOnlyTool(name);
+}
+
+export const SUBAGENT_NAMES = Object.keys(SUBAGENT_REGISTRY) as SubagentName[];
+
+export function isSubagentTool(name: string): name is SubagentName {
+    return name in SUBAGENT_REGISTRY;
+}
+
+/** The tools one worker type may call. Never includes a worker tool itself: one level,
+ * no trees. */
+export function subagentTools(name: SubagentName): readonly ToolName[] {
+    return SUBAGENT_REGISTRY[name].tools;
 }
 
 export const SUPPORTED_TOOL_NAMES: ToolName[] = TOOL_CATALOG.map(tool => tool.name);

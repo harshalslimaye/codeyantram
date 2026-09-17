@@ -1,8 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import { testRender } from '@opentui/react/test-utils';
 import { useKeyboard } from '@opentui/react';
-import { DEFAULT_CHAT_MODEL_ID, findSupportedChatModel, SUPPORTED_CHAT_MODELS } from '@codeyantram/shared';
-import { useModel, ModelProvider, getInitialModel } from '../../src/providers/model';
+import { DEFAULT_CHAT_MODEL_ID, DEFAULT_WORKER_MODEL_ID, findSupportedChatModel, SUPPORTED_CHAT_MODELS } from '@codeyantram/shared';
+import { useModel, useWorkerModel, ModelProvider, getInitialModel } from '../../src/providers/model';
 
 const DEFAULT_MODEL = findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)!;
 const OTHER_MODEL = SUPPORTED_CHAT_MODELS.find(m => m.id !== DEFAULT_CHAT_MODEL_ID)!;
@@ -10,6 +10,17 @@ const OTHER_MODEL = SUPPORTED_CHAT_MODELS.find(m => m.id !== DEFAULT_CHAT_MODEL_
 function ShowModel() {
     const { model } = useModel();
     return <text>{model.id}:{model.provider}</text>;
+}
+
+function ShowWorkerModel() {
+    const { model } = useWorkerModel();
+    return <text>{model.id}</text>;
+}
+
+function ShowBothModels() {
+    const { model } = useModel();
+    const { model: worker } = useWorkerModel();
+    return <text>orchestrator:{model.id} worker:{worker.id}</text>;
 }
 
 describe('useModel', () => {
@@ -71,5 +82,36 @@ describe('test-environment guard', () => {
     // whatever model happens to be saved on the machine running them.
     test('getInitialModel returns the default rather than reading the real file', () => {
         expect(getInitialModel()).toBe(DEFAULT_MODEL);
+    });
+});
+
+describe('useWorkerModel', () => {
+    test('defaults to the worker model, not the orchestrator\'s', async () => {
+        const rendered = await testRender(
+            <ModelProvider>
+                <ShowWorkerModel />
+            </ModelProvider>,
+            { width: 60, height: 20 },
+        );
+        const frame = await rendered.waitForFrame(f => f.includes(DEFAULT_WORKER_MODEL_ID));
+
+        expect(frame).toContain(DEFAULT_WORKER_MODEL_ID);
+        rendered.renderer.destroy();
+    });
+
+    // The two roles are independent choices over the same catalog - mounting one provider
+    // has to supply both, and changing one must not move the other.
+    test('is independent of the orchestrator model', async () => {
+        const rendered = await testRender(
+            <ModelProvider>
+                <ShowBothModels />
+            </ModelProvider>,
+            { width: 80, height: 20 },
+        );
+        const frame = await rendered.waitForFrame(f => f.includes('orchestrator:'));
+
+        expect(frame).toContain(`orchestrator:${DEFAULT_CHAT_MODEL_ID}`);
+        expect(frame).toContain(`worker:${DEFAULT_WORKER_MODEL_ID}`);
+        rendered.renderer.destroy();
     });
 });

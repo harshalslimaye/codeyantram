@@ -272,7 +272,7 @@ describe('approval bypass (Yolo) through streamText', () => {
     }
 
     async function partTypes(skipApproval: boolean): Promise<string[]> {
-        const tools = buildProjectTools('/tmp', false, true, skipApproval);
+        const tools = buildProjectTools({ cwd: '/tmp', skipApproval });
         const result = streamText({
             model: mutatingToolCallModel(),
             tools,

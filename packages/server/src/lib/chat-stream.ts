@@ -14,7 +14,7 @@ import { MissingCredentialsError, UnknownModelError, resolveChatModel } from './
 import { loadPromptInstructions, type PromptInstructions } from './project-instructions';
 import { rollConversationCache, supportsCacheControl, withConversationCache } from './prompt-cache';
 import { getSystemMessages } from './system-prompt';
-import { buildProjectTools } from '../tools';
+import { buildProjectTools, createTurnToolAccounting, toSubagentUsage, toToolUsage } from '../tools';
 
 // Caps how many tool-call/response round trips streamText will run within
 // one turn before giving up and returning whatever it has - a guard against
@@ -180,6 +180,10 @@ export async function streamChatResponse(
     const startedAt = Date.now();
 
     const toolsEnabled = agentHasTools(request.agent);
+    // One per turn, closed over by this turn's executors and read once at "done" - see
+    // TurnToolAccounting. Created even when tools are off so the read below needs no
+    // branch; it simply stays empty.
+    const accounting = createTurnToolAccounting();
 
     try {
         const result = streamText({
@@ -193,12 +197,18 @@ export async function streamChatResponse(
             providerOptions,
             abortSignal: abortController.signal,
             tools: toolsEnabled
-                ? buildProjectTools(
-                      request.cwd,
-                      !agentHasFullToolAccess(request.agent),
-                      includeInstructions,
-                      agentBypassesApproval(request.agent),
-                  )
+                ? buildProjectTools({
+                      cwd: request.cwd,
+                      restricted: !agentHasFullToolAccess(request.agent),
+                      includeProjectInstructions: includeInstructions,
+                      skipApproval: agentBypassesApproval(request.agent),
+                      accounting,
+                      workerModel: {
+                          requested: request.workerModel,
+                          effort: request.workerEffort,
+                          orchestratorModelId: model.id,
+                      },
+                  })
                 : undefined,
             stopWhen: toolsEnabled ? stepCountIs(MAX_TOOL_STEPS) : undefined,
         });
@@ -272,10 +282,18 @@ export async function streamChatResponse(
         if (abortController.signal.aborted) return;
 
         const usage = await result.usage;
+        // Which tool filled the window, which `usage` below can't say - it reports how big
+        // the prompt got, never why (see TurnToolAccounting). Omitted rather than sent as
+        // an empty array for a turn that ran no tools.
+        const toolUsage = toToolUsage(accounting);
 
         await send(stream, {
             type: 'done',
             durationMs: Date.now() - startedAt,
+            toolUsage: toolUsage.length > 0 ? toolUsage : undefined,
+            // Worker spend, kept out of `usage` below on purpose - it never entered this
+            // turn's context window, and context-window.ts reads that figure directly.
+            subagents: toSubagentUsage(accounting),
             usage: {
                 inputTokens: usage.inputTokens,
                 outputTokens: usage.outputTokens,

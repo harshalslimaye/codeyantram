@@ -16,8 +16,8 @@ import { AGENTS } from '../agents';
 import { streamChat } from '../api/chat';
 import { readPreferences, writePreferences } from '../utils/preferences';
 import { useAgent } from './agent';
-import { useModel } from './model';
-import { useEffort } from './effort';
+import { useModel, useWorkerModel } from './model';
+import { useEffort, useWorkerEffort } from './effort';
 import { useSessionAutosave } from './session-autosave';
 import { useToast } from './toast';
 
@@ -85,6 +85,38 @@ type ChatProviderProps = {
     children: ReactNode;
 };
 
+/**
+ * Whether this assistant message must be dropped rather than kept as history, because a
+ * later turn could not legally send it.
+ *
+ * Two cases, both from a turn that ended without a "done":
+ *
+ * - Nothing arrived at all, so there is only an empty bubble to render.
+ * - It holds a tool-call the stream never resolved. The turn ended between the "tool-call"
+ *   event and its "tool-result", so that call will never get one now, and replaying it
+ *   would send the server (and the model) a tool-call with no matching tool-result -
+ *   invalid on *every* later turn of the session, not just the one that broke.
+ *
+ * A call still awaiting approval is emphatically *not* that case, even though it also has
+ * no result: the turn ended deliberately, the approval round trip supplies the result, and
+ * toolPartsToMessages replays the pair correctly. A tool-call-only message with a pending
+ * approval is exactly what a resumed session is supposed to restore.
+ *
+ * The unresolved case used to be unreachable in practice: every tool finished in
+ * milliseconds, so the window in which a cancel could land inside one was vanishingly
+ * small. A subagent tool runs for seconds, which makes it ordinary.
+ */
+function isUnsendableAssistantMessage(message: ChatMessage): boolean {
+    if (message.role !== 'assistant') return false;
+
+    return (
+        message.parts.length === 0 ||
+        message.parts.some(
+            part => part.type === 'tool-call' && part.result === undefined && part.approvalStatus === undefined,
+        )
+    );
+}
+
 function findPendingApproval(message: ChatMessage | undefined): ToolCallPart | null {
     if (message === undefined || message.role !== 'assistant') return null;
 
@@ -98,6 +130,8 @@ function findPendingApproval(message: ChatMessage | undefined): ToolCallPart | n
 export function ChatProvider({ children }: ChatProviderProps) {
     const { model, setModel } = useModel();
     const { effort, setEffort } = useEffort();
+    const { model: workerModel } = useWorkerModel();
+    const { effort: workerEffort } = useWorkerEffort();
     const { agent, setAgent } = useAgent();
     const toast = useToast();
     const autosave = useSessionAutosave();
@@ -137,6 +171,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
             return next;
         });
     }, []);
+
+    // Drops the turn's assistant message when it is not safe to keep - see
+    // isUnsendableAssistantMessage. Shared by both paths that can end a turn without a
+    // "done": an error event, and a user cancel.
+    const dropUnsendableMessage = useCallback(
+        (id: string | null) => {
+            if (id === null) return;
+            updateMessages(current =>
+                current.filter(message => !(message.id === id && isUnsendableAssistantMessage(message))),
+            );
+        },
+        // updateMessages is stable (useCallback with no deps), so this is too.
+        [updateMessages],
+    );
 
     const cancel = useCallback(() => {
         abortControllerRef.current?.abort();
@@ -219,6 +267,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 cwd: process.cwd(),
                 effort,
                 useProjectInstructions: projectInstructionsEnabled,
+                // Which model this turn's subagent workers run on (see the explore tool).
+                // Sent every turn rather than configured server-side because it is a user
+                // preference and preferences live here - the server has no access to them.
+                workerModel: workerModel.id,
+                workerEffort,
             };
 
             const abortController = new AbortController();
@@ -227,6 +280,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
             void (async () => {
                 let assistantMessageId: string | null = null;
+                // Whether the stream reached a terminal event of its own. Only an
+                // abort leaves this false, and only then does the `finally` below have
+                // anything to clean up - a completed turn's messages are all legal to
+                // replay, and an "error" has already cleaned up after itself.
+                let settled = false;
                 // Tracked locally (plain JS, not React state) rather than derived from
                 // `messages`/`messagesRef` at "done" time - setMessages' updater isn't
                 // guaranteed to have actually run yet by the time a later event in this
@@ -308,43 +366,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
                                 // don't also fire a queued onDone on top of it.
                                 pendingOnDoneRef.current = null;
 
-                                // A turn that failed before any content arrived leaves nothing
-                                // worth showing - drop the empty assistant bubble rather than
-                                // rendering a blank message. Also drop it if it holds a tool-call
-                                // the stream never resolved: the connection died between the
-                                // "tool-call" event and its "tool-result", so this call will never
-                                // get a result now, and replaying it as history would send the
-                                // server (and the model) a tool-call with no matching tool-result -
-                                // invalid on every future turn, not just this one.
-                                const id = assistantMessageId;
-                                if (id !== null) {
-                                    updateMessages(current =>
-                                        current.filter(
-                                            message =>
-                                                !(
-                                                    message.id === id &&
-                                                    message.role === 'assistant' &&
-                                                    (message.parts.length === 0 ||
-                                                        message.parts.some(
-                                                            part => part.type === 'tool-call' && part.result === undefined,
-                                                        ))
-                                                ),
-                                        ),
-                                    );
-                                }
+                                settled = true;
+                                dropUnsendableMessage(assistantMessageId);
                                 break;
                             }
 
                             case 'done': {
+                                settled = true;
                                 const id = assistantMessageId;
                                 if (id === null) break;
 
-                                if (event.usage !== undefined) {
-                                    const usage = event.usage;
+                                // Patched together in one pass rather than two: both
+                                // arrive on this same event, and a second updateMessages
+                                // would re-render the list for no reason.
+                                if (event.usage !== undefined || event.toolUsage !== undefined || event.subagents !== undefined) {
+                                    const { usage, toolUsage, subagents } = event;
                                     updateMessages(current =>
                                         current.map(message =>
                                             message.id === id && message.role === 'assistant'
-                                                ? { ...message, usage }
+                                                ? {
+                                                      ...message,
+                                                      ...(usage !== undefined && { usage }),
+                                                      ...(toolUsage !== undefined && { toolUsage }),
+                                                      ...(subagents !== undefined && { subagents }),
+                                                  }
                                                 : message,
                                         ),
                                     );
@@ -378,6 +423,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
                         }
                     }
                 } finally {
+                    // The cancel path, which produces no terminal event of its own and so
+                    // passes through here and nowhere else. Aborting mid-tool leaves
+                    // exactly the unresolved tool-call described above.
+                    if (!settled) dropUnsendableMessage(assistantMessageId);
                     abortControllerRef.current = null;
                     setIsStreaming(false);
                 }
@@ -388,7 +437,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // individual methods are memoized via useCallback), so depending on the object
         // itself would recreate runTurn - and everything downstream of it - on every
         // single render, defeating every useCallback in this file.
-        [agent.name, autosave.saveAssistantMessage, model.id, effort, projectInstructionsEnabled, toast, updateMessages],
+        [agent.name, autosave.saveAssistantMessage, dropUnsendableMessage, model.id, effort, workerModel.id, workerEffort, projectInstructionsEnabled, toast, updateMessages],
     );
 
     const sendMessage = useCallback(

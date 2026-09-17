@@ -103,6 +103,49 @@ export const tokenUsageSchema = z.object({
 
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 
+// What each tool actually put into the conversation during one assistant turn.
+//
+// Distinct from tokenUsageSchema above, and not derivable from it: that reports the size
+// of the *whole* prompt as the provider counted it, which says nothing about which tool's
+// output made it that size. Every tool result is replayed verbatim on every later request
+// (see toolPartsToMessages in the server's chat-stream), so a turn's tool output is not a
+// one-off cost - it is carried for the rest of the session. This is the per-tool
+// attribution that makes that visible.
+//
+// resultChars, not tokens: tokenizing here would mean shipping a tokenizer per provider
+// for a number only ever used as a ratio. Callers that want an approximation divide by 4
+// and say so - never present it as a measured token count.
+export const toolUsageSchema = z.object({
+    // Plain string, matching toolCallPartSchema.toolName below rather than toolNameSchema:
+    // this is a record of what ran, and a stored session naming a tool the catalog has
+    // since dropped should still parse.
+    toolName: z.string(),
+    calls: z.number().int().nonnegative(),
+    resultChars: z.number().int().nonnegative(),
+});
+
+export type ToolUsage = z.infer<typeof toolUsageSchema>;
+
+// What the turn's subagents cost. Deliberately a separate field from tokenUsageSchema
+// rather than folded into it: that one means "how big this turn's prompt was", which
+// context-window.ts reads directly to say how full the window is - and worker tokens are
+// real spend that never enters the orchestrator's window at all. Summing them in would
+// overstate the window and quietly break the one reading the footer is built on.
+//
+// This is also the figure that makes the whole subagent trade visible: workers can burn
+// far more tokens than they return, and without it that spend is invisible in a UI whose
+// only number is the context percentage.
+export const subagentUsageSchema = z.object({
+    // Workers actually spawned this turn - not tool calls made, and not capped-out
+    // attempts, which cost nothing and never reach a model.
+    count: z.number().int().nonnegative(),
+    // Summed across every worker in the turn, each of which ran its own multi-step loop.
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+});
+
+export type SubagentUsage = z.infer<typeof subagentUsageSchema>;
+
 export const toolCallPartSchema = z.object({
     type: z.literal("tool-call"),
     // Named to match the "tool-call"/"tool-result" stream events, so folding an
@@ -167,6 +210,13 @@ export const assistantMessageSchema = z.object({
     // Filled in once the matching "done" event arrives, so usage travels
     // with the message it belongs to rather than living only on the wire.
     usage: tokenUsageSchema.optional(),
+    // Per-tool output attribution for this turn, from the same "done" event as usage
+    // above and travelling with the message for the same reason. One entry per tool that
+    // ran; absent for a turn that used none.
+    toolUsage: z.array(toolUsageSchema).optional(),
+    // What this turn's workers spent (see subagentUsageSchema). Absent for a turn that
+    // spawned none - which is most of them.
+    subagents: subagentUsageSchema.optional(),
     // Filled in from the "start" event that opened this message's turn - absent if that
     // turn had none. Travels with the message (like usage above) so a per-turn cost
     // summary can show both together, rather than only reflecting whichever turn is most
@@ -223,22 +273,35 @@ export function toRequestMessage(message: ChatMessage): RequestMessage {
 // here - an id this package doesn't recognize isn't rejected, since it may be a live-fetched
 // OpenRouter model (see chatModelIdSchema's own comment above); the server's
 // resolveChatModel is the actual source of truth for those, at resolution time.
-function checkModelAndEffort(
-    request: { model: string; effort?: EffortLevel },
+function checkEffortAgainstModel(
+    modelId: string | undefined,
+    effort: EffortLevel | undefined,
     ctx: z.RefinementCtx,
+    path: string,
 ): void {
-    if (request.effort === undefined) return;
+    if (effort === undefined || modelId === undefined) return;
 
-    const model = findSupportedChatModel(request.model);
+    const model = findSupportedChatModel(modelId);
     if (model === undefined) return;
 
-    if (!modelSupportsEffort(model, request.effort)) {
+    if (!modelSupportsEffort(model, effort)) {
         ctx.addIssue({
             code: "custom",
             message: "This model does not support the requested effort level",
-            path: ["effort"],
+            path: [path],
         });
     }
+}
+
+// Both model/effort pairs get the same check, independently: the worker can be a different
+// model from the orchestrator, on a different provider, with a different set of supported
+// effort levels - so validating one pair says nothing about the other.
+function checkModelAndEffort(
+    request: { model: string; effort?: EffortLevel; workerModel?: string; workerEffort?: EffortLevel },
+    ctx: z.RefinementCtx,
+): void {
+    checkEffortAgainstModel(request.model, request.effort, ctx, "effort");
+    checkEffortAgainstModel(request.workerModel, request.workerEffort, ctx, "workerEffort");
 }
 
 // What the CLI POSTs to the local server. `effort` is optional - omitting it
@@ -259,6 +322,18 @@ export const chatRequestSchema = z
         // having to rename or delete the file. Defaults to enabled so a client
         // that doesn't send this field sees no change in behavior.
         useProjectInstructions: z.boolean().optional(),
+        // Which model the turn's subagent workers run on (see the explore tool). Optional:
+        // a client that has never opened the worker picker sends nothing and the server
+        // falls back to DEFAULT_WORKER_MODEL_ID. Validated as a plain model id like `model`
+        // above - a worker may be any model the orchestrator may be, OpenRouter ids
+        // included, since both resolve through the same server-side path.
+        workerModel: chatModelIdSchema.optional(),
+        // The worker model's own effort level, checked against workerModel rather than
+        // model. Sent by the client rather than looked up server-side because preferences
+        // live CLI-side (see effortByModel in the CLI's preferences.ts) - the server has no
+        // access to them. Omitted for a worker model that takes no effort parameter at all,
+        // which is the default one's case.
+        workerEffort: effortLevelSchema.optional(),
     })
     .superRefine(checkModelAndEffort);
 
@@ -465,6 +540,11 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
         type: z.literal("done"),
         durationMs: z.number(),
         usage: tokenUsageSchema.optional(),
+        // One entry per tool that ran this turn (see toolUsageSchema). Omitted entirely
+        // when no tool ran, rather than sent as an empty array.
+        toolUsage: z.array(toolUsageSchema).optional(),
+        // Worker spend for this turn (see subagentUsageSchema). Omitted when none ran.
+        subagents: subagentUsageSchema.optional(),
     }),
     z.object({
         type: z.literal("error"),

@@ -370,3 +370,122 @@ describe('MessageList', () => {
         });
     });
 });
+
+describe('subagent calls', () => {
+    // The turn goes silent for five to fifteen seconds while a worker runs, and this is
+    // the only line saying what is being looked for.
+    test('shows the task while the worker is still running', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'c1',
+                        toolName: 'explore',
+                        args: { task: 'Find where entitlements are assembled' },
+                    },
+                ],
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('entitlements'));
+
+        expect(frame).toContain('explore');
+        expect(frame).toContain('running…');
+
+        rendered.renderer.destroy();
+    });
+
+    // No other tool prints its output here - a grep's hundred matches would bury the
+    // conversation. A worker's answer is the exception: it is a few cited lines by
+    // construction, and this is the only place those citations ever appear.
+    test('prints the worker\'s answer once it resolves', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'c1',
+                        toolName: 'explore',
+                        args: { task: 'Find where entitlements are assembled' },
+                        result: 'src/auth/claims.ts:142 - getEntitlements() builds the list.',
+                    },
+                ],
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('claims.ts:142'));
+
+        expect(frame).toContain('done');
+        expect(frame).not.toContain('running…');
+
+        rendered.renderer.destroy();
+    });
+
+    test('still hides an ordinary tool\'s output', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'c1',
+                        toolName: 'grep',
+                        args: { pattern: 'entitlement' },
+                        result: 'a-hundred-matching-lines-that-should-not-be-rendered',
+                    },
+                ],
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('grep'));
+
+        expect(frame).not.toContain('a-hundred-matching-lines');
+
+        rendered.renderer.destroy();
+    });
+
+    test('reports worker spend on the turn, separately from its own tokens', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'Found it.' }],
+                usage: { inputTokens: 900, outputTokens: 50 },
+                subagents: { count: 3, inputTokens: 41_000, outputTokens: 600 },
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('Found it.'));
+
+        expect(frame).toContain('3 workers');
+        rendered.renderer.destroy();
+    });
+
+    test('says "worker" rather than "workers" for a single spawn', async () => {
+        const messages: ChatMessage[] = [
+            {
+                id: '1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'Found it.' }],
+                usage: { inputTokens: 900 },
+                subagents: { count: 1, inputTokens: 9_000, outputTokens: 40 },
+            },
+        ];
+
+        const rendered = await mount(messages);
+        const frame = await rendered.waitForFrame(f => f.includes('Found it.'));
+
+        expect(frame).toContain('1 worker ');
+        rendered.renderer.destroy();
+    });
+});

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     DEFAULT_CHAT_MODEL_ID,
+    DEFAULT_WORKER_MODEL_ID,
     PROVIDER_ENV_VARS,
     SUPPORTED_CHAT_MODELS,
     SUPPORTED_PROVIDERS,
@@ -23,6 +24,20 @@ describe("findSupportedChatModel", () => {
 describe("DEFAULT_CHAT_MODEL_ID", () => {
     test("resolves to a model that actually exists in the catalog", () => {
         expect(findSupportedChatModel(DEFAULT_CHAT_MODEL_ID)).toBeDefined();
+    });
+});
+
+describe("DEFAULT_WORKER_MODEL_ID", () => {
+    test("resolves to a model that actually exists in the catalog", () => {
+        expect(findSupportedChatModel(DEFAULT_WORKER_MODEL_ID)).toBeDefined();
+    });
+
+    // Not a correctness requirement - a worker may be any model, including the
+    // orchestrator's - but the defaults existing to be different is the entire reason
+    // there are two of them. If these ever converge, the split has stopped paying for
+    // itself and that should be a deliberate decision, not a silent edit.
+    test("defaults to a different model than the orchestrator", () => {
+        expect(DEFAULT_WORKER_MODEL_ID).not.toBe(DEFAULT_CHAT_MODEL_ID);
     });
 });
 
