@@ -3,7 +3,12 @@ import { BINARY_SAMPLE_BYTES, MAX_OUTPUT_CHARS, MAX_READ_FILE_BYTES, isBinary, p
 import { formatNestedInstructions, loadNestedInstructions } from '../lib/project-instructions';
 
 const CHUNK_BYTES = 64 * 1024;
-const DEFAULT_LIMIT = 2000;
+// Halved from its original 2000: MAX_OUTPUT_CHARS already cuts off most real files well
+// before this many lines, so this mostly bound the short-line case (a log, a lockfile, a
+// list) where the character cap doesn't kick in first - and 2000 short lines by default is
+// far more than a caller usually asked for. Explicit limit= still goes up to 10000 for a
+// caller that actually wants a wide window.
+const DEFAULT_LIMIT = 1000;
 /** Per-line ceiling. Stops one pathological line - a minified bundle, a base64 blob, a
  * file with no newlines at all - from eating the whole output budget, and from being
  * accumulated in memory while we scan for a newline that never arrives. */

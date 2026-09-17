@@ -428,7 +428,10 @@ function buildHeader(meta: ResourceMeta, cacheAgeMs: number | null): string {
     return lines.join('\n');
 }
 
-const DEFAULT_LINE_LIMIT = 2000;
+// Halved to match read_file's own DEFAULT_LIMIT (see its comment) - this tool is explicitly
+// documented as "bounded like read_file", so the two defaults staying in lockstep is the
+// point, not a coincidence.
+const DEFAULT_LINE_LIMIT = 1000;
 /** Per-line ceiling, same rationale and value as read_file's own MAX_LINE_CHARS: stops
  * one pathological line (a minified bundle, a giant single-line JSON blob) from eating
  * the whole output budget. */
