@@ -235,6 +235,62 @@ describe('toModelMessages', () => {
             content: [{ type: 'tool-approval-response', approvalId: 'appr-1', approved: false }],
         });
     });
+
+    test('a denied call replays its long string args as a length note, not the literal content', () => {
+        const longContent = 'x'.repeat(500);
+        const messages: RequestMessage[] = [
+            {
+                id: '2',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'call-1',
+                        toolName: 'write_file',
+                        args: { path: 'a.txt', content: longContent, dryRun: false },
+                        approvalId: 'appr-1',
+                        approvalStatus: 'denied',
+                    },
+                ],
+            },
+        ];
+
+        expect(toModelMessages(messages)[0]).toEqual({
+            role: 'assistant',
+            content: [
+                {
+                    type: 'tool-call',
+                    toolCallId: 'call-1',
+                    toolName: 'write_file',
+                    input: { path: 'a.txt', content: '[denied - 500 chars omitted]', dryRun: false },
+                },
+                { type: 'tool-approval-request', approvalId: 'appr-1', toolCallId: 'call-1' },
+            ],
+        });
+    });
+
+    test('a denied call keeps short string args as-is', () => {
+        const messages: RequestMessage[] = [
+            {
+                id: '2',
+                role: 'assistant',
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolCallId: 'call-1',
+                        toolName: 'bash',
+                        args: { command: 'rm -rf /tmp/x' },
+                        approvalId: 'appr-1',
+                        approvalStatus: 'denied',
+                    },
+                ],
+            },
+        ];
+
+        expect((toModelMessages(messages)[0] as { content: { input?: unknown }[] }).content[0]?.input).toEqual({
+            command: 'rm -rf /tmp/x',
+        });
+    });
 });
 
 // Exercises the exact call streamChatResponse makes - streamText with the tool

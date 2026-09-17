@@ -3,7 +3,12 @@ import { lstat, readlink, realpath } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 
 export const BASH_TIMEOUT_MS = 30_000;
-export const MAX_OUTPUT_CHARS = 20_000;
+// Halved from its original 20_000: a single read/command result was costing up to ~5,500
+// tokens, replayed on every later step and turn of the session once it lands in history
+// (see prompt-cache.ts's own comment on that same cost). 10_000 still comfortably covers a
+// typical file window or command output; a genuinely large read already pages via
+// offset/limit rather than depending on one huge result.
+export const MAX_OUTPUT_CHARS = 10_000;
 /** What one worker may hand back, enforced in the executor rather than asked for in its
  * prompt - a prompt-only limit is a request, and a small model will exceed it. Two orders
  * of magnitude under MAX_OUTPUT_CHARS on purpose: a worker exists to return a handful of

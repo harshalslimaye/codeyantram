@@ -25,6 +25,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// Above this, a string argument is replayed as a length note instead of its literal value.
+// Denied calls never ran, so the file/edit content they carried bought nothing - but it is
+// still replayed byte-for-byte on every later step and turn of the session (see
+// prompt-cache.ts's own comment on the same cost for approved tool results). A short string
+// (a path, a command, a pattern) is exactly the thing toolArgsSummary in the CLI's
+// message-list.tsx already renders and is worth keeping so the transcript still reads
+// sensibly; the pattern this exists for is write_file's `content` or edit_file's
+// `old_string`/`new_string`, which can run to thousands of characters for a single denial.
+const MAX_DENIED_ARG_STRING_LENGTH = 200;
+
+/** Recursively replaces long string values with a length note, leaving short strings,
+ * numbers, booleans, and structure (array/object shape) untouched. Only ever called on a
+ * denied call's args (see toolPartsToMessages) - an approved or still-pending call's args
+ * are left exactly as the model sent them. */
+function redactDeniedArgs(value: unknown): unknown {
+    if (typeof value === 'string') {
+        return value.length > MAX_DENIED_ARG_STRING_LENGTH
+            ? `[denied - ${value.length} chars omitted]`
+            : value;
+    }
+    if (Array.isArray(value)) return value.map(redactDeniedArgs);
+    if (value !== null && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, redactDeniedArgs(entry)]));
+    }
+    return value;
+}
+
 /**
  * Converts one assistant message's tool-call parts into a tool-call content
  * block - plus, for any part that went through approval, the matching
@@ -41,7 +68,7 @@ function toolPartsToMessages(parts: ToolCallPart[]): ModelMessage[] {
                     type: 'tool-call' as const,
                     toolCallId: part.toolCallId,
                     toolName: part.toolName,
-                    input: part.args,
+                    input: part.approvalStatus === 'denied' ? redactDeniedArgs(part.args) : part.args,
                 };
 
                 return part.approvalId === undefined

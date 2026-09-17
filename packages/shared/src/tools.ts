@@ -47,7 +47,7 @@ export const TOOL_CATALOG = [
                 .min(1)
                 .max(10000)
                 .optional()
-                .describe("Maximum number of lines to return, starting at offset. Defaults to 2000; output is also capped by an overall character limit."),
+                .describe("Maximum number of lines to return, starting at offset. Defaults to 1000; output is also capped by an overall character limit."),
         }),
     },
     {
@@ -172,7 +172,7 @@ export const TOOL_CATALOG = [
                 .min(1)
                 .max(5000)
                 .optional()
-                .describe("Maximum number of lines to return, starting at offset. Defaults to 2000; output is also capped by an overall character limit."),
+                .describe("Maximum number of lines to return, starting at offset. Defaults to 1000; output is also capped by an overall character limit."),
             refresh: z.boolean().optional().describe("Bypass the cache and re-fetch the URL even if a recent copy is already cached."),
         }),
     },
