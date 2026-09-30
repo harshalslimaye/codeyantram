@@ -1,0 +1,14 @@
+{
+  "name": "@codeyantram/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CLI workspace",
+  "dependencies": {
+    "@codeyantram/core": "0.0.0",
+    "ink": "7.1.1",
+    "react": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0"
+  }
+}
