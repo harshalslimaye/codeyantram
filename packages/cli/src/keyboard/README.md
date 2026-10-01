@@ -1,0 +1,52 @@
+# Keyboard ownership
+
+`KeyboardProvider` in `provider.tsx` keeps a stack of keyboard owners: `input-bar`,
+`command-palette`, or `theme-picker`. It wraps the CLI in `App`. The input bar is
+the permanent bottom entry; only the top entry receives input. Components use
+`useKeyboardOwner()` to access the same ownership state; the hook requires a provider.
+
+- `owner` is the React state used to render the active interaction.
+- `isOwner(candidate)` checks the current owner synchronously.
+- `push(owner)` opens an interaction above the current owner.
+- `pop(expectedOwner)` closes the top interaction only if it matches the expected
+  owner, restoring the owner below it. A mismatch or the input bar does nothing.
+  This prevents a delayed callback from closing a different interaction.
+
+Successful pushes and pops update ownership immediately and schedule a render. For example,
+`input-bar → command-palette → theme-picker` restores the command palette when
+the theme picker is popped. Interaction state remains in the components.
+
+`InputBar` enables its Ink `useInput` listener only for the input bar or command
+palette and checks ownership synchronously for each event. `ThemePicker` handles
+its own Escape key. The picker's ink-ui `Select`
+handles Up, Down, and Enter; it is mounted only while the picker owns input and
+disabled while saving. `CommandPalette` mounts its content only while it owns
+input. Its ink-ui `Select` handles Up/Down navigation and Enter selection; the
+input bar still handles draft editing and Escape while the palette is open.
+Events never fall through from the theme picker to the draft editor.
+
+Draft edits explicitly open the command list when the draft becomes `/`, or the
+theme picker when the trimmed, case-insensitive draft becomes `/theme`.
+Editing out of the command list closes its entry before opening
+another interaction, so the current `/theme` handoff returns directly to the
+input bar on close. Rendering does not infer ownership from draft text.
+
+Escape closes the command list or theme picker without changing the draft.
+Escape in the input bar clears the draft. A dismissed interaction stays closed
+until another draft edit triggers it. Visibility and the editing cursor follow
+ownership.
+
+Draft text and cursor position remain in `InputBar`. `ThemePicker` owns saving,
+retry state, the saving spinner, and closing itself. It notifies `InputBar` after
+a successful selection so the draft can be cleared. `Select` owns the
+highlighted option and scrolls through up to five visible themes, with the active
+theme listed first. Theme selection keeps ownership while saving and ignores
+additional input until the save settles. Success clears the command and returns
+ownership to the input bar; failure remounts `Select` so the same theme can be
+selected again. Ink retains its default Ctrl+C exit behavior.
+
+Selecting a command closes the command palette before notifying its caller.
+`InputBar` then replaces the draft through the same path as typing the command,
+so selecting `/theme` opens the theme picker without leaving the palette on the stack.
+Other commands are inserted into the prompt; they do not have execution handlers
+yet. Reopening the command palette mounts a fresh selection starting at `/help`.

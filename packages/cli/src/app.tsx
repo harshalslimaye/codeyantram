@@ -5,6 +5,7 @@ import {InputBar} from './components/input-bar.js';
 import {StatusBar} from './components/status-bar.js';
 import {getGitBranch} from './lib/utils.js';
 import {ThemeProvider} from './theme/provider.js';
+import {KeyboardProvider} from './keyboard/provider.js';
 import type {ThemeRegistry} from './theme/registry/registry.js';
 
 export function App({
@@ -19,11 +20,13 @@ export function App({
 
 	return (
 		<ThemeProvider registry={registry} initialThemeId={initialThemeId}>
-			<Box flexDirection="column" height={rows}>
-				<Box flexGrow={1} />
-				<InputBar />
-				<StatusBar branch={branch} model={MODEL_NAME} />
-			</Box>
+			<KeyboardProvider>
+				<Box flexDirection="column" height={rows}>
+					<Box flexGrow={1} />
+					<InputBar />
+					<StatusBar branch={branch} model={MODEL_NAME} />
+				</Box>
+			</KeyboardProvider>
 		</ThemeProvider>
 	);
 }

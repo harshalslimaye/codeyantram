@@ -1,4 +1,5 @@
 import React, {createContext, useContext, useMemo, type ReactNode} from 'react';
+import {defaultTheme, extendTheme, ThemeProvider as InkUIThemeProvider} from '@inkjs/ui';
 import {detectTerminalColorDepth, resolveThemeColor} from './utils/colors.js';
 import {saveThemePreference} from './utils/index.js';
 import type {ThemeRegistry} from './registry/registry.js';
@@ -40,6 +41,34 @@ export function ThemeProvider({
 		THEME_ROLES.map(role => [role, resolveThemeColor(selected.theme, role, colorDepth, mode)]),
 	) as InkThemePalette, [selected.theme, colorDepth, mode]);
 	const themes = useMemo(() => registry.list(), [registry]);
+	const uiTheme = useMemo(() => extendTheme(defaultTheme, {
+		components: {
+			Select: {
+				styles: {
+					focusIndicator: () => ({color: palette.prompt}),
+					selectedIndicator: () => ({color: palette.success}),
+					label: ({isFocused}: {isFocused: boolean}) => ({color: isFocused ? palette.prompt : palette.text}),
+				},
+			},
+			TextInput: {
+				styles: {
+					value: () => ({color: palette.text}),
+				},
+			},
+			Spinner: {
+				styles: {
+					frame: () => ({color: palette.prompt}),
+					label: () => ({color: palette.muted}),
+				},
+			},
+			StatusMessage: {
+				styles: {
+					icon: ({variant}: {variant: 'success' | 'error' | 'warning' | 'info'}) => ({color: palette[variant === 'info' ? 'primary' : variant]}),
+					message: () => ({color: palette.text}),
+				},
+			},
+		},
+	}), [palette]);
 
 	const selectTheme = async (id: string) => {
 		const entry = registry.get(id);
@@ -57,7 +86,7 @@ export function ThemeProvider({
 
 	return (
 		<ThemeContext.Provider value={{palette, themes, selectedId, notice, noticeTone, selectTheme, setNotice: updateNotice}}>
-			{children}
+			<InkUIThemeProvider theme={uiTheme}>{children}</InkUIThemeProvider>
 		</ThemeContext.Provider>
 	);
 }
