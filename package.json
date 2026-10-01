@@ -12,7 +12,8 @@
   "workspaces": [
     "packages/server",
     "packages/cli",
-    "packages/core"
+    "packages/core",
+    "packages/shared"
   ],
   "devDependencies": {
     "@types/node": "22.20.4",

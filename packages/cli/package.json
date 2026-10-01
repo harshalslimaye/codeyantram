@@ -5,10 +5,12 @@
   "description": "CLI workspace",
   "type": "module",
   "scripts": {
-    "start": "node --import tsx src/index.tsx"
+    "start": "node --import tsx src/index.tsx",
+    "test": "node --import tsx --test src/theme/theme.test.ts"
   },
   "dependencies": {
     "@codeyantram/core": "0.0.0",
+    "@codeyantram/shared": "0.0.0",
     "ink": "7.1.1",
     "react": "19.3.0"
   },

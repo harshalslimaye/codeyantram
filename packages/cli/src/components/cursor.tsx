@@ -1,8 +1,10 @@
 import React, {useEffect, useState} from 'react';
 import {Text} from 'ink';
+import {useTheme} from '../theme/provider.js';
 
 export function Cursor() {
 	const [isVisible, setIsVisible] = useState(true);
+	const {palette} = useTheme();
 
 	useEffect(() => {
 		const interval = setInterval(() => {
@@ -12,5 +14,5 @@ export function Cursor() {
 		return () => clearInterval(interval);
 	}, []);
 
-	return <Text color="gray">{isVisible ? '▌' : ' '}</Text>;
+	return <Text color={palette.prompt}>{isVisible ? '▌' : ' '}</Text>;
 }
