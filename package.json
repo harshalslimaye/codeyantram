@@ -2,6 +2,10 @@
   "name": "codeyantram",
   "version": "0.0.0",
   "private": true,
+  "scripts": {
+    "start": "npm run --workspace=@codeyantram/cli start",
+    "cli": "npm run --workspace=@codeyantram/cli start"
+  },
   "engines": {
     "node": ">=22"
   },
