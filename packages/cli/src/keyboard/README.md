@@ -1,7 +1,7 @@
 # Keyboard ownership
 
 `KeyboardProvider` in `provider.tsx` keeps a stack of keyboard owners: `input-bar`,
-`command-palette`, or `theme-picker`. It wraps the CLI in `App`. The input bar is
+`command-palette`, `theme-picker`, `model-picker`, or `effort-picker`. It wraps the CLI in `App`. The input bar is
 the permanent bottom entry; only the top entry receives input. Components use
 `useKeyboardOwner()` to access the same ownership state; the hook requires a provider.
 
@@ -50,3 +50,12 @@ Selecting a command closes the command palette before notifying its caller.
 so selecting `/theme` opens the theme picker without leaving the palette on the stack.
 Other commands are inserted into the prompt; they do not have execution handlers
 yet. Reopening the command palette mounts a fresh selection starting at `/help`.
+
+Selecting `/model` opens `ModelPicker`. Selecting a model with effort support
+pushes `effort-picker` above `model-picker`; only that model's supported efforts
+are shown. Escape in the effort picker returns to the model list, and Escape in
+the model picker returns to the input bar. The active model changes only after
+the final selection is saved. Models without effort support save immediately.
+Both pickers disable prompt editing and ignore input while saving. Save failures
+keep the picker open and allow retrying the same choice. Model and per-model effort
+preferences are saved to the global user config.

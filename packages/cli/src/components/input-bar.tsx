@@ -3,15 +3,22 @@ import {Box, Text, useApp, useInput} from 'ink';
 import {StatusMessage, TextInput} from '@inkjs/ui';
 import {CommandPalette} from './command-palette.js';
 import {ThemePicker} from './theme-picker.js';
+import {ModelPicker} from './model-picker.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
+import type {EffortLevel} from '@codeyantram/shared';
+import type {ModelPreferences} from '../models/preferences.js';
 
-export function InputBar() {
+export function InputBar({modelPreferences, onSelectModel}: {
+	modelPreferences: ModelPreferences;
+	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
+}) {
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
 	const {palette, notice, noticeTone, setNotice} = useTheme();
 	const {owner, isOwner, push, pop} = useKeyboardOwner();
 	const {exit} = useApp();
+	const isEditing = owner === 'input-bar' || owner === 'command-palette';
 	const commandQuery = value.startsWith('/') && value.length > 1 && !value.includes(' ')
 		? value.slice(1)
 		: undefined;
@@ -28,7 +35,7 @@ export function InputBar() {
 				// Handle help command
 				break;
 			case '/model':
-				// Handle model command
+				push('model-picker');
 				break;
 			case '/theme':
 				push('theme-picker');
@@ -60,21 +67,25 @@ export function InputBar() {
 	}
 
 	useInput((_input, key) => {
+		if (!isOwner('input-bar') && !isOwner('command-palette')) return;
 		if (key.escape) {
 			if (isOwner('input-bar')) updateDraft('');
 			else pop('command-palette');
 			return;
 		}
 
-	}, {isActive: owner !== 'theme-picker'});
+	}, {isActive: isEditing});
 
 	return (
 		<Box flexDirection="column" width="100%">
 			<CommandPalette query={commandQuery} onSelect={onSelectCommand} />
 			{owner === 'theme-picker' && <ThemePicker />}
+			{(owner === 'model-picker' || owner === 'effort-picker') && (
+				<ModelPicker preferences={modelPreferences} onSelect={onSelectModel} />
+			)}
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
-				<TextInput key={inputRevision} defaultValue={value} isDisabled={owner === 'theme-picker'} onChange={handleChange} />
+				<TextInput key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} />
 			</Box>
 			{notice && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}
 		</Box>
