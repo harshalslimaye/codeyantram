@@ -5,6 +5,14 @@ import type {ChatMessage, RequestMessage} from './types.js';
 
 export const chatModelIdSchema = z.string().min(1);
 
+export const MAX_SUMMARY_CHARACTERS = 12_000;
+
+// Validate without trimming: summaries must survive request/result round trips unchanged.
+export const contextSummarySchema = z.string().max(MAX_SUMMARY_CHARACTERS).refine(
+  summary => summary.trim().length > 0,
+  {message: 'A conversation summary must contain nonblank text'},
+);
+
 export const textPartSchema = z.object({
   type: z.literal('text'),
   text: z.string(),
@@ -57,6 +65,7 @@ export const chatRequestSchema = z.object({
   model: chatModelIdSchema,
   messages: z.array(requestMessageSchema).min(1),
   effort: effortLevelSchema.optional(),
+  contextSummary: contextSummarySchema.optional(),
 }).superRefine((request, ctx) => {
   const model = findSupportedChatModel(request.model);
   if (!model) {
@@ -83,6 +92,7 @@ export const chatErrorCodeSchema = z.enum([
   'rate_limited',
   'provider_error',
   'internal_error',
+  'compaction_failed',
 ]);
 
 // SSE carries one JSON event per data frame. Successful turns end with done;

@@ -1,10 +1,12 @@
 export {
+  MAX_SUMMARY_CHARACTERS,
   assistantMessageSchema,
   chatErrorCodeSchema,
   chatMessageSchema,
   chatModelIdSchema,
   chatRequestSchema,
   chatStreamEventSchema,
+  contextSummarySchema,
   messagePartSchema,
   messagePartsSchema,
   requestAssistantMessageSchema,
@@ -26,3 +28,15 @@ export type {
   TokenUsage,
   UserMessage,
 } from './types.js';
+export {
+  compactAssistantStatusSchema,
+  compactMessageSchema,
+  compactRequestSchema,
+  compactStreamEventSchema,
+} from './compact.js';
+export type {
+  CompactAssistantStatus,
+  CompactMessage,
+  CompactRequest,
+  CompactStreamEvent,
+} from './compact.js';

@@ -1,6 +1,8 @@
 import {describe, expect, it} from 'vitest';
 import {
   chatRequestSchema,
+  chatStreamEventSchema,
+  MAX_SUMMARY_CHARACTERS,
   toRequestMessage,
   type AssistantMessage,
 } from '../../src/index.js';
@@ -12,6 +14,28 @@ const messages = [{
 }];
 
 describe('chat request validation', () => {
+  it('preserves existing requests and accepts an optional historical summary', () => {
+    const request = {model: 'gpt-6.1-sol', messages};
+    expect(chatRequestSchema.parse(request)).toEqual(request);
+    expect(chatRequestSchema.parse(request)).not.toHaveProperty('contextSummary');
+    const withSummary = {...request, contextSummary: '  Prior task decisions.\nKeep recent turns.  '};
+    expect(chatRequestSchema.parse(withSummary)).toEqual(withSummary);
+  });
+
+  it.each(['', ' \n\t ', 'x'.repeat(MAX_SUMMARY_CHARACTERS + 1), null])(
+    'rejects invalid historical summaries (case %#)', contextSummary => {
+      const result = chatRequestSchema.safeParse({model: 'gpt-6.1-sol', messages, contextSummary});
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.path).toEqual(['contextSummary']);
+    },
+  );
+
+  it('requires a conversation message even when a summary is present', () => {
+    expect(chatRequestSchema.safeParse({
+      model: 'gpt-6.1-sol', contextSummary: 'Prior task decisions.', messages: [],
+    }).success).toBe(false);
+  });
+
   it('rejects unsupported models and reports the model field', () => {
     const result = chatRequestSchema.safeParse({model: 'unknown-model', messages});
     expect(result.success).toBe(false);
@@ -37,6 +61,13 @@ describe('chat request validation', () => {
         parts: [{type: 'reasoning', text: 'Private reasoning'}],
       }],
     }).success).toBe(false);
+  });
+});
+
+describe('chat stream error compatibility', () => {
+  it('accepts the compaction failure error category', () => {
+    const event = {type: 'error', code: 'compaction_failed', message: 'The summary was incomplete.'};
+    expect(chatStreamEventSchema.parse(event)).toEqual(event);
   });
 });
 
