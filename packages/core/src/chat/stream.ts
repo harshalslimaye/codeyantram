@@ -1,31 +1,20 @@
 import {randomUUID} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
-import {streamText, type LanguageModelUsage, type ModelMessage} from 'ai';
+import {streamText} from 'ai';
 import {
   chatRequestSchema,
   type ChatRequest,
   type ChatStreamEvent,
-  type TokenUsage,
 } from '@codeyantram/shared';
 import {ChatError, toChatErrorEvent} from './errors.js';
 import {resolveChatModel, type ProviderCredentials} from './models.js';
+import {toModelMessages} from './messages.js';
+import {toTokenUsage} from './usage.js';
 
 export interface ChatStreamOptions {
   credentials: ProviderCredentials;
   abortSignal?: AbortSignal;
   fetch?: typeof globalThis.fetch;
-}
-
-function toTokenUsage(usage: LanguageModelUsage): TokenUsage | undefined {
-  const counts = {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-    cacheReadTokens: usage.inputTokenDetails.cacheReadTokens,
-    cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens,
-  };
-  const entries = Object.entries(counts).filter(([, value]) => value !== undefined);
-  return entries.length === 0 ? undefined : Object.fromEntries(entries);
 }
 
 /** Streams the shared chat events; cancellation ends without a terminal event. */
@@ -55,14 +44,9 @@ export async function* streamChat(
       credentials: options.credentials,
       fetch: options.fetch,
     });
-    const messages: ModelMessage[] = parsed.data.messages.map(message => ({
-      role: message.role,
-      content: message.parts.map(part => ({type: 'text' as const, text: part.text})),
-    }));
-
     const result = streamText({
       ...resolved,
-      messages,
+      messages: toModelMessages(parsed.data),
       abortSignal: signal,
       maxRetries: 0,
       // Errors are surfaced by fullStream below rather than logged by the SDK.

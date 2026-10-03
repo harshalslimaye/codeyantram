@@ -1,6 +1,6 @@
 # Core chat
 
-`@codeyantram/core` exports `streamChat`, `resolveChatModel`, and `ChatError`.
+`@codeyantram/core` exports `streamChat`, `compactChat`, `resolveChatModel`, and `ChatError`.
 It supports the OpenAI, Anthropic, and Google models in the shared catalog.
 
 ```ts
@@ -33,6 +33,26 @@ Effort is checked against the catalog. OpenAI receives `reasoningEffort`;
 Anthropic receives adaptive thinking and `effort`; Gemini 3+ receives a named
 thinking level. For Gemini 2.5, AI SDK 7 translates reasoning levels into token
 budgets. Omitting effort preserves the provider's defaults.
+
+An optional `ChatRequest.contextSummary` is replayed as a labeled user-level
+historical-context message before the supplied conversation. It says current
+user instructions may supersede the summary. It is not a trusted instruction
+or an assistant reply. Requests without a summary retain their existing shape.
+
+`compactChat(request, options)` accepts a shared `CompactRequest` containing
+the model, an optional previous summary, and only the historical prefix to
+replace. Options have the same credentials, abort signal, and injected fetch
+fields as `streamChat`. The caller selects the prefix and retains recent turns;
+core neither changes a transcript nor commits a summary.
+
+Compaction emits `start`, then `done` with the validated summary, duration, and
+available usage, or `error`. It uses a single non-streaming generation, supported
+low effort (omitted on models without effort controls), a 4,096-token output cap,
+and no retries. Blank summaries, output over 12,000 characters, and responses
+that do not finish normally produce `compaction_failed`; partial summaries are
+never emitted or repaired. Cancellation emits no terminal event, including when
+a provider returns after abort. These policies are tested with HTTP fixtures;
+live summary quality and cost savings have not been evaluated.
 
 `resolveChatModel` exposes the SDK model and call settings for callers needing
 direct SDK access. It throws `ChatError` for unsupported models, unsupported

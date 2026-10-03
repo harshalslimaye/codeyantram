@@ -3,3 +3,5 @@ export {resolveChatModel} from './models.js';
 export type {ProviderCredentials, ResolveChatModelOptions, ResolvedChatModel} from './models.js';
 export {streamChat} from './stream.js';
 export type {ChatStreamOptions} from './stream.js';
+export {compactChat} from './compact.js';
+export type {CompactChatOptions} from './compact.js';

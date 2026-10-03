@@ -40,3 +40,24 @@ export const googleEvents = [
     },
   },
 ];
+
+/** Non-streaming HTTP fixtures exercise generateText through the actual adapters. */
+export function summaryResponse(model: string, text: string, finish = 'stop'): Response {
+  const body = model.startsWith('claude-') ? {
+    type: 'message', id: 'summary-1', model, role: 'assistant',
+    content: [{type: 'text', text}],
+    stop_reason: finish === 'stop' ? 'end_turn' : finish === 'length' ? 'max_tokens' : finish,
+    usage: {input_tokens: 5, output_tokens: 3, cache_read_input_tokens: 4, cache_creation_input_tokens: 1},
+  } : model.startsWith('gpt-') ? {
+    id: 'summary-1', model, created_at: 1,
+    output: [{type: 'message', role: 'assistant', id: 'message-1',
+      content: [{type: 'output_text', text, annotations: []}]}],
+    incomplete_details: finish === 'stop' ? null : {reason: finish === 'length' ? 'max_output_tokens' : finish},
+    usage: {input_tokens: 10, output_tokens: 3, total_tokens: 13, input_tokens_details: {cached_tokens: 4}},
+  } : {
+    candidates: [{content: {role: 'model', parts: [{text}]},
+      finishReason: finish === 'stop' ? 'STOP' : finish === 'length' ? 'MAX_TOKENS' : finish}],
+    usageMetadata: {promptTokenCount: 10, candidatesTokenCount: 3, totalTokenCount: 13, cachedContentTokenCount: 4},
+  };
+  return Response.json(body);
+}

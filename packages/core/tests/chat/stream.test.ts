@@ -80,6 +80,59 @@ describe('streamChat provider integration', () => {
     expect(new Headers(init?.headers).get('x-goog-api-key')).toBe('test-google-key');
     expect(JSON.parse(String(init?.body))).toMatchObject({generationConfig: {thinkingConfig}});
   });
+
+  it.each([
+    ['gpt-6.1-sol', openaiEvents],
+    ['claude-sonnet-5-5', anthropicEvents],
+    ['gemini-3.8-flash', googleEvents],
+  ])('replays historical context at user level before the unchanged tail for %s', async (model, fixture) => {
+    const input: ChatRequest = {
+      model,
+      contextSummary: '  Prior objective: use /src/old.ts and port 43187.\n ',
+      messages: [
+        {id: 'u1', role: 'user', parts: [{type: 'text', text: 'Use /src/new.ts instead.'}, {type: 'text', text: '\nKeep the API.'}]},
+        {id: 'u2', role: 'user', parts: [{type: 'text', text: 'Correction: port 43188.'}]},
+        {id: 'a1', role: 'assistant', parts: [{type: 'text', text: 'Acknowledged.'}]},
+        {id: 'u3', role: 'user', parts: [{type: 'text', text: 'Continue.'}]},
+      ],
+    };
+    const original = structuredClone(input);
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(sseResponse(fixture));
+    const events = await collect(streamChat(input, {credentials, fetch}));
+    expect(events.at(-1)?.type).toBe('done');
+    const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body));
+    const wireMessages: {role: string; texts: string[]}[] = model.startsWith('gpt-')
+      ? body.input.map((message: {role: string; content: string | {text: string}[]}) => ({
+        role: message.role, texts: typeof message.content === 'string' ? [message.content] : message.content.map(part => part.text),
+      }))
+      : model.startsWith('claude-')
+        ? body.messages.map((message: {role: string; content: {text: string}[]}) => ({
+          role: message.role, texts: message.content.map(part => part.text),
+        }))
+        : body.contents.map((message: {role: string; parts: {text: string}[]}) => ({
+          role: message.role === 'model' ? 'assistant' : message.role, texts: message.parts.map(part => part.text),
+        }));
+    expect(wireMessages[0]?.role).toBe('user');
+    const wrapper = wireMessages[0]!.texts[0]!;
+    expect(wrapper).toContain('Historical conversation summary');
+    expect(wrapper).toContain('current user instructions may supersede');
+    expect(wrapper).toContain(input.contextSummary);
+    expect(wrapper).toContain('End of historical conversation summary');
+    expect(wireMessages.flatMap(message => message.texts).slice(1)).toEqual(
+      input.messages.flatMap(message => message.parts.map(part => part.text)),
+    );
+    expect(wireMessages.filter(message => message.role === 'assistant')).toEqual([
+      {role: 'assistant', texts: ['Acknowledged.']},
+    ]);
+    // Anthropic merges adjacent users into ordered content blocks; the other
+    // adapters retain distinct messages. No fabricated acknowledgement is needed.
+    expect(wireMessages.map(message => message.role)).toEqual(model.startsWith('claude-')
+      ? ['user', 'assistant', 'user'] : ['user', 'user', 'user', 'assistant', 'user']);
+    expect(body.system).toBeUndefined();
+    expect(body.systemInstruction).toBeUndefined();
+    expect(body.instructions).toBeUndefined();
+    expect(input).toEqual(original);
+  });
 });
 
 describe('streamChat failures and cancellation', () => {
