@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
-import {toRequestMessage, type AssistantMessage, type ChatMessage, type ChatRequest, type ChatStreamEvent, type EffortLevel} from '@codeyantram/shared';
+import type {AssistantMessage, ChatMessage, ChatRequest, ChatStreamEvent, EffortLevel} from '@codeyantram/shared';
+import {buildChatContext} from './context.js';
 
 export type ChatTransport = (request: ChatRequest, signal: AbortSignal) => AsyncIterable<ChatStreamEvent>;
 
@@ -49,8 +50,7 @@ export class ChatSession {
 		const messages = [...this.state.messages, userMessage];
 		const request: ChatRequest = {
 			model, effort,
-			// Empty placeholders from failed or cancelled turns are not conversation history.
-			messages: messages.filter(message => message.parts.length > 0).map(toRequestMessage),
+			...buildChatContext(messages),
 		};
 		let assistantId: string = randomUUID();
 		this.update({
