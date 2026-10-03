@@ -3,11 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "description": "Core workspace",
+  "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.69",
     "@ai-sdk/google": "4.0.86",
     "@ai-sdk/openai": "4.0.81",
     "@ai-sdk/openai-compatible": "3.0.60",
+    "@codeyantram/shared": "0.0.0",
     "ai": "7.0.123",
     "zod": "4.6.5"
   }

@@ -6,10 +6,10 @@ A coding agent portfolio project organized as an npm workspace monorepo.
 | --- | --- | --- |
 | `packages/server` | HTTP server | Node.js, Express, TypeScript |
 | `packages/cli` | Terminal interface | Node.js, Ink, React, TypeScript |
-| `packages/core` | Agent logic and shared schemas | Vercel AI SDK, Zod, TypeScript |
-| `packages/shared` | Shared application utilities | Node.js, TypeScript |
+| `packages/core` | Model communication and agent logic | Vercel AI SDK, TypeScript |
+| `packages/shared` | Shared contracts and application utilities | Zod, Node.js, TypeScript |
 
-The root workspace holds shared TypeScript development tools. `core` owns model communication and Zod schemas, including provider packages for BYOK with OpenAI, Anthropic, Google, and OpenAI-compatible endpoints. The CLI and server depend on `core`; the CLI also uses `shared` for application paths used across workspaces.
+The root workspace holds shared TypeScript development tools. `core` owns model communication with OpenAI, Anthropic, and Google through the AI SDK. `shared` owns model catalogs, chat schemas, and application configuration utilities. The CLI and server depend on `core`; core and the CLI also use `shared`.
 
 Direct dependencies use exact versions. If a package is used by more than one workspace, keep its declared version identical in each workspace. The root `package-lock.json` records the resolved dependency tree.
 
@@ -31,8 +31,8 @@ configuration paths, precedence, and the custom JSON format are documented in
 
 ## Tests
 
-Vitest is configured at the repository root with named `cli` and `shared`
-projects. Add projects for `core` and `server` when those workspaces gain tests.
+Vitest is configured at the repository root with named `cli`, `shared`, and `core`
+projects. Add a project for `server` when that workspace gains tests.
 
 ```sh
 npm test                             # Run all tests once
@@ -40,6 +40,7 @@ npm run test:watch                   # Watch and rerun affected tests
 npm run test:coverage                # Print coverage and write coverage/index.html
 npm test -- --project cli            # Run only CLI tests
 npm test -- --project shared         # Run only shared tests
+npm test -- --project core           # Run only core tests
 npm test -- packages/cli/tests/models/preferences.test.ts
 npm run typecheck                    # Check source, tests, and Vitest configuration
 ```
