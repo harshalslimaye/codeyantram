@@ -1,5 +1,5 @@
-export {readConfig, writeConfig} from './json-config.js';
-export {getUserConfigDirectory, getUserConfigPath, getUserThemeDirectory} from './paths.js';
+export {readConfig, writeConfig} from './filesystem/config.js';
+export {getUserConfigDirectory, getUserConfigPath, getUserThemeDirectory} from './filesystem/paths.js';
 export {
   DEFAULT_CHAT_MODEL_ID,
   DEFAULT_WORKER_MODEL_ID,
