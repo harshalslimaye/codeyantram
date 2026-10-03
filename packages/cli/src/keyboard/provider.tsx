@@ -1,6 +1,6 @@
 import {createContext, useContext, useRef, useState, type ReactNode} from 'react';
 
-type KeyboardOwner = 'input-bar' | 'command-palette' | 'theme-picker' | 'model-picker' | 'effort-picker';
+export type KeyboardOwner = 'input-bar' | 'command-palette' | 'theme-picker' | 'model-picker' | 'effort-picker';
 
 const KeyboardContext = createContext<{
 	owner: KeyboardOwner;

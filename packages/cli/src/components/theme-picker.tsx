@@ -1,6 +1,6 @@
-import React, {useCallback, useMemo, useRef, useState} from 'react';
-import {Box, Text, useInput} from 'ink';
-import {Select, Spinner} from '@inkjs/ui';
+import React, {useMemo, useRef, useState} from 'react';
+import {Spinner} from '@inkjs/ui';
+import {Picker} from './picker.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 
@@ -8,8 +8,8 @@ export function ThemePicker() {
 	const [attempt, setAttempt] = useState(0);
 	const [isSaving, setIsSaving] = useState(false);
 	const saving = useRef(false);
-	const {palette, themes, selectedId, selectTheme, setNotice} = useTheme();
-	const {owner, isOwner, pop} = useKeyboardOwner();
+	const {themes, selectedId, selectTheme, setNotice} = useTheme();
+	const {isOwner, pop} = useKeyboardOwner();
 	const options = useMemo(() => [...themes]
 		.sort((left, right) => Number(right.theme.id === selectedId) - Number(left.theme.id === selectedId))
 		.map(entry => ({
@@ -34,23 +34,17 @@ export function ThemePicker() {
 		}
 	}
 
-	const saveThemeRef = useRef(saveTheme);
-	saveThemeRef.current = saveTheme;
-	// Select runs onChange in an effect; keep its identity stable across parent renders.
-	const handleChange = useCallback((id: string) => {
-		void saveThemeRef.current(id);
-	}, []);
-
-	useInput((_input, key) => {
-		if (isOwner('theme-picker') && !saving.current && key.escape) pop('theme-picker');
-	}, {isActive: owner === 'theme-picker'});
-
 	return (
 		<>
-			<Box flexDirection="column" borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
-				<Text color={palette.muted}>Choose a theme · saved to user config</Text>
-				<Select key={attempt} options={options} isDisabled={isSaving || owner !== 'theme-picker'} onChange={handleChange} />
-			</Box>
+			<Picker
+				owner="theme-picker"
+				title="Choose a theme · saved to user config"
+				options={options}
+				isDisabled={isSaving}
+				resetKey={attempt}
+				onSelect={id => { void saveTheme(id); }}
+				onCancel={() => { if (!saving.current) pop('theme-picker'); }}
+			/>
 			{isSaving && <Spinner label="Saving theme…" />}
 		</>
 	);

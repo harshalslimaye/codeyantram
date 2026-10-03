@@ -17,8 +17,10 @@ Successful pushes and pops update ownership immediately and schedule a render. F
 the theme picker is popped. Interaction state remains in the components.
 
 `InputBar` enables its Ink `useInput` listener only for the input bar or command
-palette and checks ownership synchronously for each event. `ThemePicker` handles
-its own Escape key. The picker's ink-ui `Select`
+palette and checks ownership synchronously for each event. Theme, model, and
+effort pickers share `Picker`, which handles Escape, keyboard ownership, the
+themed frame, and a stable selection callback. Each caller supplies its options,
+selection and cancellation handlers, and saving state. The picker's ink-ui `Select`
 handles Up, Down, and Enter; it is mounted only while the picker owns input and
 disabled while saving. `CommandPalette` mounts its content only while it owns
 input. Its ink-ui `Select` handles Up/Down navigation and Enter selection; the

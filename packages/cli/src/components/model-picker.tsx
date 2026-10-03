@@ -1,6 +1,5 @@
-import React, {useCallback, useMemo, useRef, useState} from 'react';
-import {Box, Text, useInput} from 'ink';
-import {Select, Spinner} from '@inkjs/ui';
+import React, {useMemo, useRef, useState} from 'react';
+import {Spinner} from '@inkjs/ui';
 import {
 	findSupportedChatModel,
 	modelHasEffortControl,
@@ -9,6 +8,7 @@ import {
 	type SupportedChatModelDefinition,
 } from '@codeyantram/shared';
 import {EffortPicker} from './effort-picker.js';
+import {Picker} from './picker.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import type {ModelPreferences} from '../models/preferences.js';
@@ -21,7 +21,7 @@ export function ModelPicker({preferences, onSelect}: {
 	const [isSaving, setIsSaving] = useState(false);
 	const [attempt, setAttempt] = useState(0);
 	const saving = useRef(false);
-	const {palette, setNotice} = useTheme();
+	const {setNotice} = useTheme();
 	const {owner, isOwner, push, pop} = useKeyboardOwner();
 	const options = useMemo(() => [...SUPPORTED_CHAT_MODELS]
 		.sort((left, right) => Number(right.id === preferences.modelId) - Number(left.id === preferences.modelId))
@@ -58,22 +58,17 @@ export function ModelPicker({preferences, onSelect}: {
 		else void saveModel(model);
 	}
 
-	const selectModelRef = useRef(selectModel);
-	selectModelRef.current = selectModel;
-	const handleChange = useCallback((id: string) => selectModelRef.current(id), []);
-
-	useInput((_input, key) => {
-		if (isOwner('model-picker') && !saving.current && key.escape) pop('model-picker');
-	}, {isActive: owner === 'model-picker'});
-
 	return (
 		<>
-			{owner === 'model-picker' && (
-				<Box flexDirection="column" borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
-					<Text color={palette.muted}>Choose a model · ↑/↓ navigate · Enter select · Esc close</Text>
-					<Select key={attempt} options={options} isDisabled={isSaving} onChange={handleChange} />
-				</Box>
-			)}
+			<Picker
+				owner="model-picker"
+				title="Choose a model · ↑/↓ navigate · Enter select · Esc close"
+				options={options}
+				isDisabled={isSaving}
+				resetKey={attempt}
+				onSelect={selectModel}
+				onCancel={() => { if (!saving.current) pop('model-picker'); }}
+			/>
 			{owner === 'effort-picker' && pendingModel && (
 				<EffortPicker
 					key={attempt}
