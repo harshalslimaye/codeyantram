@@ -7,7 +7,7 @@ import {KeyboardProvider} from './keyboard/provider.js';
 import type {ThemeRegistry} from './theme/registry/registry.js';
 import {saveModelPreference, type ModelPreferences} from './models/preferences.js';
 import {ChatSession} from './chat/session.js';
-import {requestChat} from './chat/client.js';
+import {requestChat, requestCompact} from './chat/client.js';
 
 export function App({
 	registry,
@@ -25,7 +25,11 @@ export function App({
 	const effort = modelPreferences.effortByModel[modelPreferences.modelId] ?? selectedModel?.defaultEffortLevel;
 	const [session] = useState(() => {
 		const chatUrl = new URL('/chat', serverBaseUrl).href;
-		return new ChatSession((request, signal) => requestChat(chatUrl, request, signal));
+		const compactUrl = new URL('/compact', serverBaseUrl).href;
+		return new ChatSession(
+			(request, signal) => requestChat(chatUrl, request, signal),
+			(request, signal) => requestCompact(compactUrl, request, signal),
+		);
 	});
 	useEffect(() => () => session.cancel(), [session]);
 	const branch = getGitBranch(process.cwd());

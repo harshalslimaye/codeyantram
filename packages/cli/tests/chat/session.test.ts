@@ -108,4 +108,24 @@ describe('chat session', () => {
 		expect(session.getSnapshot().error).toContain('interrupted');
 		expect(session.getSnapshot().isStreaming).toBe(false);
 	});
+
+	it('releases a cancelled chat immediately and ignores its late answer after another send', async () => {
+		let finish!: () => void;
+		const transport = vi.fn<ChatTransport>().mockImplementationOnce(async function* () {
+			await new Promise<void>(resolve => {finish = resolve;});
+			yield {type: 'text-delta', text: 'Stale answer'};
+		}).mockImplementation(successfulTransport());
+		const session = new ChatSession(transport);
+		const sending = session.send('Cancelled question', 'gpt-6.1-sol');
+		session.cancel();
+		expect(session.getSnapshot().messages[1]).toMatchObject({status: 'cancelled'});
+		expect(session.getSnapshot().operation).toBe('idle');
+		await session.send('Next question', 'gpt-6.1-sol');
+		const current = session.getSnapshot();
+		finish();
+		await sending;
+		expect(session.getSnapshot()).toBe(current);
+		expect(current.messages).toHaveLength(4);
+		expect(current.messages[3]).toMatchObject({status: 'complete', parts: [{text: 'Hello world'}]});
+	});
 });

@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
-import {chatRequestSchema, toRequestMessage} from '@codeyantram/shared';
-import {buildChatContext, estimateContextTokens, type ConversationMessage} from '../../src/chat/context.js';
+import {Buffer} from 'node:buffer';
+import {chatRequestSchema, formatContextSummary, toRequestMessage} from '@codeyantram/shared';
+import {buildChatContext, estimateContextTokens, measureContextBytes, type ConversationMessage} from '../../src/chat/context.js';
 
 const transcript: ConversationMessage[] = [
 	{id: 'u1', role: 'user', parts: [{type: 'text', text: 'Original task'}]},
@@ -99,5 +100,21 @@ describe('context token estimates', () => {
 		expect(estimateContextTokens({messages: split})).toBe(estimateContextTokens({messages: joined}));
 		expect(estimateContextTokens({messages: buildChatContext(transcript).messages}))
 			.toBe(estimateContextTokens({messages: transcript.filter(message => message.parts.length).map(toRequestMessage)}));
+	});
+});
+
+describe('serialized context size', () => {
+	it('includes the replay wrapper, UTF-8 and JSON escaping while excluding response metadata and IDs', () => {
+		const message = {id: 'u1', role: 'user' as const, parts: [{type: 'text' as const, text: '你好 👋\n"quoted"'}]};
+		const summary = 'Exact prior state.\n';
+		const content = [
+			{role: 'user', content: [{type: 'text', text: formatContextSummary(summary)}]},
+			{role: message.role, content: message.parts},
+		];
+		expect(measureContextBytes({messages: [message], contextSummary: summary})).toBe(Buffer.byteLength(JSON.stringify(content), 'utf8'));
+		expect(measureContextBytes({messages: [{...message, id: 'a very long unrelated identifier'.repeat(20)}], contextSummary: summary}))
+			.toBe(measureContextBytes({messages: [message], contextSummary: summary}));
+		expect(measureContextBytes(buildChatContext(transcript)))
+			.toBe(measureContextBytes({messages: transcript.filter(message => message.parts.length).map(toRequestMessage)}));
 	});
 });

@@ -1,13 +1,41 @@
-import {toRequestMessage, type CompactMessage} from '@codeyantram/shared';
+import {Buffer} from 'node:buffer';
+import {findSupportedChatModel, toRequestMessage, type CompactMessage, type CompactRequest} from '@codeyantram/shared';
 import {
 	estimateContextTokens,
 	getContextStartIndex,
+	measureContextBytes,
+	type ChatContext,
 	type CompactedContext,
 	type ConversationMessage,
 } from './context.js';
 
 export const KEEP_RECENT_TURNS = 2;
 export const MIN_PREFIX_ESTIMATED_TOKENS = 1_500;
+export const MIN_CONTEXT_REDUCTION_PERCENT = 20;
+export const MAX_COMPACT_REQUEST_BYTES = 4 * 1024 * 1024;
+// Reserve 4,096 output tokens plus 4,096 for instructions and estimation error.
+export const COMPACTION_CONTEXT_MARGIN_TOKENS = 8_192;
+
+/** Compare only the replaced prefix plus previous summary, excluding the retained tail. */
+export function assessCompactionReduction(previous: ChatContext, summary: string) {
+	const beforeBytes = measureContextBytes(previous);
+	const afterBytes = measureContextBytes({messages: [], contextSummary: summary});
+	return {
+		beforeBytes, afterBytes,
+		sufficient: afterBytes * 100 <= beforeBytes * (100 - MIN_CONTEXT_REDUCTION_PERCENT),
+	};
+}
+
+/** An early heuristic guard, not proof that the request fits a provider context window. */
+export function getCompactionSizeError(request: CompactRequest): string | undefined {
+	const bytes = Buffer.byteLength(JSON.stringify(request), 'utf8');
+	if (bytes > MAX_COMPACT_REQUEST_BYTES) return 'The compaction request exceeds the 4 MB limit. Previous context has been kept.';
+	const model = findSupportedChatModel(request.model);
+	if (model && Math.ceil(bytes / 4) + COMPACTION_CONTEXT_MARGIN_TOKENS > model.contextWindow) {
+		return 'The compaction request is estimated to exceed this model’s context window. Try a larger-context model. Previous context has been kept.';
+	}
+	return undefined;
+}
 
 export type CompactionPlan = {
 	type: 'ready';

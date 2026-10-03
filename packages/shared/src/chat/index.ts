@@ -40,3 +40,4 @@ export type {
   CompactRequest,
   CompactStreamEvent,
 } from './compact.js';
+export {formatContextSummary} from './context.js';

@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import type {compactChat, streamChat} from '@codeyantram/core';
+import {compactChat as coreCompactChat, streamChat as coreStreamChat, type compactChat, type streamChat} from '@codeyantram/core';
 import type {CompactRequest, CompactStreamEvent} from '@codeyantram/shared';
 import {startChatServer} from '../../src/chat/server.js';
 import {requestChat, requestCompact} from '../../src/chat/client.js';
@@ -20,6 +20,53 @@ async function start(options: Parameters<typeof startChatServer>[0]) {
 }
 
 describe('CLI-owned chat server', () => {
+	it('compacts a session through localhost and excludes the archived prefix from the next provider request', async () => {
+		const summary = 'Update /src/chat.ts, preserve port 43187. Validation pending.';
+		const providerFetch = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+			const body = JSON.parse(String(init?.body));
+			if (!body.stream) return Response.json({
+				id: 'summary-1', model: body.model, created_at: 1,
+				output: [{type: 'message', role: 'assistant', id: 'summary-message', content: [{type: 'output_text', text: summary, annotations: []}]}],
+				usage: {input_tokens: 30, output_tokens: 5, total_tokens: 35, input_tokens_details: {cached_tokens: 0}},
+			});
+			const events = [
+				{type: 'response.created', response: {id: 'response-1', created_at: 1, model: body.model}},
+				{type: 'response.output_item.added', output_index: 0, item: {type: 'message', id: 'message-1'}},
+				{type: 'response.output_text.delta', item_id: 'message-1', output_index: 0, delta: 'Reported answer'},
+				{type: 'response.completed', response: {usage: {input_tokens: 10, output_tokens: 3, total_tokens: 13}}},
+			];
+			return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), {headers: {'content-type': 'text/event-stream'}});
+		});
+		const server = await start({
+			readConfig: async () => ({providers: {openai: {apiKey: 'test-openai'}}}),
+			streamChat: (input, options) => coreStreamChat(input, {...options, fetch: providerFetch}),
+			compactChat: (input, options) => coreCompactChat(input, {...options, fetch: providerFetch}),
+		});
+		const session = new ChatSession(
+			(request, signal) => requestChat(server.chatUrl, request, signal),
+			(request, signal) => requestCompact(server.compactUrl, request, signal),
+		);
+		const details = 'Preserve /src/chat.ts and port 43187; checks pending.\n'.repeat(150);
+		for (const text of ['ARCHIVED_ONE ' + details, 'ARCHIVED_TWO ' + details, 'RECENT_ONE ' + details, 'RECENT_TWO']) {
+			await session.send(text, 'gpt-6.1-sol', 'high');
+		}
+		const transcript = session.getSnapshot().messages;
+		expect(await session.compact('gpt-6.1-sol')).toEqual({type: 'success'});
+		expect(session.getSnapshot().messages).toBe(transcript);
+		expect(session.getSnapshot().compactionUsage?.tokens).toEqual({inputTokens: 30, outputTokens: 5, totalTokens: 35, cacheReadTokens: 0});
+		await session.send('NEXT_QUESTION', 'gpt-6.1-sol', 'high');
+		const nextBody = JSON.parse(String(providerFetch.mock.calls.at(-1)![1]?.body));
+		const serialized = JSON.stringify(nextBody);
+		expect(serialized).not.toContain('ARCHIVED_ONE');
+		expect(serialized).not.toContain('ARCHIVED_TWO');
+		expect(nextBody.input[0]).toMatchObject({role: 'user', content: [{text: expect.stringContaining(summary)}]});
+		expect(nextBody.input.slice(1).map((message: {content: string | {text: string}[]}) =>
+			typeof message.content === 'string' ? message.content : message.content.map(part => part.text).join(''),
+		)).toEqual([...transcript.slice(4).map(message => message.parts.map(part => part.text).join('')), 'NEXT_QUESTION']);
+		expect(session.getSnapshot().messages.slice(0, 8)).toEqual(transcript);
+		expect(session.getSnapshot().error).toBeUndefined();
+	});
+
 	it('exposes sibling endpoints and round-trips a compact result before a normal chat request', async () => {
 		const compact = vi.fn<typeof compactChat>().mockImplementation(async function* () {
 			yield {type: 'start'};

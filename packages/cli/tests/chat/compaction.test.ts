@@ -1,7 +1,11 @@
 import {describe, expect, it} from 'vitest';
-import {compactRequestSchema} from '@codeyantram/shared';
-import {planCompaction, MIN_PREFIX_ESTIMATED_TOKENS} from '../../src/chat/compaction.js';
-import {buildChatContext, estimateContextTokens, type ConversationMessage} from '../../src/chat/context.js';
+import {Buffer} from 'node:buffer';
+import {compactRequestSchema, findSupportedChatModel, type CompactRequest} from '@codeyantram/shared';
+import {
+	planCompaction, MIN_PREFIX_ESTIMATED_TOKENS, assessCompactionReduction,
+	getCompactionSizeError, MAX_COMPACT_REQUEST_BYTES, COMPACTION_CONTEXT_MARGIN_TOKENS,
+} from '../../src/chat/compaction.js';
+import {buildChatContext, estimateContextTokens, measureContextBytes, type ConversationMessage} from '../../src/chat/context.js';
 
 function user(id: string, text = 'A short question'): Extract<ConversationMessage, {role: 'user'}> {
 	return {id, role: 'user', parts: [{type: 'text', text}]};
@@ -145,5 +149,41 @@ describe('compaction planning', () => {
 		plan.messages[0]!.parts[0]!.text = 'Changed request';
 		plan.messages[1]!.parts.push({type: 'text', text: 'Extra'});
 		expect(transcript).toEqual(original);
+	});
+});
+
+describe('compaction reduction and size guards', () => {
+	it('accepts exactly 20% serialized byte reduction and rejects one extra replacement byte', () => {
+		const sourceOverhead = measureContextBytes({messages: [user('u1', '')]});
+		const summaryOverhead = measureContextBytes({messages: [], contextSummary: ''});
+		const previous = {messages: [user('u1', 'x'.repeat(10_000 - sourceOverhead))]};
+		const summary = 'x'.repeat(8_000 - summaryOverhead);
+		expect(assessCompactionReduction(previous, summary)).toEqual({beforeBytes: 10_000, afterBytes: 8_000, sufficient: true});
+		expect(assessCompactionReduction(previous, summary + 'x')).toEqual({beforeBytes: 10_000, afterBytes: 8_001, sufficient: false});
+	});
+
+	it('includes the previous summary when sizing a replacement', () => {
+		const prefix = {messages: [user('u1', longText)], contextSummary: 'Earlier objectives.'.repeat(200)};
+		expect(assessCompactionReduction(prefix, 'Merged working state.').beforeBytes).toBe(measureContextBytes(prefix));
+		expect(assessCompactionReduction(prefix, 'Merged working state.').sufficient).toBe(true);
+	});
+
+	it('enforces the 4 MB body boundary on serialized UTF-8 requests', () => {
+		const request: CompactRequest = {model: 'gpt-6.1-sol', messages: [user('u1', '')]};
+		const overhead = Buffer.byteLength(JSON.stringify(request), 'utf8');
+		request.messages[0]!.parts[0]!.text = 'x'.repeat(MAX_COMPACT_REQUEST_BYTES - overhead);
+		expect(getCompactionSizeError(request)).not.toContain('4 MB');
+		request.messages[0]!.parts[0]!.text += '👋';
+		expect(getCompactionSizeError(request)).toContain('4 MB');
+	});
+
+	it('reserves output and instruction margin against the selected model window', () => {
+		const request: CompactRequest = {model: 'claude-haiku-4-5-20251001', messages: [user('u1', '')]};
+		const overhead = Buffer.byteLength(JSON.stringify(request), 'utf8');
+		const window = findSupportedChatModel(request.model)!.contextWindow;
+		request.messages[0]!.parts[0]!.text = 'x'.repeat((window - COMPACTION_CONTEXT_MARGIN_TOKENS) * 4 - overhead);
+		expect(getCompactionSizeError(request)).toBeUndefined();
+		request.messages[0]!.parts[0]!.text += 'x';
+		expect(getCompactionSizeError(request)).toContain('context window');
 	});
 });

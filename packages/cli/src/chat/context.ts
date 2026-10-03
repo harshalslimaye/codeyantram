@@ -1,6 +1,7 @@
 import {Buffer} from 'node:buffer';
 import {
 	contextSummarySchema,
+	formatContextSummary,
 	toRequestMessage,
 	type AssistantMessage,
 	type ChatMessage,
@@ -61,4 +62,15 @@ export function estimateContextTokens(context: {
 	const messages = context.messages.reduce((total, message) =>
 		total + textEstimate(message.parts.map(part => part.text).join('')) + 6, 0);
 	return messages + (context.contextSummary === undefined ? 0 : textEstimate(context.contextSummary) + 32);
+}
+
+/** Canonical serialized model content; includes the real summary wrapper, excludes IDs/status/usage.
+ * Provider wire formats and measured token counts may differ from this byte comparison.
+ */
+export function measureContextBytes(context: ChatContext): number {
+	const content = context.messages.map(message => ({role: message.role, content: message.parts}));
+	if (context.contextSummary !== undefined) {
+		content.unshift({role: 'user', content: [{type: 'text', text: formatContextSummary(context.contextSummary)}]});
+	}
+	return Buffer.byteLength(JSON.stringify(content), 'utf8');
 }
