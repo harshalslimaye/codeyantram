@@ -7,6 +7,8 @@ closes active connections and cancels their model requests.
 
 `@codeyantram/server` also exports `createApp()` without opening a listening
 socket. Tests can supply `readConfig` and `streamChat` through its options.
+The CLI uses `createApp()` to start its own server on a temporary localhost port
+and closes it when the CLI exits. The standalone server is not required for CLI chat.
 
 ## POST /chat
 

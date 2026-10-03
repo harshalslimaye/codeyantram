@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {Box, Text, useApp, useInput} from 'ink';
-import {StatusMessage, TextInput} from '@inkjs/ui';
+import {Spinner, StatusMessage, TextInput} from '@inkjs/ui';
 import {CommandPalette} from './command-palette.js';
 import {ThemePicker} from './theme-picker.js';
 import {ModelPicker} from './model-picker.js';
@@ -9,17 +9,22 @@ import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import type {EffortLevel} from '@codeyantram/shared';
 import type {ModelPreferences} from '../models/preferences.js';
+import {COMMANDS} from '../lib/commands.js';
 
-export function InputBar({modelPreferences, onSelectModel}: {
+export function InputBar({modelPreferences, onSelectModel, isStreaming, onSubmit, onCancel, onClear}: {
 	modelPreferences: ModelPreferences;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
+	isStreaming: boolean;
+	onSubmit: (text: string) => void;
+	onCancel: () => void;
+	onClear: () => void;
 }) {
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
 	const {palette, notice, noticeTone, setNotice} = useTheme();
 	const {owner, isOwner, push, pop} = useKeyboardOwner();
 	const {exit} = useApp();
-	const isEditing = owner === 'input-bar' || owner === 'command-palette';
+	const isEditing = !isStreaming && (owner === 'input-bar' || owner === 'command-palette');
 	const commandQuery = value.startsWith('/') && value.length > 1 && !value.includes(' ')
 		? value.slice(1)
 		: undefined;
@@ -33,7 +38,7 @@ export function InputBar({modelPreferences, onSelectModel}: {
 		updateDraft('');
 		switch (command) {
 			case '/help':
-				// Handle help command
+				setNotice(COMMANDS.map(item => `${item.command}: ${item.description}`).join('\n'));
 				break;
 			case '/model':
 				push('model-picker');
@@ -45,15 +50,27 @@ export function InputBar({modelPreferences, onSelectModel}: {
 				push('theme-picker');
 				break;
 			case '/clear':
-				// Handle clear command
+				onClear();
 				break;
 			case '/exit':
 				exit();
 				break;
 			default:
-				// Handle unknown command
+				setNotice(`Unknown command: ${command}. Use /help to see available commands.`, 'error');
 				break;
 		}
+	}
+
+	function submitDraft(text: string) {
+		// The command palette owns Enter while it is open.
+		if (owner !== 'input-bar' || !isOwner('input-bar') || isStreaming || !text.trim()) return;
+		if (text.trim().startsWith('/')) {
+			onSelectCommand(text.trim().toLowerCase());
+			return;
+		}
+		setNotice(undefined);
+		updateDraft('');
+		onSubmit(text);
 	}
 
 	function updateCommandPalette(next: string) {
@@ -73,12 +90,13 @@ export function InputBar({modelPreferences, onSelectModel}: {
 	useInput((_input, key) => {
 		if (!isOwner('input-bar') && !isOwner('command-palette')) return;
 		if (key.escape) {
-			if (isOwner('input-bar')) updateDraft('');
+			if (isStreaming) onCancel();
+			else if (isOwner('input-bar')) updateDraft('');
 			else pop('command-palette');
 			return;
 		}
 
-	}, {isActive: isEditing});
+	}, {isActive: isEditing || isStreaming});
 
 	return (
 		<Box flexDirection="column" width="100%">
@@ -90,8 +108,9 @@ export function InputBar({modelPreferences, onSelectModel}: {
 			{(owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
-				<TextInput key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} />
+				<TextInput key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} onSubmit={submitDraft} />
 			</Box>
+			{isStreaming ? <Spinner label="Generating · Esc to cancel" /> : <Text color={palette.muted}>Enter to send · PgUp/PgDn history · /help commands</Text>}
 			{notice && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}
 		</Box>
 	);

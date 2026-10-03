@@ -9,7 +9,7 @@ A coding agent portfolio project organized as an npm workspace monorepo.
 | `packages/core` | Model communication and agent logic | Vercel AI SDK, TypeScript |
 | `packages/shared` | Shared contracts and application utilities | Zod, Node.js, TypeScript |
 
-The root workspace holds shared TypeScript development tools. `core` owns model communication with OpenAI, Anthropic, and Google through the AI SDK. `shared` owns model catalogs, chat schemas, and application configuration utilities. The CLI and server depend on `core`; core, server, and the CLI also use `shared`.
+The root workspace holds shared TypeScript development tools. `core` owns model communication with OpenAI, Anthropic, and Google through the AI SDK. `shared` owns model catalogs, chat schemas, and application configuration utilities. The CLI starts a local server and sends chat requests to it; the server calls core. Core, server, and the CLI also use `shared`.
 
 Direct dependencies use exact versions. If a package is used by more than one workspace, keep its declared version identical in each workspace. The root `package-lock.json` records the resolved dependency tree.
 
@@ -21,7 +21,15 @@ Requires Node.js 22.12+ on the 22.x line, 24.x, or 26+.
 npm run cli
 ```
 
-The initial Ink interface includes an editable prompt, the current project path and Git branch, and the static model label.
+The CLI starts its own server on a temporary localhost port and closes it on
+exit. Multiple CLI sessions can run at once; no separate server command is needed.
+
+Use `/connect` to save a provider API key and `/model` to select a model and
+effort. Type a message and press Enter to see the assistant's answer as it streams.
+Follow-up messages include the conversation history. Escape cancels generation
+and keeps any partial answer; PgUp/PgDn scroll through the conversation.
+Use `/clear` to reset the conversation, `/help` to list commands, or `/exit` to quit.
+Conversations stay in memory for the current CLI session.
 
 ## Run the chat server
 
@@ -31,7 +39,8 @@ npm run start:server
 
 The server listens on `http://127.0.0.1:43187`. Set `CODEYANTRAM_PORT` to change
 the port. `POST /chat` streams shared chat events over SSE using provider keys
-saved by `/connect`. The CLI prompt is not connected to this endpoint yet.
+saved by `/connect`. This standalone server is useful for other HTTP clients;
+the CLI uses its own server and does not use `CODEYANTRAM_PORT`.
 See [packages/server/README.md](packages/server/README.md) for the request and
 response contract.
 

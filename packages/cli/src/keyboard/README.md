@@ -28,11 +28,9 @@ input. Its ink-ui `Select` handles Up/Down navigation and Enter selection; the
 input bar still handles draft editing and Escape while the palette is open.
 Events never fall through from the theme picker to the draft editor.
 
-Draft edits explicitly open the command list when the draft becomes `/`, or the
-theme picker when the trimmed, case-insensitive draft becomes `/theme`.
-Editing out of the command list closes its entry before opening
-another interaction, so the current `/theme` handoff returns directly to the
-input bar on close. Rendering does not infer ownership from draft text.
+Draft edits open the command list when the draft starts with `/` and contains no
+spaces. Editing out of that pattern closes the command list. Rendering does not
+infer ownership from draft text.
 
 Escape closes the command list or theme picker without changing the draft.
 Escape in the input bar clears the draft. A dismissed interaction stays closed
@@ -40,19 +38,26 @@ until another draft edit triggers it. Visibility and the editing cursor follow
 ownership.
 
 Draft text and cursor position remain in `InputBar`. `ThemePicker` owns saving,
-retry state, the saving spinner, and closing itself. It notifies `InputBar` after
-a successful selection so the draft can be cleared. `Select` owns the
+retry state, the saving spinner, and closing itself. `Select` owns the
 highlighted option and scrolls through up to five visible themes, with the active
 theme listed first. Theme selection keeps ownership while saving and ignores
-additional input until the save settles. Success clears the command and returns
+additional input until the save settles. Success returns
 ownership to the input bar; failure remounts `Select` so the same theme can be
 selected again. Ink retains its default Ctrl+C exit behavior.
 
 Selecting a command closes the command palette before notifying its caller.
-`InputBar` then replaces the draft through the same path as typing the command,
-so selecting `/theme` opens the theme picker without leaving the palette on the stack.
-Other commands are inserted into the prompt; they do not have execution handlers
-yet. Reopening the command palette mounts a fresh selection starting at `/help`.
+`InputBar` clears the draft and executes the command. Selecting `/theme` opens
+the theme picker without leaving the palette on the stack. `/help` lists commands,
+`/clear` resets the conversation, and `/exit` closes the CLI. Reopening the command
+palette mounts a fresh selection starting at `/help`.
+
+Enter in the input bar submits a nonempty message to the chat server. The submit
+handler checks both rendered and current ownership so Enter used by the command
+palette cannot also submit its draft as chat text. During generation the text
+input is disabled, while the input bar's Escape listener cancels the request.
+Partial assistant text remains in history after cancellation. PgUp/PgDn scroll
+the conversation when the input bar owns the keyboard. Exiting unmounts the UI,
+aborts the active request, and closes the CLI's server.
 
 Selecting `/model` opens `ModelPicker`. Selecting a model with effort support
 pushes `effort-picker` above `model-picker`; only that model's supported efforts
