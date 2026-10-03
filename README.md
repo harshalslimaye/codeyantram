@@ -9,7 +9,7 @@ A coding agent portfolio project organized as an npm workspace monorepo.
 | `packages/core` | Model communication and agent logic | Vercel AI SDK, TypeScript |
 | `packages/shared` | Shared contracts and application utilities | Zod, Node.js, TypeScript |
 
-The root workspace holds shared TypeScript development tools. `core` owns model communication with OpenAI, Anthropic, and Google through the AI SDK. `shared` owns model catalogs, chat schemas, and application configuration utilities. The CLI and server depend on `core`; core and the CLI also use `shared`.
+The root workspace holds shared TypeScript development tools. `core` owns model communication with OpenAI, Anthropic, and Google through the AI SDK. `shared` owns model catalogs, chat schemas, and application configuration utilities. The CLI and server depend on `core`; core, server, and the CLI also use `shared`.
 
 Direct dependencies use exact versions. If a package is used by more than one workspace, keep its declared version identical in each workspace. The root `package-lock.json` records the resolved dependency tree.
 
@@ -23,6 +23,18 @@ npm run cli
 
 The initial Ink interface includes an editable prompt, the current project path and Git branch, and the static model label.
 
+## Run the chat server
+
+```sh
+npm run start:server
+```
+
+The server listens on `http://127.0.0.1:43187`. Set `CODEYANTRAM_PORT` to change
+the port. `POST /chat` streams shared chat events over SSE using provider keys
+saved by `/connect`. The CLI prompt is not connected to this endpoint yet.
+See [packages/server/README.md](packages/server/README.md) for the request and
+response contract.
+
 ## CLI themes
 
 Use `/theme` in the CLI to choose a built-in or custom theme. Theme files,
@@ -31,8 +43,8 @@ configuration paths, precedence, and the custom JSON format are documented in
 
 ## Tests
 
-Vitest is configured at the repository root with named `cli`, `shared`, and `core`
-projects. Add a project for `server` when that workspace gains tests.
+Vitest is configured at the repository root with named `cli`, `shared`, `core`,
+and `server` projects.
 
 ```sh
 npm test                             # Run all tests once
@@ -41,6 +53,7 @@ npm run test:coverage                # Print coverage and write coverage/index.h
 npm test -- --project cli            # Run only CLI tests
 npm test -- --project shared         # Run only shared tests
 npm test -- --project core           # Run only core tests
+npm test -- --project server         # Run only server tests
 npm test -- packages/cli/tests/models/preferences.test.ts
 npm run typecheck                    # Check source, tests, and Vitest configuration
 ```

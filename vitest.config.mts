@@ -8,7 +8,7 @@ export default defineConfig({
 		clearMocks: true,
 		restoreMocks: true,
 		unstubEnvs: true,
-		projects: ['cli', 'shared', 'core'].map(name => ({
+		projects: ['cli', 'shared', 'core', 'server'].map(name => ({
 			extends: true,
 			test: {
 				name,

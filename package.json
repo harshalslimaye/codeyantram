@@ -5,6 +5,7 @@
   "scripts": {
     "start": "npm run --workspace=@codeyantram/cli start",
     "cli": "npm run --workspace=@codeyantram/cli start",
+    "start:server": "npm run --workspace=@codeyantram/server start",
     "test": "vitest run",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest run --coverage",

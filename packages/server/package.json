@@ -3,8 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "description": "Server workspace",
+  "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "start": "node --import tsx src/main.ts",
+    "test": "vitest run --config ../../vitest.config.mts --project server"
+  },
   "dependencies": {
     "@codeyantram/core": "0.0.0",
+    "@codeyantram/shared": "0.0.0",
     "express": "5.2.1"
   },
   "devDependencies": {
