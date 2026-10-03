@@ -4,6 +4,7 @@ import {StatusMessage, TextInput} from '@inkjs/ui';
 import {CommandPalette} from './command-palette.js';
 import {ThemePicker} from './theme-picker.js';
 import {ModelPicker} from './model-picker.js';
+import {ProviderPicker} from './provider-picker.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import type {EffortLevel} from '@codeyantram/shared';
@@ -36,6 +37,9 @@ export function InputBar({modelPreferences, onSelectModel}: {
 				break;
 			case '/model':
 				push('model-picker');
+				break;
+			case '/connect':
+				push('provider-picker');
 				break;
 			case '/theme':
 				push('theme-picker');
@@ -83,6 +87,7 @@ export function InputBar({modelPreferences, onSelectModel}: {
 			{(owner === 'model-picker' || owner === 'effort-picker') && (
 				<ModelPicker preferences={modelPreferences} onSelect={onSelectModel} />
 			)}
+			{(owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
 				<TextInput key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} />

@@ -55,6 +55,11 @@ export function ThemeProvider({
 					value: () => ({color: palette.text}),
 				},
 			},
+			PasswordInput: {
+				styles: {
+					value: () => ({color: palette.text}),
+				},
+			},
 			Spinner: {
 				styles: {
 					frame: () => ({color: palette.prompt}),

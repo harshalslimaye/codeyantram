@@ -1,7 +1,8 @@
 # Keyboard ownership
 
 `KeyboardProvider` in `provider.tsx` keeps a stack of keyboard owners: `input-bar`,
-`command-palette`, `theme-picker`, `model-picker`, or `effort-picker`. It wraps the CLI in `App`. The input bar is
+`command-palette`, `theme-picker`, `model-picker`, `effort-picker`,
+`provider-picker`, or `api-key-input`. It wraps the CLI in `App`. The input bar is
 the permanent bottom entry; only the top entry receives input. Components use
 `useKeyboardOwner()` to access the same ownership state; the hook requires a provider.
 
@@ -18,7 +19,7 @@ the theme picker is popped. Interaction state remains in the components.
 
 `InputBar` enables its Ink `useInput` listener only for the input bar or command
 palette and checks ownership synchronously for each event. Theme, model, and
-effort pickers share `Picker`, which handles Escape, keyboard ownership, the
+effort and provider pickers share `Picker`, which handles Escape, keyboard ownership, the
 themed frame, and a stable selection callback. Each caller supplies its options,
 selection and cancellation handlers, and saving state. The picker's ink-ui `Select`
 handles Up, Down, and Enter; it is mounted only while the picker owns input and
@@ -61,3 +62,11 @@ the final selection is saved. Models without effort support save immediately.
 Both pickers disable prompt editing and ignore input while saving. Save failures
 keep the picker open and allow retrying the same choice. Model and per-model effort
 preferences are saved to the global user config.
+
+Selecting `/connect` opens `ProviderPicker`. Selecting a provider opens a masked
+`ApiKeyInput` above the provider list. Escape returns to the list without saving;
+Escape in the list closes the flow. Enter saves a nonempty API key to
+`providers[provider].apiKey` in the global user config, then closes both steps.
+The prompt stays disabled throughout the flow. Saving blocks additional input,
+and failures keep the key input open for retry. Provider labels show whether a
+key is configured; saving does not verify the key against the provider's API.

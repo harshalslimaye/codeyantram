@@ -6,6 +6,7 @@ interface Command {
 export const COMMANDS: Command[] = [
     { command: '/help', description: 'Show available commands' },
     { command: '/model', description: 'Change the active model' },
+    { command: '/connect', description: 'Configure a provider API key' },
     { command: '/theme', description: 'Choose a terminal theme' },
     { command: '/clear', description: 'Clear the conversation' },
     { command: '/exit', description: 'Exit Codeyantram' },
@@ -21,6 +22,6 @@ export function getCommandOptions(query: string = '') {
 function getCommand(item: Command): { value: string, label: string } {
     return {
         value: item.command,
-        label: `${item.command.padEnd(8)}${item.description}`,
+        label: `${item.command.padEnd(12)}${item.description}`,
     }
 }
