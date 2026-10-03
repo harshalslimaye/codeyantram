@@ -1,7 +1,7 @@
 import {EventEmitter} from 'node:events';
 import type {Response} from 'express';
 import {describe, expect, it, vi} from 'vitest';
-import {writeStreamEvent} from '../../src/http/sse.js';
+import {startHeartbeat, writeStreamEvent} from '../../src/http/sse.js';
 
 function responseStub() {
   const response = Object.assign(new EventEmitter(), {write: vi.fn().mockReturnValue(false)});
@@ -34,5 +34,38 @@ describe('writeStreamEvent', () => {
     await expect(writeStreamEvent(typed, {type: 'done', durationMs: 1}, AbortSignal.abort()))
       .rejects.toMatchObject({name: 'AbortError'});
     expect(response.write).not.toHaveBeenCalled();
+  });
+
+  it('writes a complete compact result with escaped text and observes backpressure', async () => {
+    const {response, typed} = responseStub();
+    const event = {type: 'done' as const, summary: 'Working state\n\ndata: 👋', durationMs: 1};
+    const writing = writeStreamEvent(typed, event, new AbortController().signal);
+    expect(response.write).toHaveBeenCalledWith(`data: ${JSON.stringify(event)}\n\n`);
+    expect(response.listenerCount('drain')).toBe(1);
+    response.emit('drain');
+    await writing;
+    expect(response.listenerCount('drain')).toBe(0);
+  });
+});
+
+describe('startHeartbeat', () => {
+  it('skips closed or backpressured responses and resumes after drain', async () => {
+    vi.useFakeTimers();
+    const {response, typed} = responseStub();
+    const state = Object.assign(response, {destroyed: false, writableEnded: false, writableNeedDrain: true});
+    const timer = startHeartbeat(typed);
+    try {
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(response.write).not.toHaveBeenCalled();
+      state.writableNeedDrain = false;
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(response.write).toHaveBeenCalledExactlyOnceWith(': keep-alive\n\n');
+      state.destroyed = true;
+      await vi.advanceTimersByTimeAsync(15_000);
+      state.destroyed = false;
+      state.writableEnded = true;
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(response.write).toHaveBeenCalledOnce();
+    } finally {clearInterval(timer); vi.useRealTimers();}
   });
 });

@@ -13,17 +13,20 @@ export function App({
 	registry,
 	initialThemeId,
 	initialModelPreferences,
-	chatUrl,
+	serverBaseUrl,
 }: {
 	registry: ThemeRegistry;
 	initialThemeId: string;
 	initialModelPreferences: ModelPreferences;
-	chatUrl: string;
+	serverBaseUrl: string;
 }) {
 	const [modelPreferences, setModelPreferences] = useState(initialModelPreferences);
 	const selectedModel: SupportedChatModelDefinition | undefined = findSupportedChatModel(modelPreferences.modelId);
 	const effort = modelPreferences.effortByModel[modelPreferences.modelId] ?? selectedModel?.defaultEffortLevel;
-	const [session] = useState(() => new ChatSession((request, signal) => requestChat(chatUrl, request, signal)));
+	const [session] = useState(() => {
+		const chatUrl = new URL('/chat', serverBaseUrl).href;
+		return new ChatSession((request, signal) => requestChat(chatUrl, request, signal));
+	});
 	useEffect(() => () => session.cancel(), [session]);
 	const branch = getGitBranch(process.cwd());
 	async function selectModel(id: string, effort?: EffortLevel) {

@@ -17,7 +17,7 @@ if (usedFallback) {
 const server = await startChatServer();
 try {
 	process.stdout.write('\x1b[2J\x1b[H');
-	const app = render(<App registry={registry} initialThemeId={theme.theme.id} initialModelPreferences={modelPreferences} chatUrl={server.url} />);
+	const app = render(<App registry={registry} initialThemeId={theme.theme.id} initialModelPreferences={modelPreferences} serverBaseUrl={server.baseUrl} />);
 	const shutdown = () => app.unmount();
 	process.once('SIGINT', shutdown);
 	process.once('SIGTERM', shutdown);

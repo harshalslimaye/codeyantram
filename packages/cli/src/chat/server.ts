@@ -10,8 +10,11 @@ export async function startChatServer(options: ServerAppOptions = {}) {
 	const address = server.address();
 	if (!address || typeof address === 'string') throw new Error('The chat server did not open a TCP port.');
 
+	const baseUrl = `http://127.0.0.1:${address.port}`;
 	return {
-		url: `http://127.0.0.1:${address.port}/chat`,
+		baseUrl,
+		chatUrl: new URL('/chat', baseUrl).href,
+		compactUrl: new URL('/compact', baseUrl).href,
 		close: () => new Promise<void>((resolve, reject) => {
 			server.close(error => {if (error) reject(error); else resolve();});
 			server.closeAllConnections();

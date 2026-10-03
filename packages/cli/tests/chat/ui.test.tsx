@@ -97,7 +97,7 @@ describe('CLI chat UI', () => {
 			].map(event => `data: ${JSON.stringify(event)}\n\n`).join('');
 			return new Response(text, {headers: {'content-type': 'text/event-stream'}});
 		}));
-		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} chatUrl="http://localhost/chat" />);
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" />);
 		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
 		ui.stdin.write('First question');
 		await vi.waitFor(() => expect(ui.frame()).toContain('First question'));
@@ -121,7 +121,7 @@ describe('CLI chat UI', () => {
 		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response([
 			{type: 'start', messageId: 'assistant-1'}, {type: 'text-delta', text}, {type: 'done', durationMs: 1},
 		].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), {headers: {'content-type': 'text/event-stream'}})));
-		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} chatUrl="http://localhost/chat" />);
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" />);
 		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
 		ui.stdin.write('Long answer');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Long answer'));

@@ -1,6 +1,6 @@
 import {once} from 'node:events';
 import type {Response} from 'express';
-import type {ChatStreamEvent} from '@codeyantram/shared';
+import type {ChatStreamEvent, CompactStreamEvent} from '@codeyantram/shared';
 
 export function openEventStream(response: Response): void {
   response.status(200).set({
@@ -14,7 +14,7 @@ export function openEventStream(response: Response): void {
 
 export async function writeStreamEvent(
   response: Response,
-  event: ChatStreamEvent,
+  event: ChatStreamEvent | CompactStreamEvent,
   signal: AbortSignal,
 ): Promise<void> {
   signal.throwIfAborted();
