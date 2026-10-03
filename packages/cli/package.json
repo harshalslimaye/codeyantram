@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node --import tsx src/index.tsx",
-    "test": "node --import tsx --test src/theme/theme.test.ts"
+    "test": "vitest run --config ../../vitest.config.mts --project cli"
   },
   "dependencies": {
     "@codeyantram/core": "0.0.0",

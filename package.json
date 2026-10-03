@@ -4,10 +4,14 @@
   "private": true,
   "scripts": {
     "start": "npm run --workspace=@codeyantram/cli start",
-    "cli": "npm run --workspace=@codeyantram/cli start"
+    "cli": "npm run --workspace=@codeyantram/cli start",
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
-    "node": ">=22"
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
   },
   "workspaces": [
     "packages/server",
@@ -17,7 +21,9 @@
   ],
   "devDependencies": {
     "@types/node": "22.20.4",
+    "@vitest/coverage-v8": "5.0.3",
     "tsx": "4.23.15",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
   }
 }
