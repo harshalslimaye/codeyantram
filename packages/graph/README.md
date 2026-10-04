@@ -1,7 +1,8 @@
 # Graph
 
 `@codeyantram/graph` is the workspace for project indexing and code navigation.
-The package provides a workspace-bound CodeGraph adapter and global storage.
+The package provides a workspace-bound CodeGraph adapter, synchronization
+coordinator, and global storage.
 
 The [tools and synchronization strategy](STRATEGY.md) describes the proposed
 navigation tools, synchronization after edits, freshness rules, and implementation order.
@@ -33,15 +34,80 @@ try {
 }
 ```
 
-Opening does not index or sync automatically. Callers must inspect the index
+Opening the low-level adapter does not index or sync automatically. Callers must inspect the index
 state and operation reports. Full indexing reports extraction errors and index
 completeness; sync reports failed paths and cancellation, and lock failures
 reject. Queries do not establish filesystem freshness themselves. The operation
-coordinator, watcher, automatic reconciliation, and agent tools remain subsequent
-work. The CLI `init` command builds a missing/incomplete/outdated baseline or
+watcher and agent tools remain subsequent work. The CLI `init` command builds a missing/incomplete/outdated baseline or
 incrementally syncs a complete index. `close()` rejects new work and drains admitted
 asynchronous operations before closing SQLite. Read caches are invalidated
 before queries so another instance's completed writes become visible.
+
+## Coordinated access
+
+Use `acquireGraphCoordinator(workspaceRoot)` for host code. Concurrent leases
+for the same canonical root, including symlink aliases, share one coordinator
+and connection in this process. The last `release()` stops admission, drains
+queued operations, and closes SQLite. A subsequent acquisition opens a new
+connection and epoch. A host can own a separate `WorkspaceGraphRegistry`.
+Do not call `close()` directly on a leased coordinator; release its lease.
+
+```ts
+import {acquireGraphCoordinator} from '@codeyantram/graph';
+
+const lease = await acquireGraphCoordinator(projectRoot);
+try {
+  const {value, freshness} = await lease.coordinator.query(graph =>
+    graph.search('handleRequest'));
+  const result = await lease.coordinator.edit(async ({markChanged, signal}) => {
+    signal?.throwIfAborted();
+    markChanged('src/handler.ts');
+    await writeFile(handlerPath, updatedSource);
+    return 'saved';
+  });
+  // Inspect result.mutation and result.graph separately. A sync retry must
+  // never replay a successful or partially completed filesystem write.
+} finally {
+  await lease.release();
+}
+```
+
+`initialize()` builds a missing, incomplete, or outdated baseline, otherwise
+runs full-workspace incremental sync. The CLI and palette `/init` use this
+same coordinator. Each `query()` reconciles first and then runs the callback
+in the same queue slot, with only read methods exposed. Await source reads
+inside that callback. Its reader expires when the callback completes.
+Each recorded edit reconciles before returning. Paths are relative to the
+bound root or absolute paths within it; authorization of writes belongs to
+the caller. Record them immediately after writes or before writes that could
+partially fail. This conservative record can include a file whose write failed
+without changing it. A move must record both paths. A multi-file edit is one
+callback and one awaited cleanup operation.
+
+`notifyChanges(paths)` records external events; no paths means the scope is
+unknown. A successful sync clears only generations known before it started.
+New notifications trigger another pass, up to three passes, after which
+navigation fails and dirty state is retained. With no watcher, manual edits
+are still picked up by the full scan before each query. Failed sync reports,
+lock errors, and cancellations retain dirty state and block navigation until
+a later reconciliation succeeds. `getStatus()` is a cached diagnostic snapshot
+that stays available during operations and failures.
+
+Cancellation before a queued operation starts skips it. After a recorded write,
+cleanup uses an independent signal with a 30-second deadline. A timeout does
+not release the queue or close the connection until the SDK actually settles.
+The returned edit result preserves both write and synchronization failures.
+
+Freshness includes an epoch, observation revision, and reconciliation time.
+Every successful reconciliation advances the local observation revision,
+including no-op syncs that might observe another process's completed writes.
+These are not stable symbol references or cross-process transaction versions.
+External notifications during a query reject its result. Unreported external
+writes during the callback are not an atomic filesystem snapshot; source
+fingerprint validation and durable symbol-reference rules belong to subsequent
+navigation tool work. SDK cross-process locks protect writes, but the operation
+queue itself is process-local. Server lifetime integration and watchers remain
+subsequent work.
 
 `resolveGraphStoragePaths(workspaceRoot)` resolves an existing directory to its
 canonical path and hashes that path to select storage under the user's global

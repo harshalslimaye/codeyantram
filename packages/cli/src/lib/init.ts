@@ -1,4 +1,4 @@
-import {openWorkspaceGraph, type GraphProgress, type GraphStatus, type WorkspaceGraph} from '@codeyantram/graph';
+import {acquireGraphCoordinator, GraphCoordinatorError, type GraphCoordinatorLease, type GraphIndexReport, type GraphProgress, type GraphStatus} from '@codeyantram/graph';
 
 interface InitOutput {
   stdout?: {write(text: string): unknown};
@@ -26,7 +26,7 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
     process.on('SIGINT', onInterrupt);
     process.on('SIGTERM', onTerminate);
   }
-  let graph: WorkspaceGraph | undefined;
+  let lease: GraphCoordinatorLease | undefined;
   let exitCode = 0;
   let completed: string | undefined;
   let readyStatus: GraphStatus | undefined;
@@ -42,47 +42,46 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
       output.onProgress?.(progress);
     }
   };
+  const diagnostics = (report: GraphIndexReport) => {
+    for (const error of report.errors.slice(0, 20)) {
+      stderr.write(`${error.severity}: ${error.filePath ? `${error.filePath}: ` : ''}${error.message}\n`);
+    }
+    if (report.errors.length > 20) stderr.write(`${report.errors.length - 20} additional indexing diagnostics omitted.\n`);
+  };
 
   try {
     signal.throwIfAborted();
     stdout.write(`Preparing graph for ${workspaceRoot}\n`);
-    graph = await openWorkspaceGraph(workspaceRoot);
-    stdout.write(`Database: ${graph.storage.databasePath}\n`);
+    lease = await acquireGraphCoordinator(workspaceRoot);
+    stdout.write(`Database: ${lease.coordinator.storage.databasePath}\n`);
     signal.throwIfAborted();
-    const status = graph.getStatus();
-    if (status.indexState !== 'complete' || status.needsReindex) {
-      stdout.write('Indexing project…\n');
-      const report = await graph.index({signal, onProgress});
-      signal.throwIfAborted();
-      for (const error of report.errors.slice(0, 20)) {
-        stderr.write(`${error.severity}: ${error.filePath ? `${error.filePath}: ` : ''}${error.message}\n`);
-      }
-      if (report.errors.length > 20) stderr.write(`${report.errors.length - 20} additional indexing diagnostics omitted.\n`);
-      if (!report.success) {
-        throw new Error(`Graph indexing did not complete (state: ${report.state ?? 'uninitialized'}, ${report.filesErrored} failed files). Run init again to retry.`);
-      }
+    const result = await lease.coordinator.initialize({signal, onProgress,
+      onOperation: operation => stdout.write(operation === 'index' ? 'Indexing project…\n' : 'Refreshing existing graph…\n'),
+    });
+    if (result.index) {
+      const report = result.index;
+      diagnostics(report);
       stdout.write(`Indexed ${report.filesIndexed} files; ${report.filesSkipped} skipped; ${report.filesSkippedUnsupported ?? 0} unsupported.\n`);
-    } else {
-      stdout.write('Refreshing existing graph…\n');
-      const report = await graph.sync({signal, onProgress});
-      signal.throwIfAborted();
-      if (!report.success) {
-        for (const file of report.failedFilePaths.slice(0, 20)) stderr.write(`Failed to index: ${file}\n`);
-        throw new Error(`Graph sync did not complete (${report.failedFilePaths.length} failed files). Run init again to retry.`);
-      }
+    }
+    if (result.sync) {
+      const report = result.sync;
       stdout.write(`Synced ${report.filesAdded} added, ${report.filesModified} modified, ${report.filesRemoved} removed files.\n`);
     }
-    const ready = graph.getStatus();
+    const ready = result.status;
     readyStatus = ready;
     completed = `Graph ready: ${ready.fileCount} files, ${ready.nodeCount} symbols, ${ready.edgeCount} relationships.\n`;
   } catch (error) {
     if (!signal.aborted) {
+      if (error instanceof GraphCoordinatorError && error.report) {
+        if ('errors' in error.report) diagnostics(error.report);
+        else for (const file of error.report.failedFilePaths.slice(0, 20)) stderr.write(`Failed to index: ${file}\n`);
+      }
       stderr.write(`Could not initialize graph: ${error instanceof Error ? error.message : 'Unknown indexing error.'}\n`);
       exitCode = 1;
     }
   } finally {
     try {
-      await graph?.close();
+      await lease?.release();
     } catch (error) {
       stderr.write(`Could not close graph: ${error instanceof Error ? error.message : 'Unknown cleanup error.'}\n`);
       exitCode = 1;

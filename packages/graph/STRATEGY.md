@@ -1,9 +1,10 @@
 # CodeGraph tools and synchronization strategy
 
 This is the implementation strategy. The graph workspace now provides global
-storage paths and a workspace-bound SDK adapter. The CLI `init` command builds
-or refreshes the selected project's global index. The coordinator and agent
-tools are not implemented.
+storage paths, a workspace-bound SDK adapter, and a synchronization coordinator.
+The CLI and palette `init` commands build or refresh the selected project's
+global index through that coordinator. Agent tools, watchers, and server-owned
+graph lifetime are not implemented.
 
 ## Package responsibilities
 
@@ -52,8 +53,12 @@ information. Preserve relationship provenance when the SDK supplies it.
 
 Treat symbol IDs as references to one index revision. The current upstream
 implementation notes that IDs can change when edits move a symbol's line.
-Reject references from a different epoch/revision and return a recoverable
-stale-reference error. Rediscovery may use path, qualified name, and kind, but
+Define stable content revisions or fingerprint-backed references before adding
+`inspect` and `trace`: the coordinator's current observation revision advances
+on each successful reconciliation, including no-op scans, and cannot directly
+serve as a reusable symbol-reference version. Reject references from a different
+epoch/content revision and return a recoverable stale-reference error.
+Rediscovery may use path, qualified name, and kind, but
 must still handle ambiguity. See the
 [upstream facade](https://github.com/colbymchenry/codegraph/blob/main/src/index.ts).
 
@@ -130,6 +135,8 @@ than interpreting an empty result as proof that code does not exist.
 
 ## Failures, cancellation, and shared contracts
 
+The coordinator returns the mutation outcome and graph outcome separately;
+recorded paths are conservative when a filesystem write could partially fail.
 An applied edit followed by a sync failure must not look like an unapplied edit.
 Extend the shared tool errors with graph-specific codes and serializable details
 before implementing mutation tools. Report a mutation state (`applied`,

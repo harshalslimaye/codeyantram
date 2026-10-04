@@ -1,8 +1,10 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {openWorkspaceGraph, type GraphIndexReport, type GraphProgress, type WorkspaceGraph} from '@codeyantram/graph';
+import {acquireGraphCoordinator, GraphCoordinator, type CoordinatedGraph, type GraphIndexReport, type GraphProgress} from '@codeyantram/graph';
 import {initializeGraphForUI, runInit} from '../../src/lib/init.js';
 
-vi.mock('@codeyantram/graph', () => ({openWorkspaceGraph: vi.fn()}));
+vi.mock('@codeyantram/graph', async importOriginal => ({
+  ...await importOriginal<typeof import('@codeyantram/graph')>(), acquireGraphCoordinator: vi.fn(),
+}));
 
 const workspace = '/selected/project';
 const databasePath = '/global/codeyantram/graphs/workspace/codegraph.db';
@@ -32,7 +34,8 @@ beforeEach(() => {
     sync: vi.fn().mockResolvedValue({success: true, filesAdded: 1, filesModified: 1, filesRemoved: 0, failedFilePaths: []}),
     close: vi.fn().mockResolvedValue(undefined),
   };
-  vi.mocked(openWorkspaceGraph).mockResolvedValue(graph as unknown as WorkspaceGraph);
+  const coordinator = new GraphCoordinator(graph as unknown as CoordinatedGraph);
+  vi.mocked(acquireGraphCoordinator).mockResolvedValue({coordinator, release: () => coordinator.close()});
   stdout = makeOutput();
   stderr = makeOutput();
 });
@@ -65,7 +68,7 @@ describe('graph init command', () => {
 
   it('cancels UI initialization before opening if the signal is already aborted', async () => {
     await expect(initializeGraphForUI(workspace, AbortSignal.abort(), vi.fn())).rejects.toThrow();
-    expect(openWorkspaceGraph).not.toHaveBeenCalled();
+    expect(acquireGraphCoordinator).not.toHaveBeenCalled();
   });
 
   it('builds a baseline and reports storage, progress, coverage, and graph counts', async () => {
@@ -75,7 +78,7 @@ describe('graph init command', () => {
       return {...report, filesSkippedUnsupported: 3};
     });
     expect(await runInit(workspace, {stdout, stderr})).toBe(0);
-    expect(openWorkspaceGraph).toHaveBeenCalledExactlyOnceWith(workspace);
+    expect(acquireGraphCoordinator).toHaveBeenCalledExactlyOnceWith(workspace);
     expect(graph.sync).not.toHaveBeenCalled();
     expect(graph.close).toHaveBeenCalledOnce();
     expect(text(stdout)).toContain(databasePath);
@@ -125,7 +128,7 @@ describe('graph init command', () => {
   });
 
   it.each(['opening', 'indexing', 'closing'])('reports %s errors with a nonzero exit code', async stage => {
-    if (stage === 'opening') vi.mocked(openWorkspaceGraph).mockRejectedValue(new Error('Database locked.'));
+    if (stage === 'opening') vi.mocked(acquireGraphCoordinator).mockRejectedValue(new Error('Database locked.'));
     if (stage === 'indexing') graph.index.mockRejectedValue(new Error('Indexing failed.'));
     if (stage === 'closing') graph.close.mockRejectedValue(new Error('Close failed.'));
     expect(await runInit(workspace, {stdout, stderr})).toBe(1);

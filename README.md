@@ -14,6 +14,8 @@ The root workspace holds shared TypeScript development tools. `core` owns model 
 
 `graph` opens per-workspace CodeGraph indexes under the user's global Codeyantram
 directory and provides indexing, sync, symbol/source queries, and cleanup.
+Its coordinator shares a workspace operation queue, reconciles before queries,
+and awaits synchronization after recorded edits. Both forms of `init` use it.
 Agent navigation tools in `core` will use its public API, and the server will
 manage graph instances for active workspaces. See
 [packages/graph/README.md](packages/graph/README.md) for the package boundary.

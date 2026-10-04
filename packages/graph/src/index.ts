@@ -5,3 +5,10 @@ export type {
   GraphSymbol, GraphSearchResult, GraphRelationship, GraphProgress, GraphIndexOptions,
   GraphIndexReport, GraphSyncReport, GraphIndexState, GraphStatus,
 } from './adapter.js';
+export {GraphCoordinator, GraphCoordinatorError} from './coordinator.js';
+export type {
+  CoordinatedGraph, GraphReader, GraphFreshness, GraphInitialization,
+  GraphCoordinatorStatus, GraphEditContext, GraphEditResult, GraphReconcileOptions,
+} from './coordinator.js';
+export {WorkspaceGraphRegistry, acquireGraphCoordinator} from './registry.js';
+export type {GraphCoordinatorLease} from './registry.js';
