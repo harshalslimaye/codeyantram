@@ -148,6 +148,39 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
+	it('keeps the welcome banner in scrollback after chat starts and on short terminals', async () => {
+		const chat = vi.fn<ChatTransport>().mockImplementation(async function* () {
+			yield {type: 'text-delta', text: Array.from({length: 40}, (_, index) => `WELCOME_REPLY_${index + 1}`).join('\n')};
+			yield {type: 'done', durationMs: 1};
+		});
+		const session = new ChatSession(chat);
+		const ui = renderWorkspace(session);
+		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));
+		expect(ui.frame()).toContain('█▀▀ █▀█ █▀▄ █▀▀');
+		await session.send('First question.', preferences.modelId);
+		await vi.waitFor(() => expect(ui.frame()).toContain('WELCOME_REPLY_40'));
+		expect(ui.frame()).not.toContain('Welcome to CodeYantram.');
+		for (let step = 0; step < 25; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));
+		expect(ui.frame()).toContain('█▀▀ █▀█ █▀▄ █▀▀');
+		expect(chat.mock.calls[0]![0].messages.map(message => message.parts[0]?.text)).toEqual(['First question.']);
+		ui.stdout.rows = 12;
+		ui.stdout.emit('resize');
+		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(12));
+		for (let step = 0; step < 25; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('█▀▀ █▀█ █▀▄ █▀▀'));
+		expect(ui.frame().trimEnd().split('\n')).toHaveLength(12);
+		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:main');
+		ui.stdout.rows = 24;
+		ui.stdout.emit('resize');
+		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(24));
+		session.clear();
+		await vi.waitFor(() => expect(session.getSnapshot().messages).toHaveLength(0));
+		await ui.flush();
+		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));
+		expect(ui.frame()).not.toContain('WELCOME_REPLY_');
+	});
+
 	it('submits the draft with Enter and clears the prompt', async () => {
 		const ui = renderInput();
 		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
@@ -375,7 +408,7 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Type a message'));
 		expect(requests).toHaveLength(2);
-		expect(ui.frame()).not.toContain('Answer 2');
+		await vi.waitFor(() => expect(ui.frame()).not.toContain('Answer 2'));
 	});
 
 	it('renders assistant Markdown, leaves user text literal, and sends original Markdown in follow-up context', async () => {
@@ -431,6 +464,8 @@ describe('CLI chat UI', () => {
 		expect(ui.frame()).not.toContain('**Finished**');
 		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:main');
 		for (let step = 0; step < 35; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));
+		for (let step = 0; step < 3; step++) ui.wheel('down');
 		await vi.waitFor(() => expect(ui.frame()).toContain('const row1 = 1;'));
 		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:main');
 	});
@@ -455,6 +490,8 @@ describe('CLI chat UI', () => {
 		await ui.flush();
 		expect(ui.frame()).toBe(transcript);
 		for (let step = 0; step < 30; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));
+		ui.wheel('down');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Line 1\n'));
 		const seen = new Set<number>();
 		for (let step = 0; step < 25; step++) {
@@ -473,6 +510,8 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(16));
 		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:');
 		for (let step = 0; step < 30; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));
+		for (let step = 0; step < 2; step++) ui.wheel('down');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Line 1\n'));
 	});
 
