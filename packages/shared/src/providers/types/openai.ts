@@ -1,4 +1,4 @@
-import type {SupportedChatModelDefinition} from './types.js';
+import type {SupportedChatModelDefinition} from '../types.js';
 
 export const OPENAI_PROVIDER = 'openai' as const;
 

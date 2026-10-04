@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from 'vitest';
-import {readProviderCredentials} from '../../src/providers/config.js';
+import {readProviderCredentials} from '../../src/providers/config/index.js';
 
 describe('readProviderCredentials', () => {
   it.each([

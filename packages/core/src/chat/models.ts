@@ -2,14 +2,14 @@ import {
   findSupportedChatModel,
   modelSupportsEffort,
   type EffortLevel,
-  type SupportedProvider,
+  type ProviderCredentials,
 } from '@codeyantram/shared';
 import {ChatError} from './errors.js';
 import {providerModelResolvers, type ResolvedChatModel} from '../providers/index.js';
 
 export type {ResolvedChatModel} from '../providers/index.js';
 
-export type ProviderCredentials = Partial<Record<SupportedProvider, string>>;
+export type {ProviderCredentials} from '@codeyantram/shared';
 
 export interface ResolveChatModelOptions {
   modelId: string;

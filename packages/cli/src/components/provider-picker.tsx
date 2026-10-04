@@ -1,11 +1,10 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {Spinner} from '@inkjs/ui';
-import {SUPPORTED_PROVIDERS, type SupportedProvider} from '@codeyantram/shared';
+import {readConfiguredProviders, SUPPORTED_PROVIDERS, type SupportedProvider} from '@codeyantram/shared';
 import {Picker} from './picker.js';
 import {ApiKeyInput} from './api-key-input.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useTheme} from '../theme/provider.js';
-import {readConfiguredProviders} from '../providers/config.js';
 
 const PROVIDER_NAMES: Record<SupportedProvider, string> = {
 	anthropic: 'Anthropic',

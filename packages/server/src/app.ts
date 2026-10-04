@@ -1,8 +1,7 @@
 import express from 'express';
 import {compactChat, streamChat} from '@codeyantram/core';
-import {readConfig} from '@codeyantram/shared';
+import {readConfig, readProviderCredentials} from '@codeyantram/shared';
 import {handleError} from './middlewares/index.js';
-import {readProviderCredentials} from './providers/config.js';
 import {createChatRouter} from './routers/chat.js';
 import {createCompactRouter} from './routers/compact.js';
 

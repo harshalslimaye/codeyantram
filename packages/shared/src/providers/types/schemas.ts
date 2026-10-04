@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {EFFORT_LEVELS, SUPPORTED_PROVIDERS} from './types.js';
+import {EFFORT_LEVELS, SUPPORTED_PROVIDERS} from '../types.js';
 
 export const supportedProviderSchema = z.enum(SUPPORTED_PROVIDERS);
 export const effortLevelSchema = z.enum(EFFORT_LEVELS);
