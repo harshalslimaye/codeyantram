@@ -94,6 +94,28 @@ Use `/theme` in the CLI to choose a built-in or custom theme. Theme files,
 configuration paths, precedence, and the custom JSON format are documented in
 [packages/cli/THEMES.md](packages/cli/THEMES.md).
 
+## Tool contracts
+
+`@codeyantram/shared` exports tool schemas and their inferred TypeScript types
+from `packages/shared/src/tools`. Definitions currently describe metadata
+(`name` and `description`); per-tool argument schemas and executors will live
+with the tool implementations. Tool names use letters, digits, and underscores,
+start with a letter or underscore, and have a maximum length of 64 characters.
+
+A `ToolCall` carries `toolCallId`, `toolName`, and a JSON object `input`.
+A `ToolResult` repeats the ID and name, with either `status: 'success'` and
+JSON `output`, or `status: 'error'` and a structured `{code, message}` error.
+Inputs and outputs reject non-JSON values, including nested `undefined`,
+non-finite numbers, functions, and bigint. Tool envelope fields are strict;
+tool-specific input fields are preserved for validation by the implementation.
+The schemas validate individual payloads; matching results to outstanding calls
+and validating arguments against the selected tool belong to the execution layer.
+
+Stored parts and stream events share the shapes `{type: 'tool-call', call}` and
+`{type: 'tool-result', result}`. These contracts are exported separately from
+the existing text-only chat schemas until tool execution, history replay, and
+CLI rendering are integrated. No tool executors or agent loop are included yet.
+
 ## Tests
 
 Vitest is configured at the repository root with named `cli`, `shared`, `core`,
