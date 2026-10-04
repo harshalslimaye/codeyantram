@@ -56,5 +56,5 @@ export function isModelAvailable(
   return configuredProviders.includes(model.provider);
 }
 
-export const DEFAULT_CHAT_MODEL_ID: SupportedChatModelId = 'claude-sonnet-5-5';
+export const DEFAULT_CHAT_MODEL_ID: SupportedChatModelId = 'gemma-4-31b-it';
 export const DEFAULT_WORKER_MODEL_ID: SupportedChatModelId = 'claude-haiku-4-5-20251001';

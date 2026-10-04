@@ -48,6 +48,7 @@ selected again. Ink retains its default Ctrl+C exit behavior.
 Selecting a command closes the command palette before notifying its caller.
 `InputBar` clears the draft and executes the command. Selecting `/theme` opens
 the theme picker without leaving the palette on the stack. `/help` lists commands,
+`/status` appends an estimated context snapshot to scrollback without a model call,
 `/compact` summarizes older conversation context, `/clear` resets the conversation,
 and `/exit` closes the CLI. Reopening the command
 palette mounts a fresh selection starting at `/help`.

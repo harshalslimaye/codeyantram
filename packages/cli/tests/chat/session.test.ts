@@ -1,6 +1,6 @@
 import {describe, expect, it, vi} from 'vitest';
 import type {ChatStreamEvent} from '@codeyantram/shared';
-import {ChatSession, type ChatTransport} from '../../src/chat/session.js';
+import {ChatSession, type ChatTransport, type CompactTransport} from '../../src/chat/session.js';
 
 const done: ChatStreamEvent = {type: 'done', durationMs: 1, usage: {inputTokens: 3, outputTokens: 2}};
 
@@ -14,6 +14,44 @@ function successfulTransport() {
 }
 
 describe('chat session', () => {
+	it('captures immutable UI-only status snapshots between turns and clears them with history', async () => {
+		const transport = successfulTransport();
+		const session = new ChatSession(transport);
+		session.showStatus('gemma-4-31b-it');
+		const first = structuredClone(session.getSnapshot().statusEntries[0]!);
+		expect(first).toMatchObject({afterMessageCount: 0, status: {modelId: 'gemma-4-31b-it', usedTokens: 0}});
+		expect(transport).not.toHaveBeenCalled();
+		await session.send('Hi', 'gemma-4-31b-it');
+		session.showStatus('gpt-6.1-sol');
+		expect(session.getSnapshot().statusEntries[0]).toEqual(first);
+		expect(session.getSnapshot().statusEntries[1]).toMatchObject({afterMessageCount: 2, status: {modelId: 'gpt-6.1-sol'}});
+		expect(session.getSnapshot().statusEntries[1]!.status.usedTokens).toBeGreaterThan(0);
+		await session.send('Follow up', 'gpt-6.1-sol');
+		expect(transport.mock.calls[1]![0].messages.map(message => message.parts[0]?.text)).toEqual(['Hi', 'Hello world', 'Follow up']);
+		expect(session.getSnapshot().messages).toHaveLength(4);
+		session.clear();
+		expect(session.getSnapshot().statusEntries).toEqual([]);
+	});
+
+	it('updates context status after compaction without sending status cards to the summarizer', async () => {
+		const compact = vi.fn<CompactTransport>().mockImplementation(async function* () {
+			yield {type: 'done', summary: 'Preserve the original objective.', durationMs: 1};
+		});
+		const session = new ChatSession(successfulTransport(), compact);
+		await session.send('Original task and constraints. '.repeat(1_000), 'gemma-4-31b-it');
+		await session.send('Recent question.', 'gemma-4-31b-it');
+		await session.send('Latest question.', 'gemma-4-31b-it');
+		session.showStatus('gemma-4-31b-it');
+		const before = structuredClone(session.getSnapshot().statusEntries[0]!);
+		expect(await session.compact('gemma-4-31b-it')).toEqual({type: 'success'});
+		expect(compact.mock.calls[0]![0].messages).toHaveLength(2);
+		session.showStatus('gemma-4-31b-it');
+		const entries = session.getSnapshot().statusEntries;
+		expect(entries[0]).toEqual(before);
+		expect(entries[1]!.status.usedTokens).toBeLessThan(before.status.usedTokens);
+		expect(entries[1]!.status.remainingPercent).toBeGreaterThan(before.status.remainingPercent);
+	});
+
 	it('updates partial text and sends history without usage on follow-up turns', async () => {
 		const transport = successfulTransport();
 		const session = new ChatSession(transport);

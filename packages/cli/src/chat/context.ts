@@ -2,6 +2,7 @@ import {Buffer} from 'node:buffer';
 import {
 	contextSummarySchema,
 	formatContextSummary,
+	findSupportedChatModel,
 	toRequestMessage,
 	type AssistantMessage,
 	type ChatMessage,
@@ -22,6 +23,23 @@ export interface CompactedContext {
 }
 
 export type ChatContext = Pick<ChatRequest, 'messages' | 'contextSummary'>;
+
+export interface ContextStatus {
+	modelId: string;
+	usedTokens: number;
+	contextWindow: number;
+	usedPercent: number;
+	remainingPercent: number;
+}
+
+/** Estimates active input against catalog capacity, before response headroom. */
+export function getContextStatus(modelId: string, messages: readonly ChatMessage[], compacted?: CompactedContext): ContextStatus {
+	const model = findSupportedChatModel(modelId);
+	if (!model) throw new Error(`Model "${modelId}" is not supported.`);
+	const usedTokens = estimateContextTokens(buildChatContext(messages, compacted));
+	const usedPercent = usedTokens / model.contextWindow * 100;
+	return {modelId, usedTokens, contextWindow: model.contextWindow, usedPercent, remainingPercent: Math.max(0, 100 - usedPercent)};
+}
 
 /** Reject stale/out-of-range boundaries and boundaries that split a user-led turn. */
 export function getContextStartIndex(messages: readonly ChatMessage[], compacted?: CompactedContext): number {

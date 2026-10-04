@@ -5,6 +5,7 @@ interface Command {
 
 export const COMMANDS: Command[] = [
     { command: '/help', description: 'Show available commands' },
+    { command: '/status', description: 'Show model and estimated context usage' },
     { command: '/model', description: 'Change the active model' },
     { command: '/connect', description: 'Configure a provider API key' },
     { command: '/theme', description: 'Choose a terminal theme' },

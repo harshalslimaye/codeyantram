@@ -12,7 +12,7 @@ import type {EffortLevel} from '@codeyantram/shared';
 import type {ModelPreferences} from '../models/preferences.js';
 import type {SessionOperation} from '../chat/session.js';
 
-export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact}: {
+export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact, onStatus}: {
 	modelPreferences: ModelPreferences;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 	operation: SessionOperation;
@@ -20,6 +20,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 	onCancel: () => void;
 	onClear: () => void;
 	onCompact: () => void;
+	onStatus: () => void;
 }) {
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
@@ -56,6 +57,9 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 		setNotice(undefined);
 		setShowHelp(false);
 		switch (command) {
+			case '/status':
+				onStatus();
+				break;
 			case '/help':
 				setShowHelp(true);
 				break;

@@ -9,7 +9,7 @@ import {
 	type EffortLevel,
 	type TokenUsage,
 } from '@codeyantram/shared';
-import {buildChatContext, estimateContextTokens, type CompactedContext, type ConversationMessage} from './context.js';
+import {buildChatContext, estimateContextTokens, getContextStatus, type ContextStatus, type CompactedContext, type ConversationMessage} from './context.js';
 import {assessCompactionReduction, getCompactionSizeError, planCompaction, type CompactionPlan} from './compaction.js';
 
 export type ChatTransport = (request: ChatRequest, signal: AbortSignal) => AsyncIterable<ChatStreamEvent>;
@@ -64,6 +64,7 @@ function usageNotice(usage?: TokenUsage): string {
 
 export interface ChatSnapshot {
 	messages: ConversationMessage[];
+	statusEntries: StatusEntry[];
 	operation: SessionOperation;
 	isStreaming: boolean;
 	compaction?: CompactionState;
@@ -72,8 +73,15 @@ export interface ChatSnapshot {
 	notice?: string;
 }
 
+/** UI-only snapshots anchored between transcript messages; never sent to a provider. */
+export interface StatusEntry {
+	id: string;
+	afterMessageCount: number;
+	status: ContextStatus;
+}
+
 export class ChatSession {
-	private state: ChatSnapshot = {messages: [], operation: 'idle', isStreaming: false};
+	private state: ChatSnapshot = {messages: [], statusEntries: [], operation: 'idle', isStreaming: false};
 	private listeners = new Set<() => void>();
 	private controller?: AbortController;
 	private revision = 0;
@@ -112,8 +120,19 @@ export class ChatSession {
 	clear() {
 		const controller = this.controller;
 		this.controller = undefined;
-		this.update({messages: [], operation: 'idle', compaction: undefined, compactionUsage: undefined, error: undefined, notice: undefined});
+		this.update({messages: [], statusEntries: [], operation: 'idle', compaction: undefined, compactionUsage: undefined, error: undefined, notice: undefined});
 		controller?.abort();
+	}
+
+	showStatus(modelId: string) {
+		if (this.controller) return;
+		this.update({
+			statusEntries: [...this.state.statusEntries, {
+				id: randomUUID(), afterMessageCount: this.state.messages.length,
+				status: getContextStatus(modelId, this.state.messages, this.state.compaction),
+			}],
+			notice: undefined,
+		});
 	}
 
 	async send(text: string, model: string, effort?: EffortLevel): Promise<void> {

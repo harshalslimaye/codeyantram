@@ -43,6 +43,12 @@ export function ThemeProvider({
 	const themes = useMemo(() => registry.list(), [registry]);
 	const uiTheme = useMemo(() => extendTheme(defaultTheme, {
 		components: {
+			ProgressBar: {
+				styles: {
+					completed: () => ({color: palette.primary}),
+					remaining: () => ({color: palette.muted}),
+				},
+			},
 			UnorderedList: {
 				styles: {
 					marker: () => ({color: palette.muted}),

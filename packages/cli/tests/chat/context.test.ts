@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {Buffer} from 'node:buffer';
 import {chatRequestSchema, formatContextSummary, toRequestMessage} from '@codeyantram/shared';
-import {buildChatContext, estimateContextTokens, measureContextBytes, type ConversationMessage} from '../../src/chat/context.js';
+import {buildChatContext, estimateContextTokens, getContextStatus, measureContextBytes, type ConversationMessage} from '../../src/chat/context.js';
 
 const transcript: ConversationMessage[] = [
 	{id: 'u1', role: 'user', parts: [{type: 'text', text: 'Original task'}]},
@@ -73,6 +73,30 @@ describe('chat context builder', () => {
 });
 
 describe('context token estimates', () => {
+	it('reports empty context and changes capacity when switching models', () => {
+		expect(getContextStatus('gemma-4-31b-it', [])).toMatchObject({usedTokens: 0, usedPercent: 0, remainingPercent: 100, contextWindow: 262_144});
+		const gemma = getContextStatus('gemma-4-31b-it', transcript);
+		const openai = getContextStatus('gpt-6.1-sol', transcript);
+		expect(gemma.usedTokens).toBe(openai.usedTokens);
+		expect(gemma.usedPercent).toBeGreaterThan(openai.usedPercent);
+	});
+
+	it('counts the summary and retained messages while excluding archived text and usage metadata', () => {
+		const compacted = {summary: 'Preserve constraints.', coveredMessageCount: 4};
+		const status = getContextStatus('gemma-4-31b-it', transcript, compacted);
+		const changedArchive = structuredClone(transcript);
+		changedArchive[0]!.parts[0]!.text = 'Archived log.'.repeat(10_000);
+		expect(getContextStatus('gemma-4-31b-it', changedArchive, compacted)).toEqual(status);
+		expect(status.usedTokens).toBeGreaterThan(getContextStatus('gemma-4-31b-it', transcript.slice(4)).usedTokens);
+	});
+
+	it('shows zero remaining capacity when estimated context exceeds the window', () => {
+		const messages = [{id: 'large', role: 'user' as const, parts: [{type: 'text' as const, text: 'x'.repeat(262_144 * 4)}]}];
+		const status = getContextStatus('gemma-4-31b-it', messages);
+		expect(status.usedPercent).toBeGreaterThan(100);
+		expect(status.remainingPercent).toBe(0);
+	});
+
 	it('reports zero for empty context and increases when text or a summary is added', () => {
 		expect(estimateContextTokens({messages: []})).toBe(0);
 		const messages = buildChatContext(transcript).messages;

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState, useMemo} from 'react';
+import React, {useCallback, useEffect, useRef, useState, useMemo} from 'react';
 import {Box, Text, measureElement, useWindowSize, type DOMElement} from 'ink';
 import wrapAnsi from 'wrap-ansi';
 import type {ChatMessage} from '@codeyantram/shared';
@@ -7,15 +7,23 @@ import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useMouseWheel} from '../terminal/mouse.js';
 import {createMarkdownRenderer} from '../terminal/markdown.js';
 import {Welcome} from './welcome.js';
+import {SessionStatus} from './session-status.js';
+import {ScrollBlock} from './scroll-block.js';
+import type {StatusEntry} from '../chat/session.js';
 
-export function Conversation({messages, isStreaming}: {messages: ChatMessage[]; isStreaming: boolean}) {
+type ConversationLine = {kind: string; text: string};
+type ConversationBlock = {id: string; start: number; height: number; lines?: ConversationLine[]; status?: StatusEntry};
+
+export function Conversation({messages, statusEntries, isStreaming}: {messages: ChatMessage[]; statusEntries: StatusEntry[]; isStreaming: boolean}) {
 	const {palette} = useTheme();
 	const {isOwner} = useKeyboardOwner();
 	const {columns, rows} = useWindowSize();
 	const viewport = useRef<DOMElement>(null);
-	const welcome = useRef<DOMElement>(null);
 	const [height, setHeight] = useState(Math.max(1, rows - 5));
-	const [welcomeHeight, setWelcomeHeight] = useState(0);
+	const [blockHeights, setBlockHeights] = useState<Record<string, number>>({});
+	const measureBlock = useCallback((id: string, height: number) => {
+		setBlockHeights(previous => previous[id] === height ? previous : {...previous, [id]: height});
+	}, []);
 	// null follows the newest output; a fixed end preserves the reading position
 	// when more text arrives while the user is looking at earlier lines.
 	const [end, setEnd] = useState<number | null>(null);
@@ -31,7 +39,7 @@ export function Conversation({messages, isStreaming}: {messages: ChatMessage[]; 
 			return lines;
 		};
 	}, [columns, palette]);
-	const lines = useMemo(() => messages.flatMap((message, index) => {
+	const messageLines = useMemo(() => messages.map((message, index) => {
 		const pending = isStreaming && index === messages.length - 1 && message.role === 'assistant';
 		if (!message.parts.length && !pending) return [];
 		const text = message.parts.map(part => part.text).join('') || (pending ? 'Waiting for response…' : '');
@@ -41,12 +49,36 @@ export function Conversation({messages, isStreaming}: {messages: ChatMessage[]; 
 			{kind: 'text', text: ''},
 		];
 	}), [messages, isStreaming, renderMessage]);
-	const totalLines = welcomeHeight + lines.length;
+	const blocks = useMemo(() => {
+		const welcomeHeight = blockHeights.welcome ?? 0;
+		const result: ConversationBlock[] = [{id: 'welcome', start: 0, height: welcomeHeight}];
+		let start = welcomeHeight;
+		let entryIndex = 0;
+		for (let index = 0; index <= messages.length; index++) {
+			while (statusEntries[entryIndex]?.afterMessageCount === index) {
+				const entry = statusEntries[entryIndex++]!;
+				const height = blockHeights[entry.id] ?? 0;
+				result.push({id: entry.id, start, height, status: entry});
+				start += height;
+			}
+			if (index < messages.length) {
+				const lines = messageLines[index]!;
+				result.push({id: messages[index]!.id, start, height: lines.length, lines});
+				start += lines.length;
+			}
+		}
+		return result;
+	}, [messages, messageLines, statusEntries, blockHeights]);
+	const totalLines = blocks.reduce((total, block) => total + block.height, 0);
 	useEffect(() => {
 		if (viewport.current) setHeight(Math.max(1, Math.floor(measureElement(viewport.current).height)));
-		if (welcome.current) setWelcomeHeight(Math.ceil(measureElement(welcome.current).height));
 	});
-	useEffect(() => {setEnd(null);}, [messages.length]);
+	useEffect(() => {setEnd(null);}, [messages.length, statusEntries.length]);
+	useEffect(() => {
+		const ids = new Set(['welcome', ...statusEntries.map(entry => entry.id)]);
+		setBlockHeights(previous => Object.keys(previous).some(id => !ids.has(id))
+			? Object.fromEntries(Object.entries(previous).filter(([id]) => ids.has(id))) : previous);
+	}, [statusEntries]);
 	useMouseWheel(event => {
 		if (!isOwner('input-bar') || !viewport.current) return;
 		const bounds = measureElement(viewport.current);
@@ -60,21 +92,19 @@ export function Conversation({messages, isStreaming}: {messages: ChatMessage[]; 
 	});
 	const visibleEnd = Math.max(Math.min(height, totalLines), Math.min(totalLines, end ?? totalLines));
 	const visibleStart = Math.max(0, visibleEnd - height);
-	const visibleWelcomeHeight = Math.max(0, Math.min(welcomeHeight, visibleEnd) - visibleStart);
-	const visibleLines = lines.slice(Math.max(0, visibleStart - welcomeHeight), Math.max(0, visibleEnd - welcomeHeight));
 
 	return (
 		<Box ref={viewport} flexGrow={1} flexShrink={1} flexBasis={0} overflowY="hidden" paddingX={1} flexDirection="column">
-			{/* Clip the measured welcome block to the same scroll window as the message lines. */}
-			<Box height={visibleWelcomeHeight} flexShrink={0} overflow="hidden">
-				<Box ref={welcome} position="absolute" top={-visibleStart} width="100%" flexDirection="column" paddingBottom={1}>
-					<Welcome width={Math.max(1, columns - 2)} />
-				</Box>
-			</Box>
-			{visibleLines.map((line, index) => (
-				<Text key={index} color={line.kind === 'user' ? palette.prompt : line.kind === 'assistant' ? palette.primary : palette.text}>
-					{line.text || ' '}
-				</Text>
+			{blocks.map(block => block.lines ? block.lines
+				.slice(Math.max(0, visibleStart - block.start), Math.max(0, visibleEnd - block.start))
+				.map((line, index) => (
+					<Text key={`${block.id}-${index}`} color={line.kind === 'user' ? palette.prompt : line.kind === 'assistant' ? palette.primary : palette.text}>
+						{line.text || ' '}
+					</Text>
+				)) : (
+				<ScrollBlock key={block.id} id={block.id} start={block.start} height={block.height} visibleStart={visibleStart} visibleEnd={visibleEnd} onMeasure={measureBlock}>
+					{block.status ? <SessionStatus status={block.status.status} /> : <Welcome width={Math.max(1, columns - 2)} />}
+				</ScrollBlock>
 			))}
 		</Box>
 	);

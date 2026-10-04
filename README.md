@@ -26,11 +26,19 @@ exit. Multiple CLI sessions can run at once; no separate server command is neede
 
 Use `/connect` to save a provider API key and `/model` to select a model and
 effort. Type a message and press Enter to see the assistant's answer as it streams.
+The default model is Google Gemma (`gemma-4-31b-it`); a saved model selection takes precedence.
 Follow-up messages include the conversation history. Escape cancels generation
 and keeps any partial answer; use the mouse wheel or trackpad over the chat area
 to scroll through the conversation. The input and status bars stay at the bottom.
 Use `/clear` to reset the conversation, `/help` to list commands, or `/exit` to quit.
 Conversations stay in memory for the current CLI session.
+
+Use `/status` to add a session snapshot to scrollback showing the active model,
+estimated context tokens against its catalog window, a usage bar, and estimated
+percentage remaining. The footer shows live estimated context usage. Status cards
+are UI-only and are excluded from chat and compaction requests; `/clear` removes them.
+Context estimates include the active messages and summary, exclude archived history
+and the unsent draft, and do not reserve output tokens or guarantee that a request fits.
 
 ## Compact conversation context
 

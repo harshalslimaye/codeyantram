@@ -59,6 +59,7 @@ function renderInput(initialOperation: SessionOperation = 'idle') {
 	const onCancel = vi.fn();
 	const onClear = vi.fn();
 	const onCompact = vi.fn();
+	const onStatus = vi.fn();
 	const onSelectModel = vi.fn(async () => {});
 	let setOperation!: (operation: SessionOperation) => void;
 	function InputHarness() {
@@ -67,13 +68,13 @@ function renderInput(initialOperation: SessionOperation = 'idle') {
 		return (
 			<ThemeProvider registry={registry} initialThemeId="konkan" colorDepth={0}>
 				<KeyboardProvider>
-					<InputBar modelPreferences={preferences} onSelectModel={onSelectModel} operation={operation} onSubmit={onSubmit} onCancel={onCancel} onClear={onClear} onCompact={onCompact} />
+					<InputBar modelPreferences={preferences} onSelectModel={onSelectModel} operation={operation} onSubmit={onSubmit} onCancel={onCancel} onClear={onClear} onCompact={onCompact} onStatus={onStatus} />
 				</KeyboardProvider>
 			</ThemeProvider>
 		);
 	}
 	const ui = renderUI(<InputHarness />);
-	return {...ui, onSubmit, onCancel, onClear, onCompact, onSelectModel, setOperation: (operation: SessionOperation) => setOperation(operation)};
+	return {...ui, onSubmit, onCancel, onClear, onCompact, onStatus, onSelectModel, setOperation: (operation: SessionOperation) => setOperation(operation)};
 }
 
 function renderWorkspace(session: ChatSession, {debug = true}: {debug?: boolean} = {}) {
@@ -148,6 +149,48 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
+	it('appends /status snapshots to scrollback without calling the model, updates the footer, and handles resize and clear', async () => {
+		const chat = vi.fn<ChatTransport>().mockImplementation(async function* () {
+			yield {type: 'text-delta', text: 'STATUS_REPLY '.repeat(1_000)};
+			yield {type: 'done', durationMs: 1};
+		});
+		const session = new ChatSession(chat);
+		const ui = renderWorkspace(session);
+		await vi.waitFor(() => expect(ui.frame()).toContain('Context ~0% used'));
+		ui.stdin.write('/status');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Show model and estimated context usage'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Session status'));
+		expect(session.getSnapshot().statusEntries).toHaveLength(1);
+		expect(ui.frame()).toContain('~0 / 1,050,000 tokens');
+		expect(ui.frame()).toContain('~100% remaining');
+		expect(chat).not.toHaveBeenCalled();
+		const first = structuredClone(session.getSnapshot().statusEntries[0]!);
+		await session.send('First question.', preferences.modelId);
+		await vi.waitFor(() => expect(ui.frame()).toContain('Context ~0.3% used'));
+		expect(ui.frame()).not.toContain('Session status');
+		for (let step = 0; step < 100; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Session status'));
+		expect(ui.frame()).toContain('~0 / 1,050,000 tokens');
+		expect(session.getSnapshot().statusEntries[0]).toEqual(first);
+		ui.stdin.write('/status');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Show model and estimated context usage'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(session.getSnapshot().statusEntries).toHaveLength(2));
+		await vi.waitFor(() => expect(ui.frame()).toContain('~99.7% remaining'));
+		expect(chat).toHaveBeenCalledOnce();
+		ui.stdout.columns = 40;
+		ui.stdout.rows = 16;
+		ui.stdout.emit('resize');
+		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(16));
+		expect(ui.frame()).toContain('Session status');
+		expect(ui.frame()).toContain('Ctx ~0.3%');
+		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:main');
+		session.clear();
+		await vi.waitFor(() => expect(ui.frame()).not.toContain('Session status'));
+		expect(ui.frame()).toContain('Ctx ~0%');
+	});
+
 	it('keeps the welcome banner in scrollback after chat starts and on short terminals', async () => {
 		const chat = vi.fn<ChatTransport>().mockImplementation(async function* () {
 			yield {type: 'text-delta', text: Array.from({length: 40}, (_, index) => `WELCOME_REPLY_${index + 1}`).join('\n')};
