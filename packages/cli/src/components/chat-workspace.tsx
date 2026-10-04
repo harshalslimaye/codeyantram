@@ -1,9 +1,8 @@
 import React, {useSyncExternalStore} from 'react';
 import {Box, useWindowSize} from 'ink';
 import {StatusMessage} from '@inkjs/ui';
-import type {EffortLevel} from '@codeyantram/shared';
+import type {EffortLevel, ModelPreferences} from '@codeyantram/shared';
 import type {ChatSession} from '../chat/session.js';
-import type {ModelPreferences} from '../models/preferences.js';
 import {Conversation} from './conversation.js';
 import {InputBar} from './input-bar.js';
 import {StatusBar} from './status-bar.js';

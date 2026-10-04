@@ -1,42 +1,60 @@
-import {readConfig, writeConfig} from '../../filesystem/config.js';
-import {asObject} from '../../utils/objects.js';
-import {findSupportedChatModel, SUPPORTED_PROVIDERS, type ProviderCredentials, type SupportedProvider} from '../types/index.js';
+import {anthropicModels} from './anthropic.js';
+import {googleModels} from './google.js';
+import {openaiModels} from './openai.js';
+import {SUPPORTED_PROVIDERS} from '../types.js';
+import type {EffortLevel, SupportedChatModelDefinition, SupportedProvider} from '../types.js';
 
-function readApiKey(providers: Record<string, unknown>, provider: SupportedProvider): string | undefined {
-	const {apiKey} = asObject(providers[provider]);
-	return typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : undefined;
+export * from '../types.js';
+export {
+  configuredProvidersResponseSchema,
+  effortLevelSchema,
+  modelDefinitionSchema,
+  modelsResponseSchema,
+  supportedProviderSchema,
+} from './schemas.js';
+export type {
+  ConfiguredProvidersResponse,
+  ModelDefinition,
+  ModelsResponse,
+} from './schemas.js';
+
+export const SUPPORTED_CHAT_MODELS = [
+  ...anthropicModels,
+  ...openaiModels,
+  ...googleModels,
+] as const satisfies readonly SupportedChatModelDefinition[];
+
+export type SupportedChatModel = (typeof SUPPORTED_CHAT_MODELS)[number];
+export type SupportedChatModelId = SupportedChatModel['id'];
+
+export const SUPPORTED_CHAT_MODEL_IDS: SupportedChatModelId[] =
+  SUPPORTED_CHAT_MODELS.map(model => model.id);
+
+export function findSupportedChatModel(
+  modelId: string,
+): SupportedChatModel | undefined {
+  return SUPPORTED_CHAT_MODELS.find(model => model.id === modelId);
 }
 
-export async function readConfiguredProviders(): Promise<SupportedProvider[]> {
-	const config = await readConfig();
-	const providers = asObject(config.providers);
-	return SUPPORTED_PROVIDERS.filter(provider => readApiKey(providers, provider) !== undefined);
+export function modelHasEffortControl(
+  model: SupportedChatModelDefinition,
+): boolean {
+  return model.supportedEffortLevels.length > 0;
 }
 
-export async function saveProviderApiKey(provider: SupportedProvider, apiKey: string): Promise<void> {
-	if (!SUPPORTED_PROVIDERS.includes(provider)) throw new Error('Unsupported provider.');
-	const key = apiKey.trim();
-	if (!key) throw new Error('An API key is required.');
-	const config = await readConfig();
-	const providers = asObject(config.providers);
-	await writeConfig({
-		...config,
-		providers: {
-			...providers,
-			[provider]: {...asObject(providers[provider]), apiKey: key},
-		},
-	});
+export function modelSupportsEffort(
+  model: SupportedChatModelDefinition,
+  effort: EffortLevel,
+): boolean {
+  return model.supportedEffortLevels.includes(effort);
 }
 
-/** Reads only the selected model's provider key from user configuration. */
-export async function readProviderCredentials(
-	modelId: string,
-	readConfiguration: typeof readConfig = readConfig,
-): Promise<ProviderCredentials> {
-	const model = findSupportedChatModel(modelId);
-	if (!model) return {};
-
-	const config = await readConfiguration();
-	const apiKey = readApiKey(asObject(config.providers), model.provider);
-	return apiKey === undefined ? {} : {[model.provider]: apiKey};
+export function isModelAvailable(
+  model: SupportedChatModel,
+  configuredProviders: readonly SupportedProvider[],
+): boolean {
+  return configuredProviders.includes(model.provider);
 }
+
+export const DEFAULT_CHAT_MODEL_ID: SupportedChatModelId = 'gemma-4-31b-it';
+export const DEFAULT_WORKER_MODEL_ID: SupportedChatModelId = 'claude-haiku-4-5-20251001';

@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Box, Text, useApp, useInput} from 'ink';
+import {Box, Text, useApp, useInput, useWindowSize} from 'ink';
 import {Spinner, StatusMessage, TextInput} from '@inkjs/ui';
 import {CommandPalette} from './command-palette.js';
 import {ThemePicker} from './theme-picker.js';
@@ -8,8 +8,7 @@ import {ProviderPicker} from './provider-picker.js';
 import {Help} from './help.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
-import type {EffortLevel} from '@codeyantram/shared';
-import type {ModelPreferences} from '../models/preferences.js';
+import type {EffortLevel, ModelPreferences} from '@codeyantram/shared';
 import type {SessionOperation} from '../chat/session.js';
 
 export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact, onStatus}: {
@@ -22,6 +21,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 	onCompact: () => void;
 	onStatus: () => void;
 }) {
+	const {columns} = useWindowSize();
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
 	const [showHelp, setShowHelp] = useState(false);
@@ -146,7 +146,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 			</Box>
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
-				<TextInput key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} onSubmit={submitDraft} />
+				<TextInput placeholder={'Okay, what did you do this time?'.slice(0, Math.max(0, columns - 6))} key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} onSubmit={submitDraft} />
 			</Box>
 		</Box>
 	);

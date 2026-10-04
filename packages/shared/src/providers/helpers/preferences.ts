@@ -3,11 +3,10 @@ import {
 	EFFORT_LEVELS,
 	findSupportedChatModel,
 	modelSupportsEffort,
-	readConfig,
-	writeConfig,
 	type EffortLevel,
 	type SupportedChatModelId,
-} from '@codeyantram/shared';
+} from '../config/index.js';
+import {readConfig, writeConfig} from '../../filesystem/config.js';
 
 export interface ModelPreferences {
 	modelId: SupportedChatModelId;

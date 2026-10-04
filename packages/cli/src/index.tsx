@@ -1,7 +1,7 @@
 import {render} from 'ink';
 import {App} from './app.js';
 import {loadThemes, readThemePreference} from './theme/utils/index.js';
-import {readModelPreferences} from './models/preferences.js';
+import {readModelPreferences} from '@codeyantram/shared';
 import {startChatServer} from './chat/server.js';
 import {createTerminalInput} from './terminal/input.js';
 import {MouseProvider} from './terminal/mouse.js';

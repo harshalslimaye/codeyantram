@@ -1,9 +1,8 @@
 import {describe, expect, it, vi} from 'vitest';
-import {DEFAULT_CHAT_MODEL_ID, readConfig, writeConfig} from '@codeyantram/shared';
-import {readModelPreferences, resolveModelPreferences, saveModelPreference} from '../../src/models/preferences.js';
+import {DEFAULT_CHAT_MODEL_ID, readModelPreferences, resolveModelPreferences, saveModelPreference} from '../../src/providers/index.js';
+import {readConfig, writeConfig} from '../../src/filesystem/config.js';
 
-vi.mock('@codeyantram/shared', async importOriginal => ({
-	...await importOriginal<typeof import('@codeyantram/shared')>(),
+vi.mock('../../src/filesystem/config.js', () => ({
 	readConfig: vi.fn(),
 	writeConfig: vi.fn(),
 }));

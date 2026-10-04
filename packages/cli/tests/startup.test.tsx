@@ -9,7 +9,10 @@ vi.mock('ink', () => ({render: mocks.render}));
 vi.mock('../src/app.js', () => ({App: () => null}));
 vi.mock('../src/terminal/mouse.js', () => ({MouseProvider: () => null}));
 vi.mock('../src/theme/utils/index.js', () => ({loadThemes: mocks.loadThemes, readThemePreference: mocks.readThemePreference}));
-vi.mock('../src/models/preferences.js', () => ({readModelPreferences: mocks.readModelPreferences}));
+vi.mock('@codeyantram/shared', async importOriginal => ({
+	...await importOriginal<typeof import('@codeyantram/shared')>(),
+	readModelPreferences: mocks.readModelPreferences,
+}));
 vi.mock('../src/chat/server.js', () => ({startChatServer: mocks.startChatServer}));
 vi.mock('../src/terminal/input.js', () => ({createTerminalInput: mocks.createTerminalInput}));
 

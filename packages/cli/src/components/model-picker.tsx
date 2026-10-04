@@ -5,13 +5,13 @@ import {
 	modelHasEffortControl,
 	SUPPORTED_CHAT_MODELS,
 	type EffortLevel,
+	type ModelPreferences,
 	type SupportedChatModelDefinition,
 } from '@codeyantram/shared';
 import {EffortPicker} from './effort-picker.js';
 import {Picker} from './picker.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
-import type {ModelPreferences} from '../models/preferences.js';
 
 export function ModelPicker({preferences, onSelect}: {
 	preferences: ModelPreferences;

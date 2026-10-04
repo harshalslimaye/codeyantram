@@ -1,11 +1,10 @@
 import React, {useEffect, useState} from 'react';
-import {findSupportedChatModel, type EffortLevel, type SupportedChatModelDefinition} from '@codeyantram/shared';
+import {findSupportedChatModel, saveModelPreference, type EffortLevel, type ModelPreferences, type SupportedChatModelDefinition} from '@codeyantram/shared';
 import {ChatWorkspace} from './components/chat-workspace.js';
 import {getGitBranch} from './lib/utils.js';
 import {ThemeProvider} from './theme/provider.js';
 import {KeyboardProvider} from './keyboard/provider.js';
 import type {ThemeRegistry} from './theme/registry/registry.js';
-import {saveModelPreference, type ModelPreferences} from './models/preferences.js';
 import {ChatSession} from './chat/session.js';
 import {requestChat, requestCompact} from './chat/client.js';
 

@@ -1,10 +1,9 @@
 import React from 'react';
 import {Text} from 'ink';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {readConfiguredProviders, saveProviderApiKey, type SupportedChatModelId} from '@codeyantram/shared';
+import {readConfiguredProviders, saveModelPreference, saveProviderApiKey, type SupportedChatModelId} from '@codeyantram/shared';
 import {InputBar} from '../../src/components/input-bar.js';
 import {App} from '../../src/app.js';
-import {saveModelPreference} from '../../src/models/preferences.js';
 import {KeyboardProvider, useKeyboardOwner} from '../../src/keyboard/provider.js';
 import {ThemeProvider, useTheme} from '../../src/theme/provider.js';
 import {BUILTIN_THEMES} from '../../src/theme/builtins/index.js';
@@ -14,13 +13,10 @@ import {cleanupTerminal, renderTerminal} from '../helpers/terminal-ui.js';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
 	...await importOriginal<typeof import('@codeyantram/shared')>(),
-	readConfiguredProviders: vi.fn(), saveProviderApiKey: vi.fn(),
+	readConfiguredProviders: vi.fn(), saveModelPreference: vi.fn(), saveProviderApiKey: vi.fn(),
 }));
 vi.mock('../../src/theme/utils/index.js', async importOriginal => ({
 	...await importOriginal<typeof import('../../src/theme/utils/index.js')>(), saveThemePreference: vi.fn(),
-}));
-vi.mock('../../src/models/preferences.js', async importOriginal => ({
-	...await importOriginal<typeof import('../../src/models/preferences.js')>(), saveModelPreference: vi.fn(),
 }));
 
 beforeEach(() => {

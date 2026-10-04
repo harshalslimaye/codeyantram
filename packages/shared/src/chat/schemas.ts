@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {effortLevelSchema, findSupportedChatModel, modelSupportsEffort} from '../providers/types/index.js';
+import {effortLevelSchema, findSupportedChatModel, modelSupportsEffort} from '../providers/config/index.js';
 import type {ChatMessage, RequestMessage} from './types.js';
 
 export const chatModelIdSchema = z.string().min(1);

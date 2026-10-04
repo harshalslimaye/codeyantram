@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {findSupportedChatModel} from '../providers/types/index.js';
+import {findSupportedChatModel} from '../providers/config/index.js';
 import {
   chatErrorCodeSchema,
   chatModelIdSchema,
