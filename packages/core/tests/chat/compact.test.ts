@@ -53,7 +53,7 @@ describe('compactChat provider integration', () => {
       source = body.input[1].content[0].text;
     } else if (model.startsWith('claude-')) {
       expect(new Headers(init?.headers).get('x-api-key')).toBe('test-anthropic-key');
-      expect(body).toMatchObject({max_tokens: 4096, thinking: {type: 'adaptive'}, output_config: {effort: 'low'}});
+      expect(body).toMatchObject({cache_control: {type: 'ephemeral'}, max_tokens: 4096, thinking: {type: 'adaptive'}, output_config: {effort: 'low'}});
       expect(body.messages.map((message: {role: string}) => message.role)).toEqual(['user']);
       instructions = body.system[0].text;
       source = body.messages[0].content[0].text;
@@ -81,6 +81,7 @@ describe('compactChat provider integration', () => {
     expect(body.thinking).toBeUndefined();
     expect(body.output_config).toBeUndefined();
     expect(body.generationConfig?.thinkingConfig).toBeUndefined();
+    if (model.startsWith('claude-')) expect(body.cache_control).toEqual({type: 'ephemeral'});
     expect(body.max_tokens ?? body.generationConfig?.maxOutputTokens).toBe(4096);
   });
 

@@ -22,7 +22,11 @@ describe('resolveChatModel', () => {
     ['gemma-4-31b-it', {google: 'test-key'}],
   ])('preserves provider defaults when effort is omitted for %s', (modelId, credentials) => {
     const resolved = resolveChatModel({modelId, credentials});
-    expect(resolved.providerOptions).toBeUndefined();
+    if (modelId.startsWith('claude-')) {
+      expect(resolved.providerOptions).toEqual({anthropic: {cacheControl: {type: 'ephemeral'}}});
+    } else {
+      expect(resolved.providerOptions).toBeUndefined();
+    }
     expect(resolved.reasoning).toBeUndefined();
     expect(typeof resolved.model).toBe('object');
   });

@@ -65,8 +65,21 @@ describe('streamChat provider integration', () => {
     const init = fetch.mock.calls[0]![1];
     expect(new Headers(init?.headers).get('x-api-key')).toBe('test-anthropic-key');
     expect(JSON.parse(String(init?.body))).toMatchObject({
+      cache_control: {type: 'ephemeral'},
       thinking: {type: 'adaptive'}, output_config: {effort: 'max'},
     });
+  });
+
+  it.each(['claude-sonnet-5-5', 'claude-haiku-4-5-20251001'])('enables automatic caching without changing default reasoning for %s', async model => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(sseResponse(anthropicEvents));
+    const input: ChatRequest = {...request, model, effort: undefined};
+    const events = await collect(streamChat(input, {credentials, fetch}));
+    expect(events.at(-1)?.type).toBe('done');
+    const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body));
+    expect(body.cache_control).toEqual({type: 'ephemeral'});
+    expect(body.thinking).toBeUndefined();
+    expect(body.output_config).toBeUndefined();
+    expect(body.messages.map((message: {role: string}) => message.role)).toEqual(['user', 'assistant', 'user']);
   });
 
   it.each([

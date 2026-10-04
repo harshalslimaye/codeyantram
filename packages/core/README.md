@@ -34,6 +34,15 @@ Anthropic receives adaptive thinking and `effort`; Gemini 3+ receives a named
 thinking level. For Gemini 2.5, AI SDK 7 translates reasoning levels into token
 budgets. Omitting effort preserves the provider's defaults.
 
+Anthropic requests enable automatic prompt caching with top-level
+`cache_control: {type: 'ephemeral'}` through the SDK's `cacheControl` option,
+including models without effort controls. The provider advances the cache
+breakpoint as history grows, using the default five-minute lifetime. Cache hits
+depend on matching prefixes and the model's minimum cacheable length. Available
+cache-read and cache-write counts are included in token usage. This applies to
+both chat and compaction; replacing earlier context can reduce cache reuse.
+See [Anthropic's prompt caching guide](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+
 An optional `ChatRequest.contextSummary` is replayed as a labeled user-level
 historical-context message before the supplied conversation. It says current
 user instructions may supersede the summary. It is not a trusted instruction
