@@ -59,8 +59,22 @@ the text input and pickers are disabled, while the input bar's Escape listener
 cancels the active operation. If an operation starts programmatically while a
 picker is open, that interaction closes and keyboard ownership returns to the
 input bar. Generation and compaction have distinct progress labels.
-Partial assistant text remains in history after cancellation. PgUp/PgDn scroll
-the conversation when the input bar owns the keyboard. Exiting unmounts the UI,
+Partial assistant text remains in history after cancellation. The chat viewport
+handles mouse wheel/trackpad reports while the input and status bars stay pinned
+to the bottom, including during streaming and terminal resizing. Scroll over chat
+to move three lines per wheel event. Scrolling over the footer or with a picker
+open does not move history; PgUp/PgDn have no history handlers. Reading older lines
+keeps that position as streamed text grows; scrolling down to the end resumes
+following new output. A new turn or `/clear` returns to the bottom.
+
+`terminal/input.ts` separates SGR mouse packets from keyboard/paste input before
+Ink sees them, so clicks and wheel reports cannot become prompt text. It forwards
+ordinary keys and bracketed paste, handles split UTF-8/escape sequences, and
+restores mouse reporting and raw mode during cleanup. The CLI uses Ink's alternate
+screen to give mouse coordinates a stable origin and restores the original
+terminal screen on exit. History is kept in the session, rather than native
+terminal scrollback. `/clear` resets both active context and displayed history.
+Exiting unmounts the UI,
 aborts the active request, and closes the CLI's server.
 
 `/compact` runs with the active model and keeps the latest two user-led turns

@@ -11,38 +11,47 @@ import {createThemeRegistry} from '../../src/theme/registry/registry.js';
 import {konkanTheme} from '../../src/theme/builtins/index.js';
 import {ChatSession, type ChatTransport, type SessionOperation} from '../../src/chat/session.js';
 import {ChatWorkspace} from '../../src/components/chat-workspace.js';
+import {createTerminalInput} from '../../src/terminal/input.js';
+import {MouseProvider} from '../../src/terminal/mouse.js';
 
 const registry = createThemeRegistry([{source: 'builtin', themes: [{source: 'builtin', theme: konkanTheme}]}]);
 const preferences = {modelId: 'gpt-6.1-sol', effortByModel: {}} as const;
-const apps: {app: Instance; exited: ReturnType<Instance['waitUntilExit']>}[] = [];
+const apps: {app: Instance; exited: ReturnType<Instance['waitUntilExit']>; input: ReturnType<typeof createTerminalInput>}[] = [];
 
 afterEach(async () => {
-	for (const {app, exited} of apps.splice(0)) {
+	for (const {app, exited, input} of apps.splice(0)) {
 		app.unmount();
 		await exited;
 		app.cleanup();
+		input.dispose();
 	}
 	vi.unstubAllGlobals();
 });
 
-function renderUI(node: ReactNode) {
+function renderUI(node: ReactNode, {debug = true}: {debug?: boolean} = {}) {
 	const stdout = Object.assign(new PassThrough(), {isTTY: true, columns: 80, rows: 24});
 	const stdin = Object.assign(new PassThrough(), {isTTY: true, setRawMode: vi.fn(), ref: vi.fn(), unref: vi.fn()});
+	const input = createTerminalInput(stdin as unknown as NodeJS.ReadStream, stdout as unknown as NodeJS.WriteStream);
 	let frame = '';
+	let output = '';
 	stdout.on('data', chunk => {
+		output += String(chunk);
 		const text = String(chunk).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '');
 		if (text.trim()) frame = text;
 	});
-	const app = render(node, {
+	const app = render(<MouseProvider value={input}>{node}</MouseProvider>, {
 		stdout: stdout as unknown as NodeJS.WriteStream,
-		stdin: stdin as unknown as NodeJS.ReadStream,
+		stdin: input.stdin,
 		stderr: stdout as unknown as NodeJS.WriteStream,
-		debug: true, interactive: true, patchConsole: false,
+		debug, interactive: true, alternateScreen: true, patchConsole: false,
 	});
 	// Ink registers a beforeExit listener when waiting; register it while mounted
 	// so unmount removes it rather than installing a listener after cleanup.
-	apps.push({app, exited: app.waitUntilExit()});
-	return {stdin, stdout, frame: () => frame, unmount: () => app.unmount()};
+	apps.push({app, exited: app.waitUntilExit(), input});
+	return {
+		stdin, stdout, frame: () => frame, output: () => output, flush: () => app.waitUntilRenderFlush(), unmount: () => app.unmount(),
+		wheel: (direction: 'up' | 'down', y = 1) => stdin.write(`\x1b[<${direction === 'up' ? 64 : 65};2;${y}M`),
+	};
 }
 
 function renderInput(initialOperation: SessionOperation = 'idle') {
@@ -65,6 +74,17 @@ function renderInput(initialOperation: SessionOperation = 'idle') {
 	}
 	const ui = renderUI(<InputHarness />);
 	return {...ui, onSubmit, onCancel, onClear, onCompact, onSelectModel, setOperation: (operation: SessionOperation) => setOperation(operation)};
+}
+
+function renderWorkspace(session: ChatSession, {debug = true}: {debug?: boolean} = {}) {
+	return renderUI(
+		<ThemeProvider registry={registry} initialThemeId="konkan" colorDepth={0}>
+			<KeyboardProvider>
+				<ChatWorkspace session={session} modelPreferences={preferences} branch="main" onSelectModel={async () => {}} />
+			</KeyboardProvider>
+		</ThemeProvider>,
+		{debug},
+	);
 }
 
 const compactResult: CompactStreamEvent = {
@@ -200,7 +220,7 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.onSubmit).toHaveBeenCalledExactlyOnceWith('Next question'));
 	});
 
-	it('compacts from the command, shows progress and context status, keeps history scrollable, and follows up with the summary', async () => {
+	it('compacts from the command, keeps mouse history available above the pinned footer, and follows up with the summary', async () => {
 		const ui = await renderCompactionApp();
 		const original = ui.chatRequests[2]!.messages;
 		await selectCompact(ui);
@@ -214,17 +234,20 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('Compacted 2 messages'));
 		expect(ui.frame()).toContain('Context: compacted · 2 recent turns');
 		expect(ui.frame()).not.toContain('HIDDEN_SUMMARY');
-		expect(ui.frame().trimEnd().split('\n').length).toBeLessThanOrEqual(24);
+		expect(ui.frame().trimEnd().split('\n')).toHaveLength(24);
+		for (let step = 0; step < 6; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('ARCHIVED_HISTORY'));
+		expect(ui.frame()).toContain('Context: compacted · 2 recent turns');
 		ui.stdout.columns = 40;
 		ui.stdout.rows = 16;
 		ui.stdout.emit('resize');
-		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n').length).toBeLessThanOrEqual(16));
+		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(16));
+		expect(ui.frame()).toContain('Mouse/trackpad scroll');
 		ui.stdout.columns = 80;
 		ui.stdout.rows = 24;
 		ui.stdout.emit('resize');
+		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(24));
 		await vi.waitFor(() => expect(ui.frame()).toContain('Context: compacted · 2 recent turns'));
-		ui.stdin.write('\x1b[5~');
-		await vi.waitFor(() => expect(ui.frame()).toContain('ARCHIVED_HISTORY'));
 		ui.stdin.write('Follow up');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Follow up'));
 		ui.stdin.write('\r');
@@ -355,7 +378,7 @@ describe('CLI chat UI', () => {
 		expect(ui.frame()).not.toContain('Answer 2');
 	});
 
-	it('keeps long answers within the viewport and lets the user page through history', async () => {
+	it('lets the mouse reach every line of a long answer while the input and status stay at the bottom', async () => {
 		const text = Array.from({length: 60}, (_value, index) => `Line ${index + 1}`).join('\n');
 		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response([
 			{type: 'start', messageId: 'assistant-1'}, {type: 'text-delta', text}, {type: 'done', durationMs: 1},
@@ -367,14 +390,165 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Line 60'));
 		expect(ui.frame()).toContain('Enter to send');
-		expect(ui.frame().trimEnd().split('\n').length).toBeLessThanOrEqual(24);
+		expect(ui.frame()).toContain('Mouse/trackpad scroll history');
+		expect(ui.frame()).not.toContain('PgUp/PgDn');
+		const transcript = ui.frame();
 		ui.stdin.write('\x1b[5~');
-		await vi.waitFor(() => expect(ui.frame()).not.toContain('Line 60'));
 		ui.stdin.write('\x1b[6~');
-		await vi.waitFor(() => expect(ui.frame()).toContain('Line 60'));
+		await ui.flush();
+		expect(ui.frame()).toBe(transcript);
+		for (let step = 0; step < 30; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Line 1\n'));
+		const seen = new Set<number>();
+		for (let step = 0; step < 25; step++) {
+			for (const match of ui.frame().matchAll(/Line (\d+)/g)) seen.add(Number(match[1]));
+			const rows = ui.frame().trimEnd().split('\n');
+			expect(rows).toHaveLength(24);
+			expect(rows[23]).toContain('git:');
+			expect(rows.at(-3)).toContain('›');
+			ui.wheel('down');
+			await ui.flush();
+		}
+		expect([...seen].sort((a, b) => a - b)).toEqual(Array.from({length: 60}, (_, index) => index + 1));
 		ui.stdout.columns = 40;
 		ui.stdout.rows = 16;
 		ui.stdout.emit('resize');
-		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n').length).toBeLessThanOrEqual(16));
+		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(16));
+		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:');
+		for (let step = 0; step < 30; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Line 1\n'));
+	});
+
+	it('uses terminal mouse reporting without leaking packets into the prompt and clears active history', async () => {
+		const answer = Array.from({length: 60}, (_, index) => `SCROLLBACK_ROW_${index + 1}`).join('\n');
+		let turn = 0;
+		const chat = vi.fn<ChatTransport>().mockImplementation(async function* () {
+			yield {type: 'start', messageId: `assistant-${++turn}`};
+			yield {type: 'text-delta', text: turn === 1 ? answer : `NEW_REPLY_${turn}`};
+			yield {type: 'done', durationMs: 1};
+		});
+		const session = new ChatSession(chat);
+		await session.send('ORIGINAL_QUESTION', preferences.modelId);
+		const ui = renderWorkspace(session, {debug: false});
+		await vi.waitFor(() => expect(ui.output()).toContain('SCROLLBACK_ROW_60'));
+		await ui.flush();
+		expect(ui.output()).toContain('\x1b[?1049h');
+		expect(ui.output()).toContain('\x1b[?1000h');
+		ui.wheel('up');
+		ui.stdin.write('\x1b[<0;2;3M\x1b[<0;2;3m');
+		const beforeEdit = ui.output().length;
+		ui.stdin.write('Next question');
+		await vi.waitFor(() => expect(ui.output().slice(beforeEdit)).toContain('Next question'));
+		await ui.flush();
+		ui.stdout.columns = 40;
+		ui.stdout.rows = 16;
+		ui.stdout.emit('resize');
+		await ui.flush();
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toBe('NEW_REPLY_2'));
+		await ui.flush();
+		expect(chat.mock.calls[1]![0].messages.map(message => message.parts[0]?.text)).toEqual(['ORIGINAL_QUESTION', answer, 'Next question']);
+		const beforeClear = ui.output().length;
+		session.clear();
+		await vi.waitFor(() => expect(ui.output().slice(beforeClear)).toContain('Type a message'));
+		await session.send('FRESH_QUESTION', preferences.modelId);
+		await ui.flush();
+		expect(ui.output().slice(beforeClear)).toContain('FRESH_QUESTION');
+		expect(ui.output().slice(beforeClear)).toContain('NEW_REPLY_3');
+		expect(ui.output().slice(beforeClear)).not.toContain('ORIGINAL_QUESTION');
+		expect(chat.mock.calls[2]![0].messages.map(message => message.parts[0]?.text)).toEqual(['FRESH_QUESTION']);
+	});
+
+	it.each(['cancelled', 'failed'] as const)('keeps %s partial output accessible by mouse after the next turn', async status => {
+		const partial = Array.from({length: 40}, (_, index) => `PARTIAL_ROW_${index + 1}`).join('\n');
+		const chat = vi.fn<ChatTransport>().mockImplementationOnce(async function* (_request, signal) {
+			yield {type: 'text-delta', text: partial};
+			if (status === 'failed') yield {type: 'error', code: 'provider_error', message: 'Interrupted provider.'};
+			else await new Promise<void>(resolve => {
+				if (signal.aborted) resolve();
+				else signal.addEventListener('abort', () => resolve(), {once: true});
+			});
+		}).mockImplementation(async function* () {
+			yield {type: 'text-delta', text: 'FOLLOW_UP_REPLY'};
+			yield {type: 'done', durationMs: 1};
+		});
+		const session = new ChatSession(chat);
+		const ui = renderWorkspace(session, {debug: false});
+		const sending = session.send('Show partial work.', preferences.modelId);
+		await vi.waitFor(() => expect(ui.output()).toContain('PARTIAL_ROW_40'));
+		if (status === 'cancelled') ui.stdin.write('\x1b');
+		await sending;
+		await ui.flush();
+		expect(session.getSnapshot().messages.at(-1)).toMatchObject({status, parts: [{type: 'text', text: partial}]});
+		const beforeNext = ui.output().length;
+		await session.send('Continue.', preferences.modelId);
+		await ui.flush();
+		expect(ui.output().slice(beforeNext)).toContain('FOLLOW_UP_REPLY');
+		const beforeScroll = ui.output().length;
+		for (let step = 0; step < 25; step++) ui.wheel('up');
+		await ui.flush();
+		expect(ui.output().slice(beforeScroll)).toContain('PARTIAL_ROW_1');
+		expect(chat.mock.calls[1]![0].messages[1]?.parts[0]?.text).toBe(partial);
+	});
+
+	it('pins controls for empty and short conversations and ignores mouse scrolling over the footer or pickers', async () => {
+		const session = new ChatSession(async function* () {
+			yield {type: 'text-delta', text: 'Short reply.'};
+			yield {type: 'done', durationMs: 1};
+		});
+		const ui = renderWorkspace(session);
+		await vi.waitFor(() => expect(ui.frame()).toContain('Type a message'));
+		const checkFooter = () => {
+			const lines = ui.frame().trimEnd().split('\n');
+			expect(lines).toHaveLength(ui.stdout.rows);
+			expect(lines.at(-1)).toContain('git:main');
+			expect(lines.at(-3)).toContain('›');
+		};
+		checkFooter();
+		await session.send('Short question.', preferences.modelId);
+		await ui.flush();
+		checkFooter();
+		const beforeWheel = ui.frame();
+		ui.wheel('up', 24);
+		await ui.flush();
+		expect(ui.frame()).toBe(beforeWheel);
+		ui.stdin.write('/model');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Commands ·'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Choose a model'));
+		const picker = ui.frame();
+		ui.wheel('up');
+		await ui.flush();
+		expect(ui.frame()).toBe(picker);
+		checkFooter();
+	});
+
+	it('preserves the mouse reading position when streamed text grows and returns to new output when scrolling down', async () => {
+		let continueStream!: () => void;
+		let finishStream!: () => void;
+		const continued = new Promise<void>(resolve => {continueStream = resolve;});
+		const finished = new Promise<void>(resolve => {finishStream = resolve;});
+		const session = new ChatSession(async function* () {
+			yield {type: 'text-delta', text: Array.from({length: 40}, (_, index) => `STREAM_ROW_${index + 1}`).join('\n')};
+			await continued;
+			yield {type: 'text-delta', text: '\nNEW_STREAMED_OUTPUT'};
+			await finished;
+			yield {type: 'done', durationMs: 1};
+		});
+		const ui = renderWorkspace(session);
+		const sending = session.send('Stream a long reply.', preferences.modelId);
+		await vi.waitFor(() => expect(ui.frame()).toContain('STREAM_ROW_40'));
+		for (let step = 0; step < 25; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('STREAM_ROW_1\n'));
+		const reading = ui.frame().split('\n').slice(0, 18).join('\n');
+		continueStream();
+		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toContain('NEW_STREAMED_OUTPUT'));
+		await ui.flush();
+		expect(ui.frame().split('\n').slice(0, 18).join('\n')).toBe(reading);
+		for (let step = 0; step < 25; step++) ui.wheel('down');
+		await vi.waitFor(() => expect(ui.frame()).toContain('NEW_STREAMED_OUTPUT'));
+		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:main');
+		finishStream();
+		await sending;
 	});
 });

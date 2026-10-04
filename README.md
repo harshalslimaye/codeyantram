@@ -27,7 +27,8 @@ exit. Multiple CLI sessions can run at once; no separate server command is neede
 Use `/connect` to save a provider API key and `/model` to select a model and
 effort. Type a message and press Enter to see the assistant's answer as it streams.
 Follow-up messages include the conversation history. Escape cancels generation
-and keeps any partial answer; PgUp/PgDn scroll through the conversation.
+and keeps any partial answer; use the mouse wheel or trackpad over the chat area
+to scroll through the conversation. The input and status bars stay at the bottom.
 Use `/clear` to reset the conversation, `/help` to list commands, or `/exit` to quit.
 Conversations stay in memory for the current CLI session.
 
@@ -35,9 +36,11 @@ Conversations stay in memory for the current CLI session.
 
 Use `/compact` to summarize older conversation context with the active model.
 Future requests send that summary, the latest two user-led turns, and new
-messages. The full transcript stays available through PgUp/PgDn; the summary
+messages. The full transcript stays available through mouse scrolling; the summary
 does not appear as an assistant answer. `/model` can switch providers afterward
 because the summary is plain text. `/clear` resets both transcript and summary.
+The CLI uses a separate terminal screen and handles mouse scrolling within chat.
+Exiting restores the original terminal screen. `/clear` also resets scroll position.
 
 While compaction runs, prompt editing and pickers are disabled. Escape cancels
 the operation and keeps the previous context. Success reports estimated context

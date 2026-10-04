@@ -3,6 +3,8 @@ import {App} from './app.js';
 import {loadThemes, readThemePreference} from './theme/utils/index.js';
 import {readModelPreferences} from './models/preferences.js';
 import {startChatServer} from './chat/server.js';
+import {createTerminalInput} from './terminal/input.js';
+import {MouseProvider} from './terminal/mouse.js';
 
 const [registry, themeId, modelPreferences] = await Promise.all([
 	loadThemes(),
@@ -15,9 +17,14 @@ if (usedFallback) {
 	process.stderr.write(`Theme "${themeId ?? ''}" is not available; using "${theme.theme.id}".\n`);
 }
 const server = await startChatServer();
+const terminalInput = createTerminalInput(process.stdin, process.stdout);
 try {
-	process.stdout.write('\x1b[2J\x1b[H');
-	const app = render(<App registry={registry} initialThemeId={theme.theme.id} initialModelPreferences={modelPreferences} serverBaseUrl={server.baseUrl} />);
+	const app = render(
+		<MouseProvider value={terminalInput}>
+			<App registry={registry} initialThemeId={theme.theme.id} initialModelPreferences={modelPreferences} serverBaseUrl={server.baseUrl} />
+		</MouseProvider>,
+		{stdin: terminalInput.stdin, alternateScreen: true},
+	);
 	const shutdown = () => app.unmount();
 	process.once('SIGINT', shutdown);
 	process.once('SIGTERM', shutdown);
@@ -28,5 +35,6 @@ try {
 		process.off('SIGTERM', shutdown);
 	}
 } finally {
+	terminalInput.dispose();
 	await server.close();
 }

@@ -128,13 +128,15 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 				<ModelPicker preferences={modelPreferences} onSelect={onSelectModel} />
 			)}
 			{!isBusy && (owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
+			<Box flexDirection="column">
+				{isBusy ? <Spinner label={operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
+				: <Text color={palette.muted}>Enter to send · Mouse/trackpad scroll history · /help commands</Text>}
+				{notice && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}
+			</Box>
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
 				<TextInput key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} onSubmit={submitDraft} />
 			</Box>
-			{isBusy ? <Spinner label={operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
-				: <Text color={palette.muted}>Enter to send · PgUp/PgDn history · /help commands</Text>}
-			{notice && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}
 		</Box>
 	);
 }

@@ -23,18 +23,20 @@ export function ChatWorkspace({session, modelPreferences, effort, branch, onSele
 	return (
 		<Box flexDirection="column" height={rows}>
 			<Conversation messages={messages} isStreaming={isStreaming} />
-			{error && <StatusMessage variant="error">{error}</StatusMessage>}
-			{notice && <StatusMessage variant="info">{notice}</StatusMessage>}
-			<InputBar
-				modelPreferences={modelPreferences}
-				onSelectModel={onSelectModel}
-				operation={operation}
-				onSubmit={text => {void session.send(text, modelPreferences.modelId, effort);}}
-				onCancel={() => session.cancel()}
-				onClear={() => session.clear()}
-				onCompact={() => {void session.compact(modelPreferences.modelId);}}
-			/>
-			<StatusBar branch={branch} model={modelPreferences.modelId} effort={effort} contextTurnCount={contextTurnCount} />
+			<Box flexDirection="column" flexShrink={0}>
+				{error && <StatusMessage variant="error">{error}</StatusMessage>}
+				{notice && <StatusMessage variant="info">{notice}</StatusMessage>}
+				<InputBar
+					modelPreferences={modelPreferences}
+					onSelectModel={onSelectModel}
+					operation={operation}
+					onSubmit={text => {void session.send(text, modelPreferences.modelId, effort);}}
+					onCancel={() => session.cancel()}
+					onClear={() => session.clear()}
+					onCompact={() => {void session.compact(modelPreferences.modelId);}}
+				/>
+				<StatusBar branch={branch} model={modelPreferences.modelId} effort={effort} contextTurnCount={contextTurnCount} />
+			</Box>
 		</Box>
 	);
 }
