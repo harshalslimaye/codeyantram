@@ -45,6 +45,29 @@ replace. Options have the same credentials, abort signal, and injected fetch
 fields as `streamChat`. The caller selects the prefix and retains recent turns;
 core neither changes a transcript nor commits a summary.
 
+```ts
+import {compactChat} from '@codeyantram/core';
+
+for await (const event of compactChat({
+  model: 'gpt-6.1-sol',
+  // previousSummary: existingSummary, // Include on a later compaction.
+  messages: historicalPrefix,
+}, {credentials, abortSignal: controller.signal})) {
+  if (event.type === 'done') {
+    // Validate replacement size and session ownership before committing.
+    // Replay event.summary through ChatRequest.contextSummary afterward.
+  }
+}
+```
+
+Each historical message must contain nonblank text. Assistant messages may
+carry `complete`, `cancelled`, or `failed` status; omitted status means complete.
+The previous summary and messages are JSON source material in a user prompt,
+separate from the summarization instructions. The instructions ask for objective,
+constraints, exact literals, current decisions, reported validation, uncertainty,
+and pending work. They distinguish partial responses and proposals from
+completed work and user authorization.
+
 Compaction emits `start`, then `done` with the validated summary, duration, and
 available usage, or `error`. It uses a single non-streaming generation, supported
 low effort (omitted on models without effort controls), a 4,096-token output cap,
@@ -53,6 +76,15 @@ that do not finish normally produce `compaction_failed`; partial summaries are
 never emitted or repaired. Cancellation emits no terminal event, including when
 a provider returns after abort. These policies are tested with HTTP fixtures;
 live summary quality and cost savings have not been evaluated.
+
+The caller owns retention boundaries, minimum eligible size, request-size
+preflight, savings checks, usage accounting, and rollback. A `done` event means
+the generated summary passed core's output checks; it does not prove factual
+completeness, smaller context, or lower cost. The CLI applies those size and
+lifecycle checks before replacing working context. Available usage on an
+accepted core result is provider-reported; unavailable fields are omitted.
+The [evaluation guide](COMPACTION_EVALUATION.md) separates automated transport
+regressions from a live summary-quality assessment.
 
 `resolveChatModel` exposes the SDK model and call settings for callers needing
 direct SDK access. It throws `ChatError` for unsupported models, unsupported

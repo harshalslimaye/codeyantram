@@ -31,6 +31,39 @@ and keeps any partial answer; PgUp/PgDn scroll through the conversation.
 Use `/clear` to reset the conversation, `/help` to list commands, or `/exit` to quit.
 Conversations stay in memory for the current CLI session.
 
+## Compact conversation context
+
+Use `/compact` to summarize older conversation context with the active model.
+Future requests send that summary, the latest two user-led turns, and new
+messages. The full transcript stays available through PgUp/PgDn; the summary
+does not appear as an assistant answer. `/model` can switch providers afterward
+because the summary is plain text. `/clear` resets both transcript and summary.
+
+While compaction runs, prompt editing and pickers are disabled. Escape cancels
+the operation and keeps the previous context. Success reports estimated context
+tokens and available usage for the compaction call, and the status bar shows
+`Context: compacted` with the number of recent turns currently sent verbatim.
+Failures, interrupted connections, truncated results, and summaries that do not
+reduce the replaced context enough leave the previous context intact.
+
+The latest two turns are always retained. A conversation with fewer than three
+turns, or a newly eligible older prefix below about 1,500 estimated tokens,
+makes no summarization request. Repeating `/compact` merges the previous summary
+with newly eligible history; it does not resummarize archived transcript entries.
+An accepted summary must reduce the replaced serialized UTF-8 context by at
+least 20%, including its wrapper. That check excludes the retained turns and
+does not guarantee a 20% reduction of the whole request or measured input tokens.
+
+Compaction makes a separate paid model call. Available input/output and cache
+usage is reported separately from chat replies, including when a complete
+summary is rejected for insufficient reduction. Missing usage stays unknown.
+Token estimates use `ceil(UTF-8 text bytes / 4) + 6` per message, plus 32 tokens
+for a summary wrapper; they are not provider token counts or a context-fit
+guarantee. Requests over 4 MB or estimated to exceed the selected model's window
+are rejected before generation. Try compacting earlier or using a larger-context
+model if the input is too large. Automatic compaction, session persistence, and
+chunked summarization are outside the current feature.
+
 ## Run the chat server
 
 ```sh
@@ -38,7 +71,7 @@ npm run start:server
 ```
 
 The server listens on `http://127.0.0.1:43187`. Set `CODEYANTRAM_PORT` to change
-the port. `POST /chat` streams shared chat events over SSE using provider keys
+the port. `POST /chat` and `POST /compact` stream shared events over SSE using provider keys
 saved by `/connect`. This standalone server is useful for other HTTP clients;
 the CLI uses its own server and does not use `CODEYANTRAM_PORT`.
 See [packages/server/README.md](packages/server/README.md) for the request and
@@ -77,6 +110,13 @@ Use temporary directories for filesystem tests and mock external boundaries;
 tests must not use real API keys or the user's configuration. Mocks and stubbed
 environment variables are restored between tests; clean up temporary files and
 timers in teardown hooks.
+
+Compaction regressions exercise a CLI session through its localhost server and
+the actual SDK adapters with simulated OpenAI, Anthropic, and Google responses.
+They cover smaller context, unchanged scrollback, provider switches, summary
+refresh, rollback, and clear. These checks do not measure summary quality or
+net cost savings. See the [compaction evaluation guide](packages/core/COMPACTION_EVALUATION.md)
+for the representative fixture and a separate live-evaluation checklist.
 
 Coverage uses V8 and includes untested source files across all workspaces.
 Reports are informational while the suite grows; no coverage thresholds are

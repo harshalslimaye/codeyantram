@@ -103,6 +103,29 @@ usual categories for credential/provider failures. Disconnecting or closing
 the server aborts the operation and immediately stops its heartbeat. The server
 does not retain session state or replace conversation context.
 
+After accepting the summary, a client sends it as `contextSummary` on `/chat`
+alongside the retained tail and the next user message. Omit the archived prefix
+from `messages`; sending it again defeats the context reduction. For example:
+
+```json
+{
+  "model": "gpt-6.1-sol",
+  "contextSummary": "Objective: update /src/chat.ts. Validation pending.",
+  "messages": [
+    {"id": "recent-user", "role": "user", "parts": [{"type": "text", "text": "Keep the API compatible."}]},
+    {"id": "recent-assistant", "role": "assistant", "parts": [{"type": "text", "text": "Compatibility review is pending."}]},
+    {"id": "next-user", "role": "user", "parts": [{"type": "text", "text": "Continue the review."}]}
+  ]
+}
+```
+
+Retain the full display transcript locally. The server enforces the wire
+contract and output validity; it does not enforce the CLI's two-turn retention,
+minimum eligible size, or 20% byte-reduction policy. Clients must validate and
+commit summary and boundary together and keep previous context on failure.
+Compaction uses the selected model's supported low effort independently of
+normal chat effort, so there is no `effort` field in `CompactRequest`.
+
 The CLI-owned server exposes an explicit `baseUrl` plus sibling `chatUrl` and
 `compactUrl` endpoints. CLI `requestChat` and `requestCompact` share the SSE
 reader, which validates events, ignores heartbeats, and reports an interruption
