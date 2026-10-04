@@ -29,6 +29,21 @@ async function seed(session: ChatSession, texts = [longText, longText, longText,
 }
 
 describe('session compaction', () => {
+	it('reports compaction as unavailable when no summarizer is configured', async () => {
+		const {chat} = setup();
+		const session = new ChatSession(chat);
+		await seed(session);
+		expect(await session.compact(model)).toEqual({type: 'failed', message: 'Conversation compaction is unavailable.'});
+		expect(session.getSnapshot().operation).toBe('idle');
+	});
+
+	it('reports a generic failure for non-Error summarizer exceptions', async () => {
+		const {session, compact} = setup();
+		await seed(session);
+		compact.mockImplementationOnce(async function* () {throw 'untrusted summarizer failure';});
+		expect(await session.compact(model)).toEqual({type: 'failed', message: 'The compaction request failed. Try again.'});
+		expect(session.getSnapshot().operation).toBe('idle');
+	});
 	it('commits summary and boundary together, preserves the complete transcript, and replays only summary + tail + next user', async () => {
 		const {session, chat, compact} = setup();
 		await seed(session);

@@ -149,6 +149,18 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
+	it('does not keep the waiting placeholder after a completed empty-text answer', async () => {
+		const session = new ChatSession(async function* () {
+			yield {type: 'text-delta', text: ''};
+			yield {type: 'done', durationMs: 1};
+		});
+		await session.send('An empty answer is allowed.', preferences.modelId);
+		const ui = renderWorkspace(session);
+		await vi.waitFor(() => expect(ui.frame()).toContain('An empty answer is allowed.'));
+		expect(ui.frame()).toContain('Assistant');
+		expect(ui.frame()).not.toContain('Waiting for response');
+		expect(ui.frame()).not.toContain('Generating');
+	});
 	it('appends /status snapshots to scrollback without calling the model, updates the footer, and handles resize and clear', async () => {
 		const chat = vi.fn<ChatTransport>().mockImplementation(async function* () {
 			yield {type: 'text-delta', text: 'STATUS_REPLY '.repeat(1_000)};

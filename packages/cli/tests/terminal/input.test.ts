@@ -21,6 +21,27 @@ function setup(isTTY = true) {
 }
 
 describe('terminal mouse and keyboard input', () => {
+	it('accepts sources that already decode text as UTF-8 strings', () => {
+		const ui = setup();
+		ui.source.setEncoding('utf8');
+		ui.source.write('Hello 👋\x1b[<64;2;3M');
+		expect(ui.keyboard()).toBe('Hello 👋');
+		expect(ui.wheel).toHaveBeenCalledExactlyOnceWith({direction: 'up', x: 2, y: 3});
+	});
+	it('preserves Alt keys and malformed escape sequences as keyboard input', () => {
+		const ui = setup();
+		ui.source.write('\x1bx\x1b[\x01');
+		expect(ui.keyboard()).toBe('\x1bx\x1b[\x01');
+		expect(ui.wheel).not.toHaveBeenCalled();
+	});
+
+	it('retains a split CSI prefix until the rest of the arrow key arrives', () => {
+		const ui = setup();
+		ui.source.write('\x1b[');
+		expect(ui.keyboard()).toBe('');
+		ui.source.write('A');
+		expect(ui.keyboard()).toBe('\x1b[A');
+	});
 	it('separates multiple wheel packets and clicks from ordinary text and arrow keys', () => {
 		const ui = setup();
 		ui.source.write('draft\x1b[<64;2;3M\x1b[<65;4;5M\x1b[<0;4;5M\x1b[<0;4;5m\x1b[A');

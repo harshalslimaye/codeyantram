@@ -1,5 +1,7 @@
 import {stripVTControlCharacters} from 'node:util';
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
+import {Lexer} from 'marked';
+import chalk from 'chalk';
 import {createMarkdownRenderer} from '../../src/terminal/markdown.js';
 import {THEME_ROLES} from '../../src/theme/registry/types.js';
 import type {InkThemePalette} from '../../src/theme/provider.js';
@@ -8,6 +10,36 @@ const mono = Object.fromEntries(THEME_ROLES.map(role => [role, undefined])) as I
 const render = (source: string, width = 60) => createMarkdownRenderer(width, mono)(source);
 
 describe('terminal Markdown', () => {
+	it('renders an autolink once without repeating the URL as a label', () => {
+		expect(render('<https://example.com>').join('\n')).toBe('https://example.com');
+	});
+	it('keeps syntax highlighting monochrome when the theme disables colors even on a color-capable terminal', () => {
+		const originalLevel = chalk.level;
+		try {
+			chalk.level = 3;
+			const javascript = render('```js\nconst answer = 42; // a comment\nconsole.log("done");\n```').join('\n');
+			const html = render('```html\n<div class="example">Hello</div>\n```').join('\n');
+			expect(javascript).toContain('const answer = 42;');
+			expect(javascript).toContain('console.log("done");');
+			expect(html).toContain('<div class="example">Hello</div>');
+			expect(javascript + html).not.toContain('\x1b');
+		} finally {
+			chalk.level = originalLevel;
+		}
+	});
+	it('renders horizontal rules across the terminal width', () => {
+		expect(render('---', 12)).toEqual(['─'.repeat(12)]);
+	});
+
+	it('preserves code tokens outside the known highlight styles', () => {
+		const source = '```html\n<div class="example">Hello</div>\n```';
+		expect(render(source).join('\n')).toContain('<div class="example">Hello</div>');
+	});
+
+	it('falls back to readable source when the Markdown parser fails', () => {
+		vi.spyOn(Lexer, 'lex').mockImplementationOnce(() => {throw new Error('parser failed');});
+		expect(render('**original reply**')).toEqual(['**original reply**']);
+	});
 	it('renders headings, inline styles, lists, quotes, links, and literal code', () => {
 		const source = '# Heading\n\n**Bold** and *italic*, ~~removed~~ and `a < b`.\n\n- **First**\n- `second`\n\n> Quoted\n\n[Docs](https://example.com)\n\n```js\nconst x = "**literal**";\n```';
 		const output = render(source).join('\n');

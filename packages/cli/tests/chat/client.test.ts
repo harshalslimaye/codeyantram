@@ -29,6 +29,17 @@ function streamedResponse(text: string) {
 }
 
 describe('chat streaming client', () => {
+	it('cancels a response arriving after abort even if body cancellation rejects', async () => {
+		const controller = new AbortController();
+		const cancel = vi.fn().mockRejectedValue(new Error('cancel failed'));
+		const response = new Response(new ReadableStream<Uint8Array>({cancel}), {headers: {'content-type': 'text/event-stream'}});
+		const fetchResponse = vi.fn<typeof fetch>().mockImplementation(async () => {
+			controller.abort();
+			return response;
+		});
+		await expect(collect(requestChat('http://localhost/chat', request, controller.signal, fetchResponse))).rejects.toMatchObject({name: 'AbortError'});
+		expect(cancel).toHaveBeenCalledOnce();
+	});
 	it('decodes split UTF-8, JSON, CRLF frames, and ignores heartbeat comments', async () => {
 		const delta: ChatStreamEvent = {type: 'text-delta', text: 'Hello 👋\nworld'};
 		const events = [start, delta, done];

@@ -9,6 +9,13 @@ vi.mock('@codeyantram/shared', async importOriginal => ({
 }));
 
 describe('model preferences', () => {
+	it('saves a model without effort while retaining other saved efforts', async () => {
+		const config = {theme: 'konkan', effortByModel: {'gpt-6.1-sol': 'high'}};
+		vi.mocked(readConfig).mockResolvedValueOnce(config);
+		vi.mocked(writeConfig).mockResolvedValueOnce(undefined);
+		await expect(saveModelPreference('gemma-4-31b-it')).resolves.toEqual({modelId: 'gemma-4-31b-it', effortByModel: config.effortByModel});
+		expect(writeConfig).toHaveBeenCalledExactlyOnceWith({...config, model: 'gemma-4-31b-it'});
+	});
 	it.each([{}, {model: 'missing'}, {model: 42}])('defaults an absent or invalid model: %j', config => {
 		expect(resolveModelPreferences(config)).toEqual({modelId: DEFAULT_CHAT_MODEL_ID, effortByModel: {}});
 	});

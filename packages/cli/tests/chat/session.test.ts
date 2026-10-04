@@ -14,6 +14,32 @@ function successfulTransport() {
 }
 
 describe('chat session', () => {
+	it('ignores status requests during generation', async () => {
+		let finish!: () => void;
+		const waiting = new Promise<void>(resolve => {finish = resolve;});
+		const session = new ChatSession(async function* () {await waiting; yield done;});
+		const sending = session.send('Hello', 'gpt-6.1-sol');
+		session.showStatus('gpt-6.1-sol');
+		expect(session.getSnapshot().statusEntries).toEqual([]);
+		finish();
+		await sending;
+	});
+
+	it('does not start transport when a subscriber cancels as generation begins', async () => {
+		const transport = successfulTransport();
+		const session = new ChatSession(transport);
+		session.subscribe(() => {if (session.getSnapshot().operation === 'chat') session.cancel();});
+		await session.send('Hello', 'gpt-6.1-sol');
+		expect(transport).not.toHaveBeenCalled();
+		expect(session.getSnapshot()).toMatchObject({operation: 'idle', messages: [{role: 'user'}, {status: 'cancelled'}]});
+	});
+
+	it('reports a generic failure for non-Error transport exceptions', async () => {
+		const session = new ChatSession(async function* () {throw 'untrusted transport failure';});
+		await session.send('Hello', 'gpt-6.1-sol');
+		expect(session.getSnapshot()).toMatchObject({operation: 'idle', error: 'The chat request failed. Try again.'});
+		expect(session.getSnapshot().messages.at(-1)).toMatchObject({status: 'failed'});
+	});
 	it('captures immutable UI-only status snapshots between turns and clears them with history', async () => {
 		const transport = successfulTransport();
 		const session = new ChatSession(transport);

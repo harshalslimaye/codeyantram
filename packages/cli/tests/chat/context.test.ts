@@ -16,6 +16,10 @@ const transcript: ConversationMessage[] = [
 ];
 
 describe('chat context builder', () => {
+	it('allows a zero boundary without accessing a preceding message', () => {
+		const context = buildChatContext(transcript, {summary: 'Existing objective.', coveredMessageCount: 0});
+		expect(context).toEqual({...buildChatContext(transcript), contextSummary: 'Existing objective.'});
+	});
 	it('preserves full-history behavior before compaction without replaying metadata', () => {
 		const context = buildChatContext(transcript);
 		expect(context).toEqual({messages: transcript.filter(message => message.parts.length).map(toRequestMessage)});
@@ -73,6 +77,9 @@ describe('chat context builder', () => {
 });
 
 describe('context token estimates', () => {
+	it('rejects an unsupported model instead of estimating against an arbitrary capacity', () => {
+		expect(() => getContextStatus('unsupported', transcript)).toThrow('Model "unsupported" is not supported.');
+	});
 	it('reports empty context and changes capacity when switching models', () => {
 		expect(getContextStatus('gemma-4-31b-it', [])).toMatchObject({usedTokens: 0, usedPercent: 0, remainingPercent: 100, contextWindow: 262_144});
 		const gemma = getContextStatus('gemma-4-31b-it', transcript);
