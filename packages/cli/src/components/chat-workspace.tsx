@@ -36,6 +36,7 @@ export function ChatWorkspace({session, modelPreferences, effort, branch, onSele
 					onClear={() => session.clear()}
 					onCompact={() => {void session.compact(modelPreferences.modelId);}}
 					onStatus={() => session.showStatus(modelPreferences.modelId)}
+					onInit={() => {void session.initialize();}}
 				/>
 				<StatusBar branch={branch} model={modelPreferences.modelId} effort={effort} contextTurnCount={contextTurnCount} contextStatus={contextStatus} />
 			</Box>

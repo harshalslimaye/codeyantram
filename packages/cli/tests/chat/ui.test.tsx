@@ -13,6 +13,9 @@ import {ChatSession, type ChatTransport, type SessionOperation} from '../../src/
 import {ChatWorkspace} from '../../src/components/chat-workspace.js';
 import {createTerminalInput} from '../../src/terminal/input.js';
 import {MouseProvider} from '../../src/terminal/mouse.js';
+import {initializeGraphForUI} from '../../src/lib/init.js';
+
+vi.mock('../../src/lib/init.js', () => ({initializeGraphForUI: vi.fn()}));
 
 const registry = createThemeRegistry([{source: 'builtin', themes: [{source: 'builtin', theme: konkanTheme}]}]);
 const preferences = {modelId: 'gpt-6.1-sol', effortByModel: {}} as const;
@@ -60,6 +63,7 @@ function renderInput(initialOperation: SessionOperation = 'idle') {
 	const onClear = vi.fn();
 	const onCompact = vi.fn();
 	const onStatus = vi.fn();
+	const onInit = vi.fn();
 	const onSelectModel = vi.fn(async () => {});
 	let setOperation!: (operation: SessionOperation) => void;
 	function InputHarness() {
@@ -68,13 +72,13 @@ function renderInput(initialOperation: SessionOperation = 'idle') {
 		return (
 			<ThemeProvider registry={registry} initialThemeId="konkan" colorDepth={0}>
 				<KeyboardProvider>
-					<InputBar modelPreferences={preferences} onSelectModel={onSelectModel} operation={operation} onSubmit={onSubmit} onCancel={onCancel} onClear={onClear} onCompact={onCompact} onStatus={onStatus} />
+					<InputBar modelPreferences={preferences} onSelectModel={onSelectModel} operation={operation} onSubmit={onSubmit} onCancel={onCancel} onClear={onClear} onCompact={onCompact} onStatus={onStatus} onInit={onInit} />
 				</KeyboardProvider>
 			</ThemeProvider>
 		);
 	}
 	const ui = renderUI(<InputHarness />);
-	return {...ui, onSubmit, onCancel, onClear, onCompact, onStatus, onSelectModel, setOperation: (operation: SessionOperation) => setOperation(operation)};
+	return {...ui, onSubmit, onCancel, onClear, onCompact, onStatus, onInit, onSelectModel, setOperation: (operation: SessionOperation) => setOperation(operation)};
 }
 
 function renderWorkspace(session: ChatSession, {debug = true}: {debug?: boolean} = {}) {
@@ -124,7 +128,7 @@ async function renderCompactionApp() {
 			{type: 'start', messageId: `assistant-${turn}`}, {type: 'text-delta', text}, {type: 'done', durationMs: 1},
 		]);
 	}));
-	const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" />);
+	const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} />);
 	await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
 	for (let turn = 1; turn <= 3; turn++) {
 		ui.stdin.write(`Question ${turn}`);
@@ -149,6 +153,89 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
+	it.each([false, true])('executes /init exactly once without sending chat text (palette dismissed=%s)', async dismissPalette => {
+		const ui = renderInput();
+		ui.stdin.write('/init');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Build or refresh the project code graph'));
+		if (dismissPalette) {
+			ui.stdin.write('\x1b');
+			await vi.waitFor(() => expect(ui.frame()).not.toContain('Commands ·'));
+		}
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.onInit).toHaveBeenCalledOnce());
+		expect(ui.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('initializes the App-selected workspace, shows progress and completion, and keeps chat available afterward', async () => {
+		let complete!: (message: string) => void;
+		vi.mocked(initializeGraphForUI).mockImplementation(async (_root, _signal, progress) => {
+			progress('Indexing graph · parsing: 1/2');
+			return new Promise<string>(resolve => {complete = resolve;});
+		});
+		const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(eventResponse([
+			{type: 'start', messageId: 'after-init'}, {type: 'text-delta', text: 'POST_INIT_REPLY'}, {type: 'done', durationMs: 1},
+		]));
+		vi.stubGlobal('fetch', fetch);
+		const root = '/selected/codebase';
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" workspaceRoot={root} />);
+		ui.stdin.write('/init');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Build or refresh the project code graph'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Initializing graph · Esc to cancel'));
+		expect(ui.frame()).toContain('parsing: 1/2');
+		expect(initializeGraphForUI).toHaveBeenCalledExactlyOnceWith(root, expect.any(AbortSignal), expect.any(Function));
+		expect(fetch).not.toHaveBeenCalled();
+		ui.stdin.write('ignored input\r/init\r/model\r');
+		await ui.flush();
+		expect(ui.frame()).not.toContain('ignored input');
+		complete('Graph ready: 2 files, 4 symbols, 3 relationships.');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Graph ready: 2 files'));
+		expect(ui.frame()).not.toContain('Initializing graph ·');
+		expect(ui.frame()).not.toContain('ignored input');
+		ui.stdin.write('Follow up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Follow up'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('POST_INIT_REPLY'));
+		expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body)).messages).toHaveLength(1);
+	});
+
+	it.each(['escape', 'unmount'] as const)('cancels palette initialization on %s and waits for cleanup', async action => {
+		let signal!: AbortSignal;
+		let drain!: (message: string) => void;
+		vi.mocked(initializeGraphForUI).mockImplementation(async (_root, activeSignal) => {
+			signal = activeSignal;
+			return new Promise<string>(resolve => {drain = resolve;});
+		});
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} />);
+		ui.stdin.write('/init');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Build or refresh the project code graph'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Initializing graph · Esc to cancel'));
+		if (action === 'escape') ui.stdin.write('\x1b');
+		else ui.unmount();
+		await vi.waitFor(() => expect(signal.aborted).toBe(true));
+		if (action === 'escape') {
+			expect(ui.frame()).toContain('Cancelling graph initialization');
+			ui.stdin.write('/init\r');
+			expect(initializeGraphForUI).toHaveBeenCalledOnce();
+		}
+		drain('Graph ready: should be ignored after cancellation.');
+		if (action === 'escape') {
+			await vi.waitFor(() => expect(ui.frame()).toContain('Graph initialization cancelled'));
+			expect(ui.frame()).not.toContain('should be ignored');
+		}
+	});
+
+	it('shows a graph initialization failure and returns to editing', async () => {
+		vi.mocked(initializeGraphForUI).mockRejectedValue(new Error('Index is locked. Retry /init later.'));
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} />);
+		ui.stdin.write('/init');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Build or refresh the project code graph'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Index is locked. Retry /init later.'));
+		ui.stdin.write('Try another message');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Try another message'));
+	});
 	it('does not keep the waiting placeholder after a completed empty-text answer', async () => {
 		const session = new ChatSession(async function* () {
 			yield {type: 'text-delta', text: ''};
@@ -380,7 +467,7 @@ describe('CLI chat UI', () => {
 	it('shows a no-op notice for short history and makes no HTTP request', async () => {
 		const fetchResponse = vi.fn<typeof fetch>();
 		vi.stubGlobal('fetch', fetchResponse);
-		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" />);
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} />);
 		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
 		await selectCompact(ui);
 		await vi.waitFor(() => expect(ui.frame()).toContain('No older conversation turns are available to compact'));
@@ -447,7 +534,7 @@ describe('CLI chat UI', () => {
 			].map(event => `data: ${JSON.stringify(event)}\n\n`).join('');
 			return new Response(text, {headers: {'content-type': 'text/event-stream'}});
 		}));
-		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" />);
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} />);
 		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
 		ui.stdin.write('First question');
 		await vi.waitFor(() => expect(ui.frame()).toContain('First question'));
@@ -530,7 +617,7 @@ describe('CLI chat UI', () => {
 		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response([
 			{type: 'start', messageId: 'assistant-1'}, {type: 'text-delta', text}, {type: 'done', durationMs: 1},
 		].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), {headers: {'content-type': 'text/event-stream'}})));
-		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" />);
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} />);
 		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
 		ui.stdin.write('Long answer');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Long answer'));

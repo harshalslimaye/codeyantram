@@ -2,6 +2,7 @@ import {EventEmitter} from 'node:events';
 import {describe, expect, it, vi} from 'vitest';
 import {createServer} from 'node:http';
 import {startChatServer} from '../../src/chat/server.js';
+import {createApp} from '@codeyantram/server';
 
 vi.mock('node:http', () => ({createServer: vi.fn()}));
 vi.mock('@codeyantram/server', () => ({createApp: vi.fn(() => 'app')}));
@@ -18,6 +19,13 @@ function fakeServer(address: unknown) {
 }
 
 describe('private server lifecycle failures', () => {
+	it('forwards the selected workspace to its private server app', async () => {
+		fakeServer({port: 1234});
+		const running = await startChatServer({workspaceRoot: '/selected/project'});
+		expect(createApp).toHaveBeenCalledExactlyOnceWith({workspaceRoot: '/selected/project'});
+		await running.close();
+	});
+
 	it.each([null, '/tmp/socket'])('rejects a non-TCP listening address: %j', async address => {
 		fakeServer(address);
 		await expect(startChatServer()).rejects.toThrow('The chat server did not open a TCP port.');

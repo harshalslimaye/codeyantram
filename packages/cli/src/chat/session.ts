@@ -14,7 +14,8 @@ import {assessCompactionReduction, getCompactionSizeError, planCompaction, type 
 
 export type ChatTransport = (request: ChatRequest, signal: AbortSignal) => AsyncIterable<ChatStreamEvent>;
 export type CompactTransport = (request: CompactRequest, signal: AbortSignal) => AsyncIterable<CompactStreamEvent>;
-export type SessionOperation = 'idle' | 'chat' | 'compact';
+export type InitTransport = (signal: AbortSignal, onProgress: (message: string) => void) => Promise<string>;
+export type SessionOperation = 'idle' | 'chat' | 'compact' | 'init';
 
 export interface CompactionState extends CompactedContext {
 	generation: number;
@@ -86,7 +87,11 @@ export class ChatSession {
 	private controller?: AbortController;
 	private revision = 0;
 
-	constructor(private readonly transport: ChatTransport, private readonly compactTransport?: CompactTransport) {}
+	constructor(
+		private readonly transport: ChatTransport,
+		private readonly compactTransport?: CompactTransport,
+		private readonly initTransport?: InitTransport,
+	) {}
 
 	getSnapshot = (): ChatSnapshot => this.state;
 
@@ -105,6 +110,12 @@ export class ChatSession {
 	cancel() {
 		const controller = this.controller;
 		if (!controller) return;
+		if (this.state.operation === 'init') {
+			// The graph owns SQLite until initialization and cleanup have drained.
+			controller.abort();
+			this.update({notice: 'Cancelling graph initialization…'});
+			return;
+		}
 		this.controller = undefined;
 		const isChat = this.state.operation === 'chat';
 		this.update({
@@ -119,6 +130,11 @@ export class ChatSession {
 
 	clear() {
 		const controller = this.controller;
+		if (this.state.operation === 'init') {
+			this.update({messages: [], statusEntries: [], compaction: undefined, compactionUsage: undefined, error: undefined});
+			this.cancel();
+			return;
+		}
 		this.controller = undefined;
 		this.update({messages: [], statusEntries: [], operation: 'idle', compaction: undefined, compactionUsage: undefined, error: undefined, notice: undefined});
 		controller?.abort();
@@ -133,6 +149,32 @@ export class ChatSession {
 			}],
 			notice: undefined,
 		});
+	}
+
+	async initialize(): Promise<void> {
+		if (this.controller) return;
+		const controller = new AbortController();
+		this.controller = controller;
+		this.update({operation: 'init', error: undefined, notice: 'Initializing project graph…'});
+		try {
+			if (!this.initTransport) throw new Error('Graph initialization is unavailable.');
+			controller.signal.throwIfAborted();
+			const message = await this.initTransport(controller.signal, progress => {
+				if (this.controller === controller && !controller.signal.aborted) this.update({notice: progress});
+			});
+			controller.signal.throwIfAborted();
+			this.update({notice: message});
+		} catch (error) {
+			if (controller.signal.aborted) {
+				this.update({notice: 'Graph initialization cancelled. Use /init to retry.', error: undefined});
+			} else {
+				this.update({error: error instanceof Error ? error.message : 'Graph initialization failed.', notice: undefined});
+			}
+		} finally {
+			this.controller = undefined;
+			this.update({operation: 'idle'});
+			controller.abort();
+		}
 	}
 
 	async send(text: string, model: string, effort?: EffortLevel): Promise<void> {

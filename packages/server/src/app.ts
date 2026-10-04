@@ -6,6 +6,8 @@ import {createChatRouter} from './routers/chat.js';
 import {createCompactRouter} from './routers/compact.js';
 
 export interface ServerAppOptions {
+  /** Canonical project root selected by the host; reserved for project-bound services. */
+  workspaceRoot?: string;
   readConfig?: typeof readConfig;
   streamChat?: typeof streamChat;
   compactChat?: typeof compactChat;
@@ -13,6 +15,7 @@ export interface ServerAppOptions {
 
 export function createApp(options: ServerAppOptions = {}) {
   const app = express();
+  app.locals.workspaceRoot = options.workspaceRoot;
   const chatRouter = createChatRouter({
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),
     // Tests can supply a fake stream to avoid calling AI providers.

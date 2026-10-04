@@ -14,6 +14,10 @@ export function getUserThemeDirectory(): string {
 	return path.join(getUserConfigDirectory(), 'themes');
 }
 
+export function getUserGraphDirectory(): string {
+	return path.join(getUserConfigDirectory(), 'graphs');
+}
+
 export function getUserConfigPath(): string {
 	return path.join(getUserConfigDirectory(), 'config.json');
 }

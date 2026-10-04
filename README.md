@@ -7,9 +7,16 @@ A coding agent portfolio project organized as an npm workspace monorepo.
 | `packages/server` | HTTP server | Node.js, Express, TypeScript |
 | `packages/cli` | Terminal interface | Node.js, Ink, React, TypeScript |
 | `packages/core` | Model communication and agent logic | Vercel AI SDK, TypeScript |
+| `packages/graph` | Workspace indexing and code navigation | CodeGraph, TypeScript |
 | `packages/shared` | Shared contracts and application utilities | Zod, Node.js, TypeScript |
 
 The root workspace holds shared TypeScript development tools. `core` owns model communication with OpenAI, Anthropic, and Google through the AI SDK. `shared` owns model catalogs, chat schemas, and application configuration utilities. The CLI starts a local server and sends chat requests to it; the server calls core. Core, server, and the CLI also use `shared`.
+
+`graph` opens per-workspace CodeGraph indexes under the user's global Codeyantram
+directory and provides indexing, sync, symbol/source queries, and cleanup.
+Agent navigation tools in `core` will use its public API, and the server will
+manage graph instances for active workspaces. See
+[packages/graph/README.md](packages/graph/README.md) for the package boundary.
 
 Direct dependencies use exact versions. If a package is used by more than one workspace, keep its declared version identical in each workspace. The root `package-lock.json` records the resolved dependency tree.
 
@@ -20,6 +27,36 @@ Requires Node.js 22.12+ on the 22.x line, 24.x, or 26+.
 ```sh
 npm run cli
 ```
+
+Select another project with `npm run cli -- --project /path/to/codebase` (or
+`npm start -- --project /path/to/codebase`). `--project=/path/to/codebase` is also
+accepted. Relative paths use the directory where npm was invoked. Without the
+flag, that invocation directory is selected; direct Node launches use their
+current directory. The selected directory must exist and is canonicalized so
+symlink aliases select the same workspace. Run `npm run cli -- --help` for usage.
+The CLI passes this root to its server and uses it for the displayed Git branch.
+
+Use `/init` in the command palette to build or refresh the active project's
+graph while keeping the conversation. Progress and results appear in the CLI.
+Prompt editing and other commands are disabled during initialization; Escape
+cancels it and waits for graph cleanup before accepting another operation.
+Initialization uses global SQLite storage and makes no provider request.
+
+The same initializer is available directly from the terminal:
+
+```sh
+npm run cli -- init
+npm run cli -- init --project /path/to/codebase
+```
+
+`init` prints indexing progress, graph counts, and the global database path.
+It uses the same project-root selection as chat. New, incomplete, or outdated
+indexes get full indexing; rerunning against a complete index incrementally
+syncs source changes. It honors `.gitignore` and CodeGraph defaults, and creates
+no project configuration. SQLite stays in the user's global Codeyantram folder.
+Failures exit with code 1; Ctrl+C cancels indexing and closes the graph before
+exiting with code 130. Run `init` again to recover an interrupted index.
+This command runs independently of the chat server, terminal UI, and provider keys.
 
 The CLI starts its own server on a temporary localhost port and closes it on
 exit. Multiple CLI sessions can run at once; no separate server command is needed.
@@ -119,7 +156,7 @@ CLI rendering are integrated. No tool executors or agent loop are included yet.
 ## Tests
 
 Vitest is configured at the repository root with named `cli`, `shared`, `core`,
-and `server` projects.
+`graph`, and `server` projects.
 
 ```sh
 npm test                             # Run all tests once

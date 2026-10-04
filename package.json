@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "start": "npm run --workspace=@codeyantram/cli start",
-    "cli": "npm run --workspace=@codeyantram/cli start",
+    "postinstall": "node scripts/patch-codegraph.mjs",
+    "start": "node --import tsx packages/cli/src/index.tsx",
+    "cli": "node --import tsx packages/cli/src/index.tsx",
     "start:server": "npm run --workspace=@codeyantram/server start",
     "test": "vitest run",
     "test:watch": "vitest --watch",
@@ -18,6 +19,7 @@
     "packages/server",
     "packages/cli",
     "packages/core",
+    "packages/graph",
     "packages/shared"
   ],
   "devDependencies": {

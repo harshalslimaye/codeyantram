@@ -11,7 +11,7 @@ import {useKeyboardOwner} from '../keyboard/provider.js';
 import type {EffortLevel, ModelPreferences} from '@codeyantram/shared';
 import type {SessionOperation} from '../chat/session.js';
 
-export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact, onStatus}: {
+export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact, onStatus, onInit}: {
 	modelPreferences: ModelPreferences;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 	operation: SessionOperation;
@@ -20,6 +20,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 	onClear: () => void;
 	onCompact: () => void;
 	onStatus: () => void;
+	onInit: () => void;
 }) {
 	const {columns} = useWindowSize();
 	const [value, setValue] = useState('');
@@ -57,6 +58,9 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 		setNotice(undefined);
 		setShowHelp(false);
 		switch (command) {
+			case '/init':
+				onInit();
+				break;
 			case '/status':
 				onStatus();
 				break;
@@ -139,7 +143,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 			)}
 			{!isBusy && (owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
 			<Box flexDirection="column">
-				{isBusy ? <Spinner label={operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
+				{isBusy ? <Spinner label={operation === 'init' ? 'Initializing graph · Esc to cancel' : operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
 				: <Text color={palette.muted}>Enter to send · Mouse/trackpad scroll history · /help commands</Text>}
 				{showHelp && !isBusy && <Help />}
 				{notice && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}

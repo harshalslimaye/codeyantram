@@ -10,6 +10,9 @@ import {BUILTIN_THEMES} from '../../src/theme/builtins/index.js';
 import {createThemeRegistry} from '../../src/theme/registry/registry.js';
 import {saveThemePreference} from '../../src/theme/utils/index.js';
 import {cleanupTerminal, renderTerminal} from '../helpers/terminal-ui.js';
+import {getGitBranch} from '../../src/lib/utils.js';
+
+vi.mock('../../src/lib/utils.js', () => ({getGitBranch: vi.fn(() => 'project-branch')}));
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
 	...await importOriginal<typeof import('@codeyantram/shared')>(),
@@ -50,7 +53,7 @@ function setup(modelId: SupportedChatModelId = 'gpt-6.1-sol') {
 			<KeyboardProvider>
 				<Probe />
 				<InputBar modelPreferences={{modelId, effortByModel: {}}} onSelectModel={onSelectModel} operation="idle"
-					onSubmit={onSubmit} onCancel={vi.fn()} onClear={vi.fn()} onCompact={vi.fn()} onStatus={vi.fn()} />
+					onSubmit={onSubmit} onCancel={vi.fn()} onClear={vi.fn()} onCompact={vi.fn()} onStatus={vi.fn()} onInit={vi.fn()} />
 			</KeyboardProvider>
 		</ThemeProvider>,
 	);
@@ -235,6 +238,15 @@ describe('theme selection flow', () => {
 });
 
 describe('model selection flow', () => {
+	it('uses the selected project for the displayed Git branch', async () => {
+		const registry = createThemeRegistry([{source: 'builtin', themes: BUILTIN_THEMES.map(theme => ({source: 'builtin', theme}))}]);
+		const ui = renderTerminal(<App registry={registry} initialThemeId="konkan"
+			initialModelPreferences={{modelId: 'gpt-6.1-sol', effortByModel: {}}}
+			serverBaseUrl="http://localhost" workspaceRoot="/chosen/project" />);
+		await vi.waitFor(() => expect(getGitBranch).toHaveBeenCalledWith('/chosen/project'));
+		expect(ui.frame()).toContain('project-branch');
+	});
+
 	it('updates App preferences after saving and uses the selected model in the next request', async () => {
 		const registry = createThemeRegistry([{source: 'builtin', themes: BUILTIN_THEMES.map(theme => ({source: 'builtin', theme}))}]);
 		vi.mocked(saveModelPreference).mockResolvedValueOnce({modelId: 'claude-fable-5-1', effortByModel: {'claude-fable-5-1': 'high'}});
@@ -243,7 +255,7 @@ describe('model selection flow', () => {
 		}));
 		vi.stubGlobal('fetch', fetchResponse);
 		const ui = renderTerminal(<App registry={registry} initialThemeId="konkan"
-			initialModelPreferences={{modelId: 'gemma-4-31b-it', effortByModel: {}}} serverBaseUrl="http://localhost" />);
+			initialModelPreferences={{modelId: 'gemma-4-31b-it', effortByModel: {}}} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} />);
 		await vi.waitFor(() => expect(ui.frame()).toContain('Enter to send'));
 		ui.stdin.write('/model');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Commands ·'));

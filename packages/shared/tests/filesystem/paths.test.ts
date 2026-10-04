@@ -1,7 +1,7 @@
 import {homedir} from 'node:os';
 import path from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {getUserConfigDirectory, getUserConfigPath, getUserThemeDirectory} from '../../src/filesystem/paths.js';
+import {getUserConfigDirectory, getUserConfigPath, getUserGraphDirectory, getUserThemeDirectory} from '../../src/filesystem/paths.js';
 
 vi.mock('node:os', async importOriginal => ({
 	...await importOriginal<typeof import('node:os')>(),
@@ -41,6 +41,10 @@ describe.each(['darwin', 'linux'] as const)('filesystem paths on %s', platform =
 	it('locates config.json under the configuration directory', () => {
 		expect(getUserConfigPath()).toBe(path.join(homeDirectory, '.config', 'codeyantram', 'config.json'));
 	});
+
+	it('locates graph storage under the configuration directory', () => {
+		expect(getUserGraphDirectory()).toBe(path.join(homeDirectory, '.config', 'codeyantram', 'graphs'));
+	});
 });
 
 describe('filesystem paths on Windows', () => {
@@ -54,6 +58,7 @@ describe('filesystem paths on Windows', () => {
 		const configDirectory = path.join(roamingDirectory, 'codeyantram');
 		expect(getUserConfigDirectory()).toBe(configDirectory);
 		expect(getUserThemeDirectory()).toBe(path.join(configDirectory, 'themes'));
+		expect(getUserGraphDirectory()).toBe(path.join(configDirectory, 'graphs'));
 		expect(getUserConfigPath()).toBe(path.join(configDirectory, 'config.json'));
 		expect(homedir).not.toHaveBeenCalled();
 	});
@@ -62,6 +67,7 @@ describe('filesystem paths on Windows', () => {
 		const configDirectory = path.join(homeDirectory, 'AppData', 'Roaming', 'codeyantram');
 		expect(getUserConfigDirectory()).toBe(configDirectory);
 		expect(getUserThemeDirectory()).toBe(path.join(configDirectory, 'themes'));
+		expect(getUserGraphDirectory()).toBe(path.join(configDirectory, 'graphs'));
 		expect(getUserConfigPath()).toBe(path.join(configDirectory, 'config.json'));
 	});
 });

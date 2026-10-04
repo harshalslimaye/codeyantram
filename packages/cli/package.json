@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@codeyantram/core": "0.0.0",
+    "@codeyantram/graph": "0.0.0",
     "@codeyantram/server": "0.0.0",
     "@codeyantram/shared": "0.0.0",
     "@inkjs/ui": "^2.0.0",
