@@ -106,8 +106,9 @@ External notifications during a query reject its result. Unreported external
 writes during the callback are not an atomic filesystem snapshot; source
 fingerprint validation and durable symbol-reference rules belong to subsequent
 navigation tool work. SDK cross-process locks protect writes, but the operation
-queue itself is process-local. Server lifetime integration and watchers remain
-subsequent work.
+queue itself is process-local. The server's lazy `WorkspaceGraphService` owns
+a lease for its selected root and drains its operations before releasing it
+on shutdown. Watchers and navigation tools remain subsequent work.
 
 `resolveGraphStoragePaths(workspaceRoot)` resolves an existing directory to its
 canonical path and hashes that path to select storage under the user's global

@@ -1,4 +1,4 @@
-import {acquireGraphCoordinator, GraphCoordinatorError, type GraphCoordinatorLease, type GraphIndexReport, type GraphProgress, type GraphStatus} from '@codeyantram/graph';
+import {acquireGraphCoordinator, GraphCoordinatorError, type GraphCoordinatorLease, type GraphIndexReport, type GraphProgress, type GraphStatus, type GraphInitialization, type GraphReconcileOptions} from '@codeyantram/graph';
 
 interface InitOutput {
   stdout?: {write(text: string): unknown};
@@ -102,22 +102,27 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
   return exitCode;
 }
 
-/** Palette entry uses the same initializer with UI-owned cancellation/output. */
+/** Palette initialization uses the server-owned service with UI cancellation. */
 export async function initializeGraphForUI(
-  workspaceRoot: string,
+  initialize: (options: GraphReconcileOptions) => Promise<GraphInitialization>,
   signal: AbortSignal,
   onProgress: (message: string) => void,
 ): Promise<string> {
-  let ready: GraphStatus | undefined;
-  const errors: string[] = [];
-  const exitCode = await runInit(workspaceRoot, {
-    signal, handleSignals: false,
-    stdout: {write: () => {}},
-    stderr: {write: text => {errors.push(text.trim());}},
-    onProgress: progress => onProgress(`Indexing graph · ${progress.phase}: ${progress.current}/${progress.total}`),
-    onReady: status => {ready = status;},
-  });
   signal.throwIfAborted();
-  if (exitCode !== 0 || !ready) throw new Error(errors.join('\n') || 'Graph initialization did not complete.');
-  return `Graph ready: ${ready.fileCount} files, ${ready.nodeCount} symbols, ${ready.edgeCount} relationships.`;
+  try {
+    const {status: ready} = await initialize({signal,
+      onProgress: progress => {if (!signal.aborted) onProgress(`Indexing graph · ${progress.phase}: ${progress.current}/${progress.total}`);},
+    });
+    signal.throwIfAborted();
+    return `Graph ready: ${ready.fileCount} files, ${ready.nodeCount} symbols, ${ready.edgeCount} relationships.`;
+  } catch (error) {
+    signal.throwIfAborted();
+    if (error instanceof GraphCoordinatorError && error.report) {
+      const details = 'errors' in error.report
+        ? error.report.errors.slice(0, 20).map(item => `${item.filePath ? `${item.filePath}: ` : ''}${item.message}`)
+        : error.report.failedFilePaths.slice(0, 20).map(file => `Failed to index: ${file}`);
+      throw new Error([error.message, ...details].join('\n'), {cause: error});
+    }
+    throw error;
+  }
 }

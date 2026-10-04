@@ -16,8 +16,9 @@ The root workspace holds shared TypeScript development tools. `core` owns model 
 directory and provides indexing, sync, symbol/source queries, and cleanup.
 Its coordinator shares a workspace operation queue, reconciles before queries,
 and awaits synchronization after recorded edits. Both forms of `init` use it.
-Agent navigation tools in `core` will use its public API, and the server will
-manage graph instances for active workspaces. See
+The server lazily acquires a workspace coordinator on first graph use and
+retains its lease until shutdown. Palette `/init` uses this service; ordinary
+chat opens no graph. Agent navigation tools in `core` will use the bound service. See
 [packages/graph/README.md](packages/graph/README.md) for the package boundary.
 
 Direct dependencies use exact versions. If a package is used by more than one workspace, keep its declared version identical in each workspace. The root `package-lock.json` records the resolved dependency tree.

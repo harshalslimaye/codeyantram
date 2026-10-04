@@ -5,6 +5,7 @@ import {afterEach, describe, expect, it, vi} from 'vitest';
 import {getUserGraphDirectory} from '@codeyantram/shared';
 import {openWorkspaceGraph, resolveGraphStoragePaths} from '@codeyantram/graph';
 import {initializeGraphForUI, runInit} from '../../src/lib/init.js';
+import {WorkspaceGraphService} from '@codeyantram/server';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
   ...await importOriginal<typeof import('@codeyantram/shared')>(),
@@ -55,7 +56,10 @@ describe('init command with the installed CodeGraph SDK', () => {
       expect(refreshed.search('updatedSymbol')[0]?.symbol.filePath).toBe('entry.ts');
       expect(refreshed.search('addedSymbol')[0]?.symbol.filePath).toBe('added.ts');
     } finally {await refreshed.close();}
-    expect(await initializeGraphForUI(root, new AbortController().signal, vi.fn())).toMatch(/^Graph ready: 2 files,/);
+    const service = new WorkspaceGraphService(root);
+    try {
+      expect(await initializeGraphForUI(options => service.initialize(options), new AbortController().signal, vi.fn())).toMatch(/^Graph ready: 2 files,/);
+    } finally {await service.close();}
     await expect(stat(path.join(root, 'codegraph.json'))).rejects.toMatchObject({code: 'ENOENT'});
     await expect(stat(path.join(root, '.codegraph'))).rejects.toMatchObject({code: 'ENOENT'});
     expect(stderr.write).not.toHaveBeenCalled();

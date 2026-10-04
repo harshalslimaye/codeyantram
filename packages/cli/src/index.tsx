@@ -45,7 +45,7 @@ async function main() {
 		try {
 			const app = render(
 				<MouseProvider value={terminalInput}>
-					<App registry={registry} initialThemeId={theme.theme.id} initialModelPreferences={modelPreferences} serverBaseUrl={server.baseUrl} workspaceRoot={workspaceRoot} />
+					<App registry={registry} initialThemeId={theme.theme.id} initialModelPreferences={modelPreferences} serverBaseUrl={server.baseUrl} workspaceRoot={workspaceRoot} initializeGraph={server.initializeGraph} />
 				</MouseProvider>,
 				{stdin: terminalInput.stdin, alternateScreen: true},
 			);

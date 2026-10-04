@@ -3,12 +3,45 @@
 Run `npm run start:server` from the repository root, or
 `npm start --workspace=@codeyantram/server`. The server binds to `127.0.0.1`
 on port `43187`; `CODEYANTRAM_PORT` overrides the port. Stopping the process
-closes active connections and cancels their model requests.
+closes active connections, cancels their model requests, and drains graph work
+before releasing its workspace lease. The standalone workspace is the npm
+invocation directory (`INIT_CWD`), or the process directory on direct launches.
 
 `@codeyantram/server` also exports `createApp()` without opening a listening
 socket. Tests can supply `readConfig`, `streamChat`, and `compactChat` through its options.
 The CLI uses `createApp()` to start its own server on a temporary localhost port
 and closes it when the CLI exits. The standalone server is not required for CLI chat.
+
+## Workspace graph lifetime
+
+Pass the host-selected `workspaceRoot` to `createApp()`. The returned Express
+application has `workspaceGraph`, a `WorkspaceGraphService`, and an asynchronous
+`close()` for application resources. A host that manages its own HTTP server
+must close both it and the application; `createServerShutdown(server, () =>
+app.close())` provides an idempotent combined shutdown function. The CLI and
+standalone entry point both use it, including startup-error cleanup.
+
+The service acquires a coordinator lease on the first `initialize()`, `query()`,
+or `edit()` call. Concurrent requests share that acquisition and the workspace
+operation queue. Opening the app, reading service status, and ordinary chat do
+not open SQLite or trigger indexing. A failed acquisition can be retried.
+The service retains its lease after each operation; cancellation does not
+release it. Startup catch-up occurs on first graph use, when initialization
+builds a missing/incomplete/outdated baseline or reconciliation scans an
+existing graph before navigation.
+
+Palette `/init` uses the CLI server's bound service directly in the same process,
+with progress and cancellation callbacks. It creates no additional HTTP endpoint
+and makes no provider request. The standalone `npm run cli -- init` command
+continues to own and release its own lease without starting a server.
+
+Shutdown rejects new graph work and aborts server-owned operations, waits for
+acquisition and in-flight operations to settle, and releases the server's lease.
+Edit reconciliation uses the coordinator's independent cleanup signal and
+finishes before that release. Servers sharing a canonical root in one process
+share a coordinator; closing one server releases only its own lease. Separate
+processes retain their own queues and use the SDK's database write locks.
+There is no watcher yet; manual edits are reconciled before queries.
 
 ## POST /chat
 

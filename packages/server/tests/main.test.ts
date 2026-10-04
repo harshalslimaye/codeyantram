@@ -1,7 +1,7 @@
 import {EventEmitter} from 'node:events';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
-const mocks = vi.hoisted(() => ({createApp: vi.fn(), listen: vi.fn()}));
+const mocks = vi.hoisted(() => ({createApp: vi.fn(), listen: vi.fn(), closeApp: vi.fn()}));
 vi.mock('../src/app.js', () => ({createApp: mocks.createApp}));
 
 let server: EventEmitter & {close: ReturnType<typeof vi.fn>; closeAllConnections: ReturnType<typeof vi.fn>};
@@ -13,8 +13,9 @@ beforeEach(() => {
   vi.resetAllMocks();
   previousExitCode = process.exitCode;
   signalHandlers = [];
-  server = Object.assign(new EventEmitter(), {close: vi.fn(), closeAllConnections: vi.fn()});
-  mocks.createApp.mockReturnValue({listen: mocks.listen});
+  server = Object.assign(new EventEmitter(), {close: vi.fn((callback: (error?: Error) => void) => callback()), closeAllConnections: vi.fn()});
+  mocks.closeApp.mockResolvedValue(undefined);
+  mocks.createApp.mockReturnValue({listen: mocks.listen, close: mocks.closeApp});
   mocks.listen.mockImplementation((_port: number, _host: string, onListening: () => void) => {
     queueMicrotask(onListening);
     return server;
@@ -41,6 +42,7 @@ describe('standalone server entry point', () => {
     vi.stubEnv('CODEYANTRAM_PORT', undefined);
     await import('../src/main.js');
     expect(mocks.createApp).toHaveBeenCalledOnce();
+    expect(mocks.createApp).toHaveBeenCalledWith({workspaceRoot: process.env.INIT_CWD ?? process.cwd()});
     expect(mocks.listen).toHaveBeenCalledExactlyOnceWith(43187, '127.0.0.1', expect.any(Function));
     expect(process.stdout.write).toHaveBeenCalledExactlyOnceWith('Codeyantram server listening at http://127.0.0.1:43187\n');
     expect(process.stderr.write).not.toHaveBeenCalled();
@@ -80,5 +82,6 @@ describe('standalone server entry point', () => {
     expect(server.close).toHaveBeenCalledOnce();
     expect(server.closeAllConnections).toHaveBeenCalledOnce();
     expect(server.close.mock.invocationCallOrder[0]).toBeLessThan(server.closeAllConnections.mock.invocationCallOrder[0]!);
+    await vi.waitFor(() => expect(mocks.closeApp).toHaveBeenCalledOnce());
   });
 });

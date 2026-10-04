@@ -23,6 +23,7 @@ let graph: {
 const makeOutput = () => ({write: vi.fn<(chunk: string) => boolean>(() => true)});
 let stdout: ReturnType<typeof makeOutput>;
 let stderr: ReturnType<typeof makeOutput>;
+let coordinator: GraphCoordinator;
 
 const text = (stream: typeof stdout) => stream.write.mock.calls.map(([chunk]) => String(chunk)).join('');
 
@@ -34,7 +35,7 @@ beforeEach(() => {
     sync: vi.fn().mockResolvedValue({success: true, filesAdded: 1, filesModified: 1, filesRemoved: 0, failedFilePaths: []}),
     close: vi.fn().mockResolvedValue(undefined),
   };
-  const coordinator = new GraphCoordinator(graph as unknown as CoordinatedGraph);
+  coordinator = new GraphCoordinator(graph as unknown as CoordinatedGraph);
   vi.mocked(acquireGraphCoordinator).mockResolvedValue({coordinator, release: () => coordinator.close()});
   stdout = makeOutput();
   stderr = makeOutput();
@@ -52,9 +53,10 @@ describe('graph init command', () => {
       options.onProgress({phase: 'parsing', current: 1, total: 2});
       return report;
     });
-    expect(await initializeGraphForUI(workspace, controller.signal, progress)).toBe('Graph ready: 2 files, 4 symbols, 3 relationships.');
+    expect(await initializeGraphForUI(options => coordinator.initialize(options), controller.signal, progress)).toBe('Graph ready: 2 files, 4 symbols, 3 relationships.');
     expect(progress).toHaveBeenCalledExactlyOnceWith('Indexing graph · parsing: 1/2');
-    expect(graph.close).toHaveBeenCalledOnce();
+    expect(graph.close).not.toHaveBeenCalled();
+    await coordinator.close();
     expect(process.listeners('SIGINT')).toEqual(before);
   });
 
@@ -62,12 +64,15 @@ describe('graph init command', () => {
     graph.index.mockResolvedValue({...report, success: false, state: 'partial', filesErrored: 1,
       errors: [{severity: 'error', filePath: 'src/bad.ts', message: 'Could not read source.'}],
     });
-    await expect(initializeGraphForUI(workspace, new AbortController().signal, vi.fn())).rejects.toThrow('src/bad.ts');
-    expect(graph.close).toHaveBeenCalledOnce();
+    await expect(initializeGraphForUI(options => coordinator.initialize(options), new AbortController().signal, vi.fn())).rejects.toThrow('src/bad.ts');
+    expect(graph.close).not.toHaveBeenCalled();
+    await coordinator.close();
   });
 
   it('cancels UI initialization before opening if the signal is already aborted', async () => {
-    await expect(initializeGraphForUI(workspace, AbortSignal.abort(), vi.fn())).rejects.toThrow();
+    const initialize = vi.fn();
+    await expect(initializeGraphForUI(initialize, AbortSignal.abort(), vi.fn())).rejects.toThrow();
+    expect(initialize).not.toHaveBeenCalled();
     expect(acquireGraphCoordinator).not.toHaveBeenCalled();
   });
 

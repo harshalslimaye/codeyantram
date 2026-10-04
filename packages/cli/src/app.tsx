@@ -5,9 +5,8 @@ import {getGitBranch} from './lib/utils.js';
 import {ThemeProvider} from './theme/provider.js';
 import {KeyboardProvider} from './keyboard/provider.js';
 import type {ThemeRegistry} from './theme/registry/registry.js';
-import {ChatSession} from './chat/session.js';
+import {ChatSession, type InitTransport} from './chat/session.js';
 import {requestChat, requestCompact} from './chat/client.js';
-import {initializeGraphForUI} from './lib/init.js';
 
 export function App({
 	registry,
@@ -15,12 +14,14 @@ export function App({
 	initialModelPreferences,
 	serverBaseUrl,
 	workspaceRoot,
+	initializeGraph,
 }: {
 	registry: ThemeRegistry;
 	initialThemeId: string;
 	initialModelPreferences: ModelPreferences;
 	serverBaseUrl: string;
 	workspaceRoot: string;
+	initializeGraph: InitTransport;
 }) {
 	const [modelPreferences, setModelPreferences] = useState(initialModelPreferences);
 	const selectedModel: SupportedChatModelDefinition | undefined = findSupportedChatModel(modelPreferences.modelId);
@@ -31,7 +32,7 @@ export function App({
 		return new ChatSession(
 			(request, signal) => requestChat(chatUrl, request, signal),
 			(request, signal) => requestCompact(compactUrl, request, signal),
-			(signal, onProgress) => initializeGraphForUI(workspaceRoot, signal, onProgress),
+			initializeGraph,
 		);
 	});
 	useEffect(() => () => session.cancel(), [session]);

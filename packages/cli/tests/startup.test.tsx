@@ -4,7 +4,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 const mocks = vi.hoisted(() => ({
 	loadThemes: vi.fn(), readThemePreference: vi.fn(), readModelPreferences: vi.fn(),
 	startChatServer: vi.fn(), createTerminalInput: vi.fn(), render: vi.fn(),
-	runInit: vi.fn(),
+	runInit: vi.fn(), initializeGraph: vi.fn(),
 	resolve: vi.fn(), dispose: vi.fn(), close: vi.fn(), unmount: vi.fn(), waitUntilExit: vi.fn(),
 }));
 vi.mock('ink', () => ({render: mocks.render}));
@@ -38,7 +38,7 @@ beforeEach(() => {
 	mocks.readThemePreference.mockResolvedValue('konkan');
 	mocks.readModelPreferences.mockResolvedValue(preferences);
 	mocks.resolve.mockReturnValue({selected: {theme: {id: 'konkan'}}, usedFallback: false});
-	mocks.startChatServer.mockResolvedValue({baseUrl: 'http://localhost:1234', close: mocks.close});
+	mocks.startChatServer.mockResolvedValue({baseUrl: 'http://localhost:1234', close: mocks.close, initializeGraph: mocks.initializeGraph});
 	mocks.createTerminalInput.mockReturnValue({stdin: 'filtered-input', dispose: mocks.dispose});
 	mocks.waitUntilExit.mockReturnValue(new Promise<void>((resolve, reject) => {finish = resolve; fail = reject;}));
 	mocks.unmount.mockImplementation(() => finish());
@@ -91,7 +91,7 @@ describe('CLI startup lifecycle', () => {
 		expect(options).toEqual({stdin: 'filtered-input', alternateScreen: true});
 		const workspaceRoot = await realpath(process.cwd());
 		expect(mocks.startChatServer).toHaveBeenCalledExactlyOnceWith({workspaceRoot});
-		expect(node.props.children.props).toEqual({registry, initialThemeId: 'konkan', initialModelPreferences: preferences, serverBaseUrl: 'http://localhost:1234', workspaceRoot});
+		expect(node.props.children.props).toEqual({registry, initialThemeId: 'konkan', initialModelPreferences: preferences, serverBaseUrl: 'http://localhost:1234', workspaceRoot, initializeGraph: mocks.initializeGraph});
 		finish();
 		await running;
 		expect(mocks.dispose).toHaveBeenCalledOnce();

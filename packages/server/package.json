@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@codeyantram/core": "0.0.0",
+    "@codeyantram/graph": "0.0.0",
     "@codeyantram/shared": "0.0.0",
     "express": "5.2.1"
   },

@@ -65,6 +65,7 @@ async function command(ui: UI, name: string, title: string) {
 	await vi.waitFor(() => expect(ui.frame()).toContain('Enter to send'));
 	ui.stdin.write(name);
 	await vi.waitFor(() => expect(ui.frame()).toContain('Commands ·'));
+	await ui.flush();
 	ui.stdin.write('\r');
 	await vi.waitFor(() => expect(ui.frame()).toContain(title));
 }
@@ -242,7 +243,7 @@ describe('model selection flow', () => {
 		const registry = createThemeRegistry([{source: 'builtin', themes: BUILTIN_THEMES.map(theme => ({source: 'builtin', theme}))}]);
 		const ui = renderTerminal(<App registry={registry} initialThemeId="konkan"
 			initialModelPreferences={{modelId: 'gpt-6.1-sol', effortByModel: {}}}
-			serverBaseUrl="http://localhost" workspaceRoot="/chosen/project" />);
+			serverBaseUrl="http://localhost" workspaceRoot="/chosen/project" initializeGraph={vi.fn()} />);
 		await vi.waitFor(() => expect(getGitBranch).toHaveBeenCalledWith('/chosen/project'));
 		expect(ui.frame()).toContain('project-branch');
 	});
@@ -255,7 +256,7 @@ describe('model selection flow', () => {
 		}));
 		vi.stubGlobal('fetch', fetchResponse);
 		const ui = renderTerminal(<App registry={registry} initialThemeId="konkan"
-			initialModelPreferences={{modelId: 'gemma-4-31b-it', effortByModel: {}}} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} />);
+			initialModelPreferences={{modelId: 'gemma-4-31b-it', effortByModel: {}}} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} initializeGraph={vi.fn()} />);
 		await vi.waitFor(() => expect(ui.frame()).toContain('Enter to send'));
 		ui.stdin.write('/model');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Commands ·'));

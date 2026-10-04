@@ -3,8 +3,9 @@
 This is the implementation strategy. The graph workspace now provides global
 storage paths, a workspace-bound SDK adapter, and a synchronization coordinator.
 The CLI and palette `init` commands build or refresh the selected project's
-global index through that coordinator. Agent tools, watchers, and server-owned
-graph lifetime are not implemented.
+global index through that coordinator. The server now owns a lazy workspace
+lease and drains graph work on shutdown; palette `init` uses that service.
+Agent tools and watchers are not implemented.
 
 ## Package responsibilities
 
@@ -184,8 +185,9 @@ adapter supports explicit indexing, reopening, sync reports, queries, and
 draining resource cleanup. See the package README for its current API and the
 [upstream directory implementation](https://github.com/colbymchenry/codegraph/blob/main/src/directory.ts).
 
-Open or initialize the workspace index once and establish its initial baseline
-before enabling navigation. Track readiness, pending operations, sync failures,
+The server acquires one workspace lease on first graph use; opening a chat
+session does not index or open SQLite. Establish the initial baseline and
+reconcile before enabling navigation. Track readiness, pending operations, sync failures,
 and a service-local epoch plus revision counter. These counters identify our
 responses; they are not a cross-process database transaction version.
 
