@@ -8,6 +8,7 @@ import {
 	type CompactStreamEvent,
 	type EffortLevel,
 	type TokenUsage,
+	toolCallSchema, toolResultSchema,
 } from '@codeyantram/shared';
 import {buildChatContext, estimateContextTokens, getContextStatus, type ContextStatus, type CompactedContext, type ConversationMessage} from './context.js';
 import {assessCompactionReduction, getCompactionSizeError, planCompaction, type CompactionPlan} from './compaction.js';
@@ -203,6 +204,7 @@ export class ChatSession {
 
 		try {
 			let terminal = false;
+			const pendingTools = new Map<string, string>();
 			if (this.controller !== controller) return;
 			for await (const event of this.transport(request, controller.signal)) {
 				if (this.controller !== controller) return;
@@ -211,10 +213,25 @@ export class ChatSession {
 					updateAssistant(message => ({...message, id: event.messageId}));
 					assistantId = event.messageId;
 				} else if (event.type === 'text-delta') {
-					updateAssistant(message => ({...message, parts: [{
-						type: 'text', text: message.parts.map(part => part.text).join('') + event.text,
-					}]}));
+					updateAssistant(message => {
+						const parts = [...message.parts];
+						const last = parts.at(-1);
+						if (last?.type === 'text') parts[parts.length - 1] = {...last, text: last.text + event.text};
+						else parts.push({type: 'text', text: event.text});
+						return {...message, parts};
+					});
+				} else if (event.type === 'tool-call') {
+					const call = toolCallSchema.parse(event.call);
+					if (pendingTools.has(call.toolCallId) || this.state.messages.some(message => message.parts.some(part => part.type === 'tool-call' && part.call.toolCallId === call.toolCallId))) throw new Error('Duplicate tool call ID.');
+					pendingTools.set(call.toolCallId, call.toolName);
+					updateAssistant(message => ({...message, parts: [...message.parts, {type: 'tool-call', call}]}));
+				} else if (event.type === 'tool-result') {
+					const result = toolResultSchema.parse(event.result);
+					if (pendingTools.get(result.toolCallId) !== result.toolName) throw new Error('Tool result did not match a pending call.');
+					pendingTools.delete(result.toolCallId);
+					updateAssistant(message => ({...message, parts: [...message.parts, {type: 'tool-result', result}]}));
 				} else if (event.type === 'done') {
+					if (pendingTools.size) throw new Error('The chat completed with unresolved tool calls.');
 					updateAssistant(message => ({...message, status: 'complete', usage: event.usage}));
 					terminal = true;
 					break;

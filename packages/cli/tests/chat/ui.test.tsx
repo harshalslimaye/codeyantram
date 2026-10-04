@@ -1,3 +1,4 @@
+import {requireTextPart} from '../helpers/message-parts.js';
 import React, {useState, type ReactNode} from 'react';
 import {PassThrough} from 'node:stream';
 import {render, type Instance} from 'ink';
@@ -151,6 +152,30 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
+	it('shows navigation activity and completion without dumping source results', async () => {
+		let finish!: () => void;
+		const pending = new Promise<void>(resolve => {finish = resolve;});
+		const session = new ChatSession(async function* () {
+			yield {type: 'start', messageId: 'tool-ui-1'};
+			yield {type: 'tool-call', call: {toolCallId: 'c1', toolName: 'explore', input: {query: 'greet'}}};
+			await pending;
+			yield {type: 'tool-result', result: {toolCallId: 'c1', toolName: 'explore', status: 'success', output: {source: 'LARGE_HISTORICAL_SOURCE'}}};
+			yield {type: 'text-delta', text: 'Found greet in entry.ts.'};
+			yield {type: 'done', durationMs: 1};
+		});
+		const ui = renderWorkspace(session);
+		const sending = session.send('Locate greet', 'gpt-6.1-sol');
+		try {
+			await vi.waitFor(() => expect(ui.frame()).toContain('Tool explore'));
+			expect(ui.frame()).toContain('greet');
+			expect(session.getSnapshot().isStreaming).toBe(true);
+		} finally {finish();}
+		await sending;
+		await vi.waitFor(() => expect(ui.frame()).toContain('explore · completed'));
+		expect(ui.frame()).toContain('Found greet in entry.ts.');
+		expect(ui.frame()).not.toContain('LARGE_HISTORICAL_SOURCE');
+	});
+
 	it.each([false, true])('executes /init exactly once without sending chat text (palette dismissed=%s)', async dismissPalette => {
 		const ui = renderInput();
 		ui.stdin.write('/init');
@@ -303,7 +328,7 @@ describe('CLI chat UI', () => {
 		for (let step = 0; step < 25; step++) ui.wheel('up');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));
 		expect(ui.frame()).toContain('█▀▀ █▀█ █▀▄ █▀▀');
-		expect(chat.mock.calls[0]![0].messages.map(message => message.parts[0]?.text)).toEqual(['First question.']);
+		expect(chat.mock.calls[0]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['First question.']);
 		ui.stdout.rows = 12;
 		ui.stdout.emit('resize');
 		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(12));
@@ -401,7 +426,7 @@ describe('CLI chat UI', () => {
 		expect(ui.chatRequests).toHaveLength(3);
 		expect(ui.compactRequests).toHaveLength(1);
 		expect(ui.compactRequests[0]).toMatchObject({model: preferences.modelId});
-		expect(ui.compactRequests[0]!.messages.map(message => message.parts[0]?.text)).toEqual(original.slice(0, 2).map(message => message.parts[0]?.text));
+		expect(ui.compactRequests[0]!.messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(original.slice(0, 2).map(message => message.parts.map(requireTextPart)[0]?.text));
 		expect(ui.frame()).not.toContain('Waiting for response');
 		ui.complete();
 		await vi.waitFor(() => expect(ui.frame()).toContain('Compacted 2 messages'));
@@ -426,7 +451,7 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Answer 4'));
 		expect(ui.chatRequests[3]).toMatchObject({contextSummary: compactResult.summary});
-		expect(ui.chatRequests[3]!.messages.map(message => message.parts[0]?.text)).toEqual(['Question 2', 'Answer 2', 'Question 3', 'Answer 3', 'Follow up']);
+		expect(ui.chatRequests[3]!.messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Question 2', 'Answer 2', 'Question 3', 'Answer 3', 'Follow up']);
 		expect(ui.frame()).toContain('Context: compacted · 3 recent turns');
 		ui.stdin.write('/clear');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Commands ·'));
@@ -450,7 +475,7 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('Answer 4'));
 		expect(ui.chatRequests[3]).not.toHaveProperty('contextSummary');
 		expect(ui.chatRequests[3]!.messages).toHaveLength(7);
-		expect(ui.chatRequests[3]!.messages[1]?.parts[0]?.text).toContain('ARCHIVED_HISTORY');
+		expect(ui.chatRequests[3]!.messages[1]?.parts.map(requireTextPart)[0]?.text).toContain('ARCHIVED_HISTORY');
 	});
 
 	it('aborts an active command compaction when the App unmounts', async () => {
@@ -542,7 +567,7 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('Follow up'));
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Answer 2'));
-		expect(requests[1]?.messages.map(message => message.parts[0]?.text)).toEqual(['First question', 'Answer 1', 'Follow up']);
+		expect(requests[1]?.messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['First question', 'Answer 1', 'Follow up']);
 		ui.stdin.write('/clear');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Commands'));
 		ui.stdin.write('\r');
@@ -565,10 +590,10 @@ describe('CLI chat UI', () => {
 		expect(ui.frame()).toContain('* First item');
 		expect(ui.frame()).toContain('Docs (https://example.com)');
 		expect(ui.frame()).not.toContain('# Result');
-		expect(session.getSnapshot().messages[1]?.parts[0]?.text).toBe(markdown);
+		expect(session.getSnapshot().messages[1]?.parts.map(requireTextPart)[0]?.text).toBe(markdown);
 		await session.send('Continue.', preferences.modelId);
 		await ui.flush();
-		expect(chat.mock.calls[1]![0].messages[1]?.parts[0]?.text).toBe(markdown);
+		expect(chat.mock.calls[1]![0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe(markdown);
 	});
 
 	it('renders fragmented streamed code and tables while scrolling and resizing above the fixed footer', async () => {
@@ -681,9 +706,9 @@ describe('CLI chat UI', () => {
 		ui.stdout.emit('resize');
 		await ui.flush();
 		ui.stdin.write('\r');
-		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toBe('NEW_REPLY_2'));
+		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('NEW_REPLY_2'));
 		await ui.flush();
-		expect(chat.mock.calls[1]![0].messages.map(message => message.parts[0]?.text)).toEqual(['ORIGINAL_QUESTION', answer, 'Next question']);
+		expect(chat.mock.calls[1]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['ORIGINAL_QUESTION', answer, 'Next question']);
 		const beforeClear = ui.output().length;
 		session.clear();
 		await vi.waitFor(() => expect(ui.output().slice(beforeClear)).toContain('Type a message'));
@@ -692,7 +717,7 @@ describe('CLI chat UI', () => {
 		expect(ui.output().slice(beforeClear)).toContain('FRESH_QUESTION');
 		expect(ui.output().slice(beforeClear)).toContain('NEW_REPLY_3');
 		expect(ui.output().slice(beforeClear)).not.toContain('ORIGINAL_QUESTION');
-		expect(chat.mock.calls[2]![0].messages.map(message => message.parts[0]?.text)).toEqual(['FRESH_QUESTION']);
+		expect(chat.mock.calls[2]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['FRESH_QUESTION']);
 	});
 
 	it.each(['cancelled', 'failed'] as const)('keeps %s partial output accessible by mouse after the next turn', async status => {
@@ -724,7 +749,7 @@ describe('CLI chat UI', () => {
 		for (let step = 0; step < 25; step++) ui.wheel('up');
 		await ui.flush();
 		expect(ui.output().slice(beforeScroll)).toContain('PARTIAL_ROW_1');
-		expect(chat.mock.calls[1]![0].messages[1]?.parts[0]?.text).toBe(partial);
+		expect(chat.mock.calls[1]![0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe(partial);
 	});
 
 	it('pins controls for empty and short conversations and ignores mouse scrolling over the footer or pickers', async () => {
@@ -778,7 +803,7 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('STREAM_ROW_1\n'));
 		const reading = ui.frame().split('\n').slice(0, 18).join('\n');
 		continueStream();
-		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toContain('NEW_STREAMED_OUTPUT'));
+		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toContain('NEW_STREAMED_OUTPUT'));
 		await ui.flush();
 		expect(ui.frame().split('\n').slice(0, 18).join('\n')).toBe(reading);
 		for (let step = 0; step < 25; step++) ui.wheel('down');

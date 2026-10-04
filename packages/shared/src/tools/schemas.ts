@@ -22,6 +22,8 @@ export const toolCallSchema = z.strictObject({
   toolCallId: toolCallIdSchema,
   toolName: toolNameSchema,
   input: toolInputSchema,
+  // Opaque provider replay data, including Gemini thought signatures.
+  providerOptions: z.record(z.string(), z.record(z.string(), z.json())).optional(),
 });
 
 export const toolErrorCodeSchema = z.enum([
@@ -31,6 +33,9 @@ export const toolErrorCodeSchema = z.enum([
   'execution_failed',
   'timeout',
   'cancelled',
+  'graph_unavailable',
+  'graph_stale',
+  'tool_limit',
 ]);
 
 export const toolErrorSchema = z.strictObject({
@@ -66,7 +71,7 @@ export const toolResultPartSchema = z.strictObject({
   result: toolResultSchema,
 });
 
-// These contracts are exported separately until chat can execute and replay tools.
+// Stored parts and streaming events share the same complete payloads.
 export const toolMessagePartSchema = z.discriminatedUnion('type', [
   toolCallPartSchema,
   toolResultPartSchema,

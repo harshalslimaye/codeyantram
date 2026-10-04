@@ -5,7 +5,7 @@ import type {
 } from './adapter.js';
 
 export type GraphReader = Pick<WorkspaceGraph,
-  'search' | 'getSymbol' | 'getSource' | 'getCallers' | 'getCallees'>;
+  'search' | 'getSymbol' | 'getSource' | 'getCallers' | 'getCallees' | 'explore'>;
 export type CoordinatedGraph = GraphReader & Pick<WorkspaceGraph,
   'storage' | 'getStatus' | 'index' | 'sync' | 'close'>;
 
@@ -219,6 +219,10 @@ export class GraphCoordinator {
         getSource: (...args) => {
           check(); const result = this.graph.getSource(...args); pending.push(result);
           // Also observe fire-and-forget failures until the callback drains.
+          void result.catch(() => {}); return result;
+        },
+        explore: (...args) => {
+          check(); const result = this.graph.explore(...args); pending.push(result);
           void result.catch(() => {}); return result;
         },
       };

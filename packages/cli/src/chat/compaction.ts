@@ -1,5 +1,5 @@
 import {Buffer} from 'node:buffer';
-import {findSupportedChatModel, toRequestMessage, type CompactMessage, type CompactRequest} from '@codeyantram/shared';
+import {findSupportedChatModel, type CompactMessage, type CompactRequest} from '@codeyantram/shared';
 import {
 	estimateContextTokens,
 	getContextStartIndex,
@@ -72,13 +72,11 @@ export function planCompaction(
 
 	const coveredMessageCount = turnStarts[turnStarts.length - KEEP_RECENT_TURNS]!;
 	const messages: CompactMessage[] = transcript.slice(start, coveredMessageCount)
-		.filter(message => message.parts.some(part => part.text.trim().length > 0))
+		.filter(message => message.parts.some(part => part.type !== 'text' || part.text.trim().length > 0))
 		.map((message): CompactMessage => {
-			const request = {...toRequestMessage(message), parts: message.parts.map(part => ({...part}))};
-			return message.role === 'assistant'
-				? {...request, role: 'assistant', status: message.status === 'cancelled' || message.status === 'failed'
-					? message.status : 'complete'}
-				: {...request, role: 'user'};
+			if (message.role === 'user') return {id: message.id, role: 'user', parts: message.parts.map(part => ({...part}))};
+			return {id: message.id, role: 'assistant', parts: message.parts.map(part => structuredClone(part)),
+				status: message.status === 'cancelled' || message.status === 'failed' ? message.status : 'complete'};
 		});
 	if (messages.length === 0) return {type: 'noop', reason: 'no-eligible-messages'};
 

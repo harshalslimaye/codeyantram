@@ -10,7 +10,7 @@ navigation tools, synchronization after edits, freshness rules, and implementati
 `openWorkspaceGraph(workspaceRoot)` opens persisted state or creates an empty
 SQLite index for an explicit workspace root. The adapter provides `index()` for
 full indexing, `sync()` for incremental reconciliation, `getStatus()`, `search()`,
-`getSymbol()`, `getSource()`, `getCallers()`, `getCallees()`, and asynchronous
+`getSymbol()`, `getSource()`, `getCallers()`, `getCallees()`, `explore()`, and asynchronous
 `close()`. Its results use graph-package types; callers do not receive the raw
 SDK instance. Search limits and traversal depths are bounded.
 
@@ -38,7 +38,8 @@ Opening the low-level adapter does not index or sync automatically. Callers must
 state and operation reports. Full indexing reports extraction errors and index
 completeness; sync reports failed paths and cancellation, and lock failures
 reject. Queries do not establish filesystem freshness themselves. The operation
-watcher and agent tools remain subsequent work. The CLI `init` command builds a missing/incomplete/outdated baseline or
+watcher remains subsequent work. Core exposes read-only `explore` and diagnostic
+`graph` tools through the server-bound service. The CLI `init` command builds a missing/incomplete/outdated baseline or
 incrementally syncs a complete index. `close()` rejects new work and drains admitted
 asynchronous operations before closing SQLite. Read caches are invalidated
 before queries so another instance's completed writes become visible.
@@ -103,12 +104,22 @@ Every successful reconciliation advances the local observation revision,
 including no-op syncs that might observe another process's completed writes.
 These are not stable symbol references or cross-process transaction versions.
 External notifications during a query reject its result. Unreported external
-writes during the callback are not an atomic filesystem snapshot; source
-fingerprint validation and durable symbol-reference rules belong to subsequent
-navigation tool work. SDK cross-process locks protect writes, but the operation
+writes during the callback are not an atomic filesystem snapshot. `explore()`
+checks each returned file's SHA-256 against its indexed content hash around
+source extraction and rejects mismatches with `GraphSourceChangedError`.
+Durable symbol-reference rules remain necessary before `inspect` and `trace`.
+SDK cross-process locks protect writes, but the operation
 queue itself is process-local. The server's lazy `WorkspaceGraphService` owns
 a lease for its selected root and drains its operations before releasing it
-on shutdown. Watchers and navigation tools remain subsequent work.
+on shutdown. Watchers and focused navigation tools remain subsequent work.
+
+`explore()` normalizes the pinned SDK's JSON `buildContext` string into graph
+types, keeps at most 20 symbols, 40 relationships, and five snippets (1,600
+characters each), and bounds total serialized context to 24,000 characters.
+Callers can request smaller budgets; defaults are 12 symbols and 12,000 characters.
+Snippets carry relative paths, symbol line ranges, file hashes, and individual
+truncation flags. Files over 1 MB are omitted. Context includes explicit indexed
+coverage and truncation; an empty result does not prove a symbol is absent.
 
 `resolveGraphStoragePaths(workspaceRoot)` resolves an existing directory to its
 canonical path and hashes that path to select storage under the user's global
@@ -149,8 +160,8 @@ be reconciled against their own working tree. Existing databases are opened
 without silently replacing invalid files. Database creation/opening, full
 indexing, and sync share the same global cross-process lock path.
 
-`core` will consume that API through agent navigation tools. The server will
-manage graph instances for active workspaces and their lifecycle. `shared`
+`core` consumes that API through agent navigation tools. The server
+manages graph instances for active workspaces and their lifecycle. `shared`
 continues to own wire contracts used by the CLI and server. The graph package
 does not own model calls, tool execution, HTTP routes, or terminal UI.
 

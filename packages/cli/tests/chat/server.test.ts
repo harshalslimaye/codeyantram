@@ -1,3 +1,4 @@
+import {requireTextPart} from '../helpers/message-parts.js';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {compactChat as coreCompactChat, streamChat as coreStreamChat, type compactChat, type streamChat} from '@codeyantram/core';
 import type {CompactRequest, CompactStreamEvent} from '@codeyantram/shared';
@@ -62,7 +63,7 @@ describe('CLI-owned chat server', () => {
 		expect(nextBody.input[0]).toMatchObject({role: 'user', content: [{text: expect.stringContaining(summary)}]});
 		expect(nextBody.input.slice(1).map((message: {content: string | {text: string}[]}) =>
 			typeof message.content === 'string' ? message.content : message.content.map(part => part.text).join(''),
-		)).toEqual([...transcript.slice(4).map(message => message.parts.map(part => part.text).join('')), 'NEXT_QUESTION']);
+		)).toEqual([...transcript.slice(4).map(message => message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part)).join('')), 'NEXT_QUESTION']);
 		expect(session.getSnapshot().messages.slice(0, 8)).toEqual(transcript);
 		expect(session.getSnapshot().error).toBeUndefined();
 	});
@@ -155,7 +156,7 @@ describe('CLI-owned chat server', () => {
 		expect(session.getSnapshot().error).toBeUndefined();
 		expect(session.getSnapshot().messages).toHaveLength(4);
 		expect(stream.mock.calls[1]![0]).toMatchObject({model: 'gemini-3.8-flash', effort: 'low'});
-		expect(stream.mock.calls[1]![0].messages.map(message => message.parts[0]?.text)).toEqual(['Hi', 'Answer 👋', 'Follow up']);
+		expect(stream.mock.calls[1]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Hi', 'Answer 👋', 'Follow up']);
 		expect(stream.mock.calls[1]![0].messages[1]).not.toHaveProperty('usage');
 		expect(stream.mock.calls[0]![1].credentials).toEqual({openai: 'test-openai'});
 		expect(stream.mock.calls[1]![1].credentials).toEqual({google: 'test-google'});
@@ -175,7 +176,7 @@ describe('CLI-owned chat server', () => {
 		});
 		const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
 		const sending = session.send('Hi', 'gpt-6.1-sol');
-		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toBe('Partial answer'));
+		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer'));
 		session.cancel();
 		await sending;
 		await vi.waitFor(() => expect(aborted).toHaveBeenCalledOnce());
@@ -197,7 +198,7 @@ describe('CLI-owned chat server', () => {
 		});
 		const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
 		const sending = session.send('Hi', 'gpt-6.1-sol');
-		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toBe('Partial answer'));
+		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer'));
 		servers.splice(servers.indexOf(server), 1);
 		await server.close();
 		await sending;

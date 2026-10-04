@@ -15,6 +15,28 @@ export const openaiEvents = [
   }}},
 ];
 
+export function openaiToolEvents(name = 'explore', input: unknown = {query: 'greet'}, id = 'call-1') {
+  const item = {type: 'function_call', id: `item-${id}`, call_id: id, name, arguments: JSON.stringify(input)};
+  return [
+    {type: 'response.created', response: {id: `response-${id}`, created_at: 1, model: 'gpt-6.1-sol'}},
+    {type: 'response.output_item.added', output_index: 0, item: {...item, arguments: '', status: 'in_progress'}},
+    {type: 'response.function_call_arguments.delta', item_id: item.id, output_index: 0, delta: item.arguments},
+    {type: 'response.output_item.done', output_index: 0, item: {...item, status: 'completed'}},
+    {type: 'response.completed', response: {usage: {input_tokens: 5, output_tokens: 3, total_tokens: 8}}},
+  ];
+}
+
+export function anthropicToolEvents(name = 'explore', input: unknown = {query: 'greet'}, id = 'call-1') {
+  return [
+    {type: 'message_start', message: {id: 'tool-message', model: 'claude-sonnet-5-5', role: 'assistant', usage: {input_tokens: 5, output_tokens: 0}}},
+    {type: 'content_block_start', index: 0, content_block: {type: 'tool_use', id, name, input: {}}},
+    {type: 'content_block_delta', index: 0, delta: {type: 'input_json_delta', partial_json: JSON.stringify(input)}},
+    {type: 'content_block_stop', index: 0},
+    {type: 'message_delta', delta: {stop_reason: 'tool_use'}, usage: {output_tokens: 3}},
+    {type: 'message_stop'},
+  ];
+}
+
 export const anthropicEvents = [
   {type: 'message_start', message: {
     id: 'message-1', model: 'claude-sonnet-5-5', role: 'assistant',

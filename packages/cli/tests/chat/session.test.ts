@@ -1,3 +1,4 @@
+import {requireTextPart} from '../helpers/message-parts.js';
 import {describe, expect, it, vi} from 'vitest';
 import type {ChatStreamEvent} from '@codeyantram/shared';
 import {ChatSession, type ChatTransport, type CompactTransport} from '../../src/chat/session.js';
@@ -53,7 +54,7 @@ describe('chat session', () => {
 		expect(session.getSnapshot().statusEntries[1]).toMatchObject({afterMessageCount: 2, status: {modelId: 'gpt-6.1-sol'}});
 		expect(session.getSnapshot().statusEntries[1]!.status.usedTokens).toBeGreaterThan(0);
 		await session.send('Follow up', 'gpt-6.1-sol');
-		expect(transport.mock.calls[1]![0].messages.map(message => message.parts[0]?.text)).toEqual(['Hi', 'Hello world', 'Follow up']);
+		expect(transport.mock.calls[1]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Hi', 'Hello world', 'Follow up']);
 		expect(session.getSnapshot().messages).toHaveLength(4);
 		session.clear();
 		expect(session.getSnapshot().statusEntries).toEqual([]);
@@ -83,7 +84,7 @@ describe('chat session', () => {
 		const session = new ChatSession(transport);
 		const updates: string[] = [];
 		const unsubscribe = session.subscribe(() => {
-			updates.push(session.getSnapshot().messages.at(-1)?.parts.map(part => part.text).join('') ?? '');
+			updates.push(session.getSnapshot().messages.at(-1)?.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part)).join('') ?? '');
 		});
 		await session.send('  Hi  ', 'gpt-6.1-sol', 'high');
 		expect(updates).toContain('Hello');
@@ -138,14 +139,14 @@ describe('chat session', () => {
 		});
 		const session = new ChatSession(transport);
 		const sending = session.send('Hi', 'gpt-6.1-sol');
-		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toBe('Partial answer'));
+		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer'));
 		session.cancel();
 		await sending;
 		expect(session.getSnapshot()).toMatchObject({isStreaming: false, notice: expect.stringContaining('cancelled')});
 		expect(session.getSnapshot().error).toBeUndefined();
 		transport.mockImplementation(successfulTransport());
 		await session.send('Continue', 'gpt-6.1-sol');
-		expect(transport.mock.calls[1]![0].messages[1]?.parts[0]?.text).toBe('Partial answer');
+		expect(transport.mock.calls[1]![0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer');
 	});
 
 	it('clears a pending turn without allowing its late cleanup to replace a new conversation', async () => {
@@ -161,8 +162,8 @@ describe('chat session', () => {
 		finish();
 		await sending;
 		expect(session.getSnapshot().messages).toHaveLength(2);
-		expect(session.getSnapshot().messages[0]?.parts[0]?.text).toBe('New question');
-		expect(session.getSnapshot().messages[1]?.parts[0]?.text).toBe('Hello world');
+		expect(session.getSnapshot().messages[0]?.parts.map(requireTextPart)[0]?.text).toBe('New question');
+		expect(session.getSnapshot().messages[1]?.parts.map(requireTextPart)[0]?.text).toBe('Hello world');
 		expect(session.getSnapshot().error).toBeUndefined();
 	});
 

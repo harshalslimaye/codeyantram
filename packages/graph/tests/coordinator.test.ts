@@ -20,6 +20,7 @@ function setup(options?: {cleanupTimeoutMs: number}) {
     getStatus: vi.fn().mockReturnValue(ready),
     index: vi.fn().mockResolvedValue(indexReport), sync: vi.fn().mockResolvedValue(syncReport),
     search: vi.fn().mockReturnValue([]), getSymbol: vi.fn().mockReturnValue(null),
+    explore: vi.fn(),
     getSource: vi.fn().mockResolvedValue(null), getCallers: vi.fn().mockReturnValue([]), getCallees: vi.fn().mockReturnValue([]),
     close: vi.fn().mockResolvedValue(undefined),
   };

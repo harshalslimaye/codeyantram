@@ -1,3 +1,4 @@
+import {requireTextPart} from '../helpers/message-parts.js';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {compactChat, streamChat} from '@codeyantram/core';
 import {formatContextSummary, toRequestMessage, type CompactRequest} from '@codeyantram/shared';
@@ -70,7 +71,7 @@ describe('compaction end-to-end regressions', () => {
     for (const turn of compactionScenario.turns) {
       await session.send(turn.user, model, 'high');
       expect(session.getSnapshot().error).toBeUndefined();
-      expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toBe(turn.assistant);
+      expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe(turn.assistant);
     }
     const transcript = session.getSnapshot().messages;
     const original = structuredClone(transcript);
@@ -83,8 +84,8 @@ describe('compaction end-to-end regressions', () => {
     for (const item of compactionEvaluationChecklist) {
       for (const literal of item.literals) expect(session.getSnapshot().compaction?.summary, item.criterion).toContain(literal);
     }
-    expect(compactRequests[0]!.messages.map(message => message.parts[0]?.text)).toEqual(
-      transcript.slice(0, 4).map(message => message.parts[0]?.text),
+    expect(compactRequests[0]!.messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(
+      transcript.slice(0, 4).map(message => message.parts.map(requireTextPart)[0]?.text),
     );
     expect(await session.compact(model)).toEqual({type: 'noop', reason: 'no-eligible-messages'});
     expect(compactRequests).toHaveLength(1);
@@ -93,7 +94,7 @@ describe('compaction end-to-end regressions', () => {
     expect(session.getSnapshot().error).toBeUndefined();
     expect(wireText(providerBodies.at(-1)!)).toEqual([
       formatContextSummary(compactionScenario.summary),
-      ...transcript.slice(4).flatMap(message => message.parts.map(part => part.text)),
+      ...transcript.slice(4).flatMap(message => message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part))),
       'Continue reviewing ordering; deployment remains prohibited.',
     ]);
     expect(await session.compact(nextModel)).toEqual({type: 'success'});
@@ -122,7 +123,7 @@ describe('compaction end-to-end regressions', () => {
     expect(session.getSnapshot().error).toBeUndefined();
     expect(wireText(providerBodies.at(-1)!)).toEqual([
       formatContextSummary(compactionScenario.refreshedSummary),
-      ...previous.messages.slice(6).flatMap(message => message.parts.map(part => part.text)),
+      ...previous.messages.slice(6).flatMap(message => message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part))),
       'Continue using the last good summary.',
     ]);
     session.clear();

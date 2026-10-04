@@ -5,7 +5,9 @@ storage paths, a workspace-bound SDK adapter, and a synchronization coordinator.
 The CLI and palette `init` commands build or refresh the selected project's
 global index through that coordinator. The server now owns a lazy workspace
 lease and drains graph work on shutdown; palette `init` uses that service.
-Agent tools and watchers are not implemented.
+Read-only `explore` and diagnostic `graph` now execute through chat, stream
+activity to the CLI, and survive history replay and compaction. Focused queries,
+mutation tools, and watchers remain unimplemented.
 
 ## Package responsibilities
 
@@ -32,8 +34,8 @@ when the first tool is working end to end.
 
 | Tool | Proposed input | Result | Adapter implementation |
 | --- | --- | --- | --- |
-| `explore` | Question, optional symbol/file hints, bounded context budget | Relevant symbols, source locations and snippets, relationships, freshness, and truncation | `buildContext`, normalized by our adapter |
-| `graph` | No arguments | Lifecycle state, last successful reconciliation, pending changes, watcher health, and last sync failure | Coordinator state and available SDK diagnostics |
+| `explore` | Implemented: `query`, optional `maxNodes`/`maxCharacters` | Relevant symbols, verified source snippets, relationships, freshness, coverage, and truncation | JSON `buildContext`, normalized by our adapter |
+| `graph` | Implemented: empty object | Lifecycle state, last successful reconciliation, bounded pending changes, watcher disabled, and last sync failure | Cached service/coordinator state without opening the graph |
 | `find` | Query, bounded result limit | Candidate symbols and locations | `searchNodes` |
 | `inspect` | Revision-scoped symbol reference | Symbol metadata and source | `getNode` and `getCode`, subject to pinned-release verification |
 | `trace` | Symbol reference, direction (`callers`, `callees`, or `impact`), bounded depth/limit | Related symbols and relationship provenance | `getCallers`, `getCallees`, or `getImpactRadius` |

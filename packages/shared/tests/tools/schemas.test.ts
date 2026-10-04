@@ -146,14 +146,20 @@ describe('tool message parts and stream events', () => {
     expect(toolMessagePartSchema.safeParse(event).success).toBe(false);
   });
 
-  it('keeps tool-bearing data out of the text-only chat pipeline until integration', () => {
+  it('accepts complete assistant call/result pairs and events while rejecting user tools and orphaned replay', () => {
     for (const part of events) {
-      expect(chatStreamEventSchema.safeParse(part).success).toBe(false);
+      expect(chatStreamEventSchema.safeParse(part).success).toBe(true);
       for (const role of ['user', 'assistant']) {
         expect(chatRequestSchema.safeParse({
           model: 'gpt-6.1-sol', messages: [{id: 'message-1', role, parts: [part]}],
         }).success).toBe(false);
       }
     }
+    expect(chatRequestSchema.safeParse({model: 'gpt-6.1-sol', messages: [
+      {id: 'a1', role: 'assistant', parts: events.slice(0, 2)},
+    ]}).success).toBe(true);
+    expect(chatRequestSchema.safeParse({model: 'gpt-6.1-sol', messages: [
+      {id: 'a1', role: 'assistant', parts: [events[0], events[1], events[1]]},
+    ]}).success).toBe(false);
   });
 });

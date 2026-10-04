@@ -24,7 +24,8 @@ standalone entry point both use it, including startup-error cleanup.
 The service acquires a coordinator lease on the first `initialize()`, `query()`,
 or `edit()` call. Concurrent requests share that acquisition and the workspace
 operation queue. Opening the app, reading service status, and ordinary chat do
-not open SQLite or trigger indexing. A failed acquisition can be retried.
+not open SQLite or trigger indexing. Chat opens the graph only when the model
+calls `explore`; diagnostic `graph` reads cached status. A failed acquisition can be retried.
 The service retains its lease after each operation; cancellation does not
 release it. Startup catch-up occurs on first graph use, when initialization
 builds a missing/incomplete/outdated baseline or reconciliation scans an
@@ -59,6 +60,10 @@ Send `Content-Type: application/json` and a shared `ChatRequest`:
 
 Include previous user and assistant messages in `messages` for a continuing
 conversation. Effort is optional and must be supported by the selected model.
+Assistant parts may include complete `tool-call`/`tool-result` pairs; user parts
+are text-only. Duplicate IDs, mismatched results, and unresolved calls are rejected.
+The host-selected root enables core's `explore`/`graph` loop. Clients cannot
+select graph roots or storage through requests. There is no tool HTTP endpoint.
 The request body limit is 4 MB.
 An optional `contextSummary` supplies compacted historical context; core replays
 it as a labeled user message before `messages`.
@@ -83,6 +88,9 @@ data: {"type":"done","durationMs":20,"usage":{"inputTokens":10,"outputTokens":3}
 
 Core failures, including missing credentials and provider errors, are sent as
 an `error` event and end the stream. A `done` event also ends the stream.
+Navigation calls and results use `{type: 'tool-call', call}` and
+`{type: 'tool-result', result}` events between text deltas. Tool errors are results
+the model can act on; exhaustion of the six-step loop ends with `tool_limit`.
 SSE comments (`: keep-alive`) are sent every 15 seconds while waiting; clients
 should ignore comments. Writes wait for the socket to drain when necessary.
 Disconnecting the client aborts core generation and stops the heartbeat.
@@ -115,7 +123,7 @@ Send a shared `CompactRequest` as JSON:
 ```
 
 `previousSummary` is optional; `messages` contains only the newly selected
-historical prefix. Each message must contain nonblank text. Assistant status
+historical prefix. Each message must contain nonblank text or assistant tool parts. Assistant status
 can be `complete`, `cancelled`, or `failed` and is optional. Status is rejected
 on user messages. Summary strings must be nonblank and at most 12,000 characters.
 The endpoint shares `/chat`'s 4 MB body limit, per-request selected-provider

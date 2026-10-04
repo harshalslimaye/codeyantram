@@ -4,6 +4,7 @@ import {
 	formatContextSummary,
 	findSupportedChatModel,
 	toRequestMessage,
+	type MessagePart,
 	type AssistantMessage,
 	type ChatMessage,
 	type ChatRequest,
@@ -61,7 +62,23 @@ export function buildChatContext(messages: readonly ChatMessage[], compacted?: C
 	const context: ChatContext = {
 		messages: messages.slice(start)
 			.filter(message => message.parts.length > 0)
-			.map(message => ({...toRequestMessage(message), parts: message.parts.map(part => ({...part}))})),
+			.map(message => {
+				const request = toRequestMessage(message);
+				if (request.role === 'user') return {...request, parts: request.parts.map(part => ({...part}))};
+				// Interrupted turns retain pending calls for display. Close those
+				// calls explicitly in replay without claiming that a tool succeeded.
+				const parts: MessagePart[] = [];
+				const pending = new Map<string, string>();
+				for (const part of request.parts) {
+					parts.push(structuredClone(part));
+					if (part.type === 'tool-call') pending.set(part.call.toolCallId, part.call.toolName);
+					else if (part.type === 'tool-result') pending.delete(part.result.toolCallId);
+				}
+				for (const [toolCallId, toolName] of pending) parts.push({type: 'tool-result', result: {
+					toolCallId, toolName, status: 'error', error: {code: 'cancelled', message: 'The turn ended before this tool result was received. Execution outcome is unknown.'},
+				}});
+				return {...request, parts};
+			}),
 	};
 	if (compacted) context.contextSummary = compacted.summary;
 	return context;
@@ -78,7 +95,7 @@ export function estimateContextTokens(context: {
 }): number {
 	const textEstimate = (text: string) => Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
 	const messages = context.messages.reduce((total, message) =>
-		total + textEstimate(message.parts.map(part => part.text).join('')) + 6, 0);
+		total + textEstimate(message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part)).join('')) + 6, 0);
 	return messages + (context.contextSummary === undefined ? 0 : textEstimate(context.contextSummary) + 32);
 }
 

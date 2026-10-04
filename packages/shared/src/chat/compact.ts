@@ -5,7 +5,7 @@ import {
   chatModelIdSchema,
   contextSummarySchema,
   requestAssistantMessageSchema,
-  textPartSchema,
+  messagePartSchema,
   tokenUsageSchema,
   userMessageSchema,
 } from './schemas.js';
@@ -16,11 +16,11 @@ export const compactMessageSchema = z.discriminatedUnion('role', [
   // Status describes an assistant response; reject it on user-authored messages.
   userMessageSchema.extend({status: z.never().optional()}),
   requestAssistantMessageSchema.extend({
-    parts: z.array(textPartSchema).min(1),
+    parts: z.array(messagePartSchema).min(1),
     status: compactAssistantStatusSchema.optional(),
   }),
-]).refine(message => message.parts.some(part => part.text.trim().length > 0), {
-  message: 'A compaction message must contain nonblank text',
+]).refine(message => message.parts.some(part => part.type !== 'text' || part.text.trim().length > 0), {
+  message: 'A compaction message must contain nonblank text or tool parts',
   path: ['parts'],
 });
 

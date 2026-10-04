@@ -1,3 +1,4 @@
+import {requireTextPart} from '../helpers/message-parts.js';
 import {describe, expect, it} from 'vitest';
 import {Buffer} from 'node:buffer';
 import {compactRequestSchema, findSupportedChatModel, type CompactRequest} from '@codeyantram/shared';
@@ -120,7 +121,7 @@ describe('compaction planning', () => {
 		if (plan.type !== 'ready') throw new Error('Expected eligible history');
 		expect(plan.coveredMessageCount).toBe(4);
 		expect(plan.messages.map(message => message.id)).toEqual(['u2']);
-		expect(plan.messages[0]?.parts[0]?.text).toBe(`  ${longText}  `);
+		expect(plan.messages[0]?.parts.map(requireTextPart)[0]?.text).toBe(`  ${longText}  `);
 		expect(planCompaction([user('u1', ''), user('u2'), user('u3')]))
 			.toEqual({type: 'noop', reason: 'no-eligible-messages'});
 	});
@@ -146,7 +147,7 @@ describe('compaction planning', () => {
 		const plan = planCompaction(transcript);
 		if (plan.type !== 'ready') throw new Error('Expected eligible history');
 		expect(plan.messages[1]).not.toHaveProperty('usage');
-		plan.messages[0]!.parts[0]!.text = 'Changed request';
+		plan.messages[0]!.parts.map(requireTextPart)[0]!.text = 'Changed request';
 		plan.messages[1]!.parts.push({type: 'text', text: 'Extra'});
 		expect(transcript).toEqual(original);
 	});
@@ -171,9 +172,9 @@ describe('compaction reduction and size guards', () => {
 	it('enforces the 4 MB body boundary on serialized UTF-8 requests', () => {
 		const request: CompactRequest = {model: 'gpt-6.1-sol', messages: [user('u1', '')]};
 		const overhead = Buffer.byteLength(JSON.stringify(request), 'utf8');
-		request.messages[0]!.parts[0]!.text = 'x'.repeat(MAX_COMPACT_REQUEST_BYTES - overhead);
+		request.messages[0]!.parts.map(requireTextPart)[0]!.text = 'x'.repeat(MAX_COMPACT_REQUEST_BYTES - overhead);
 		expect(getCompactionSizeError(request)).not.toContain('4 MB');
-		request.messages[0]!.parts[0]!.text += '👋';
+		request.messages[0]!.parts.map(requireTextPart)[0]!.text += '👋';
 		expect(getCompactionSizeError(request)).toContain('4 MB');
 	});
 
@@ -181,9 +182,9 @@ describe('compaction reduction and size guards', () => {
 		const request: CompactRequest = {model: 'claude-haiku-4-5-20251001', messages: [user('u1', '')]};
 		const overhead = Buffer.byteLength(JSON.stringify(request), 'utf8');
 		const window = findSupportedChatModel(request.model)!.contextWindow;
-		request.messages[0]!.parts[0]!.text = 'x'.repeat((window - COMPACTION_CONTEXT_MARGIN_TOKENS) * 4 - overhead);
+		request.messages[0]!.parts.map(requireTextPart)[0]!.text = 'x'.repeat((window - COMPACTION_CONTEXT_MARGIN_TOKENS) * 4 - overhead);
 		expect(getCompactionSizeError(request)).toBeUndefined();
-		request.messages[0]!.parts[0]!.text += 'x';
+		request.messages[0]!.parts.map(requireTextPart)[0]!.text += 'x';
 		expect(getCompactionSizeError(request)).toContain('context window');
 	});
 });

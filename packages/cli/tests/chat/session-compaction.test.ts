@@ -1,3 +1,4 @@
+import {requireTextPart} from '../helpers/message-parts.js';
 import {describe, expect, it, vi} from 'vitest';
 import {toRequestMessage, type CompactStreamEvent} from '@codeyantram/shared';
 import {ChatSession, type ChatSnapshot, type ChatTransport, type CompactTransport} from '../../src/chat/session.js';
@@ -329,7 +330,7 @@ describe('session compaction', () => {
 		});
 		const sending = session.send(longText, model);
 		if (status === 'cancelled') {
-			await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts[0]?.text).toBe('Partial work'));
+			await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('Partial work'));
 			session.cancel();
 		}
 		await sending;

@@ -1,9 +1,9 @@
 export {resolveGraphStoragePaths} from './storage.js';
 export type {GraphStoragePaths} from './storage.js';
-export {openWorkspaceGraph, WorkspaceGraph} from './adapter.js';
+export {openWorkspaceGraph, WorkspaceGraph, GraphSourceChangedError} from './adapter.js';
 export type {
   GraphSymbol, GraphSearchResult, GraphRelationship, GraphProgress, GraphIndexOptions,
-  GraphIndexReport, GraphSyncReport, GraphIndexState, GraphStatus,
+  GraphIndexReport, GraphSyncReport, GraphIndexState, GraphStatus, GraphExploreContext,
 } from './adapter.js';
 export {GraphCoordinator, GraphCoordinatorError} from './coordinator.js';
 export type {

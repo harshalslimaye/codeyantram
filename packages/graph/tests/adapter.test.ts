@@ -1,5 +1,5 @@
 import {mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile} from 'node:fs/promises';
-import {readFileSync} from 'node:fs';
+import {readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
@@ -51,6 +51,24 @@ async function sourceSnapshot() {
 }
 
 describe('real CodeGraph adapter', () => {
+  it('builds bounded context with verified snippets, locations, relationships, and explicit coverage', async () => {
+    const graph = await open(); await graph.index();
+    const context = await graph.explore('greet');
+    expect(context.symbols.some(symbol => symbol.name === 'greet')).toBe(true);
+    expect(context.snippets.some(snippet => snippet.text.includes('hello'))).toBe(true);
+    expect(context.snippets[0]).toMatchObject({filePath: expect.any(String), startLine: expect.any(Number), contentHash: expect.stringMatching(/^[a-f0-9]{64}$/)});
+    expect(context.coverage).toContain('Indexed scope only');
+    const bounded = await graph.explore('greet', {maxNodes: 1, maxCharacters: 2048});
+    expect(bounded.symbols.length).toBeLessThanOrEqual(1);
+    expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(2048);
+    expect(bounded.truncated).toBe(true);
+    const pending = graph.explore('greet');
+    writeFileSync(path.join(workspace, 'src/helper.ts'), 'export function greet() { return "changed during query"; }\n');
+    await expect(pending).rejects.toThrow('Source changed');
+    expect((await graph.sync()).success).toBe(true);
+    expect((await graph.explore('greet')).snippets.some(snippet => snippet.text.includes('changed during query'))).toBe(true);
+  }, 30_000);
+
   it('uses gitignore without generating project configuration during index, sync, or reopen', async () => {
     const before = await sourceSnapshot();
     const graph = await open();

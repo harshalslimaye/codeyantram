@@ -17,6 +17,7 @@
     "@ai-sdk/openai": "4.0.81",
     "@ai-sdk/openai-compatible": "3.0.60",
     "@codeyantram/shared": "0.0.0",
+    "@codeyantram/graph": "0.0.0",
     "ai": "7.0.123",
     "zod": "4.6.5"
   }

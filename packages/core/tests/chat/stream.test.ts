@@ -132,7 +132,7 @@ describe('streamChat provider integration', () => {
     expect(wrapper).toContain(input.contextSummary);
     expect(wrapper).toContain('End of historical conversation summary');
     expect(wireMessages.flatMap(message => message.texts).slice(1)).toEqual(
-      input.messages.flatMap(message => message.parts.map(part => part.text)),
+      input.messages.flatMap(message => message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part))),
     );
     expect(wireMessages.filter(message => message.role === 'assistant')).toEqual([
       {role: 'assistant', texts: ['Acknowledged.']},

@@ -19,9 +19,9 @@ The caller supplies a shared `ChatRequest` and a credentials map, such as
 `{openai: apiKey}`. Core does not read configuration files or environment API
 keys. An optional `fetch` implementation can intercept provider requests.
 
-Each consumed turn emits `start`, then text deltas, then `done` with duration
-and available token usage, or `error`. Reasoning output is ignored by this
-text-only contract. Requests are validated before calling a provider. Provider
+Each consumed turn emits `start`, text deltas and any tool calls/results, then
+`done` with duration and aggregate token usage, or `error`. Reasoning output is
+not displayed. Requests are validated before calling a provider. Provider
 errors use shared error codes and messages that omit raw request and response
 details. Calls are attempted once, with no automatic retries.
 
@@ -69,7 +69,7 @@ for await (const event of compactChat({
 }
 ```
 
-Each historical message must contain nonblank text. Assistant messages may
+Each historical message must contain nonblank text or assistant tool parts. Assistant messages may
 carry `complete`, `cancelled`, or `failed` status; omitted status means complete.
 The previous summary and messages are JSON source material in a user prompt,
 separate from the summarization instructions. The instructions ask for objective,
@@ -101,3 +101,32 @@ effort, or missing credentials. `streamChat` translates these into error events.
 
 Run `npm test -- --project core` from the repository root. Tests use the actual
 SDK with simulated HTTP responses and do not make live model requests.
+
+## Workspace navigation
+
+Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
+to enable `explore` and `graph`. Omitting it keeps chat without tool definitions.
+`createNavigationTools(service)` also exports the same definitions for host use;
+create a fresh set for each turn to reset the execution budget.
+
+`explore` accepts a nonblank query of at most 1,024 characters, optional
+`maxNodes` (1–20, default 12), and `maxCharacters` (2,048–24,000, default 12,000).
+It uses the service's reconciliation barrier and returns context plus observation
+freshness. `graph` takes an empty object and reads cached diagnostics, with at
+most 20 pending paths and sanitized error messages. It does not open or index
+the workspace. Arguments are strict; neither tool accepts a root or database.
+There is no watcher; every explore reconciles manual saves before reading.
+
+The loop allows six provider steps and twelve executions per turn. Results have
+an 80 KB serialized UTF-8 ceiling. A tool failure is a structured result the model
+can inspect; hitting the step limit ends the turn with `tool_limit`, not `done`.
+Cancellation reaches graph queries and ends without a terminal event. Source
+and tool outputs are labeled untrusted data in navigation instructions.
+
+Assistant history can interleave text, calls, and results. Replay converts them
+to SDK assistant/tool roles and preserves opaque provider options such as Gemini
+thought signatures. The CLI closes unresolved interrupted calls for replay
+with an error describing the unknown outcome. Compaction receives tool parts
+as historical JSON data and does not execute them. These behaviors are tested
+with provider HTTP fixtures and the installed graph SDK; no live tool turn has
+been evaluated by these tests.

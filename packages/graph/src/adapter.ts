@@ -1,4 +1,6 @@
-import {mkdir, stat} from 'node:fs/promises';
+import {mkdir, stat, readFile, realpath} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import path from 'node:path';
 import {createRequire} from 'node:module';
 import type {CodeGraph, IndexProgress, IndexResult, SyncResult, Node as CodeGraphNode} from '@colbymchenry/codegraph';
 import {resolveGraphStoragePaths, type GraphStoragePaths} from './storage.js';
@@ -27,6 +29,21 @@ export interface GraphRelationship {
   source: string;
   target: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface GraphExploreContext {
+  query: string;
+  summary: string;
+  symbols: GraphSymbol[];
+  relationships: {source: string; target: string; kind: string; metadata?: Record<string, unknown>}[];
+  snippets: {symbolId: string; filePath: string; startLine: number; endLine: number; contentHash: string; text: string; truncated: boolean}[];
+  relatedFiles: string[];
+  truncated: boolean;
+  coverage: string;
+}
+
+export class GraphSourceChangedError extends Error {
+  constructor() {super('Source changed while graph context was being assembled. Retry explore.'); this.name = 'GraphSourceChangedError';}
 }
 
 export interface GraphProgress {
@@ -235,6 +252,88 @@ export class WorkspaceGraph {
     this.assertQueryable();
     return this.backend.getCallees(id, boundedInteger(depth, 'Traversal depth', 5))
       .map(({node, edge}) => ({symbol: toSymbol(node), kind: edge.kind, source: edge.source, target: edge.target, metadata: edge.metadata}));
+  }
+
+  /** Bounded SDK context with fingerprints checked around sanitized source reads. */
+  explore(query: string, options: {maxNodes?: number; maxCharacters?: number} = {}): Promise<GraphExploreContext> {
+    this.assertQueryable();
+    if (!query.trim() || query.length > 1024) throw new Error('Explore requires between 1 and 1024 characters.');
+    const maxNodes = boundedInteger(options.maxNodes ?? 12, 'Explore node limit', 20);
+    const maxCharacters = boundedInteger(options.maxCharacters ?? 12_000, 'Explore context budget', 24_000);
+    if (maxCharacters < 2048) throw new Error('Explore context budget must be at least 2048 characters.');
+    return this.run(async () => {
+      const formatted = await this.backend.buildContext(query, {
+        format: 'json', includeCode: false, maxNodes, searchLimit: Math.min(maxNodes, 5), traversalDepth: 1,
+      });
+      // The SDK's JSON format is a string with arrays, not its raw TaskContext
+      // (whose subgraph contains a Map). Keep that format detail at the boundary.
+      if (typeof formatted !== 'string') throw new Error('Unexpected CodeGraph context format.');
+      const context = JSON.parse(formatted) as {
+        summary: string; nodes: CodeGraphNode[];
+        edges: {source: string; target: string; kind: string; line?: number; column?: number}[];
+      };
+      if (typeof context.summary !== 'string' || !Array.isArray(context.nodes) || !Array.isArray(context.edges)) {
+        throw new Error('Unexpected CodeGraph context structure.');
+      }
+      const result: GraphExploreContext = {
+        query, summary: context.summary.slice(0, 1024), symbols: [], relationships: [], snippets: [], relatedFiles: [],
+        truncated: context.nodes.length >= maxNodes,
+        coverage: 'Indexed scope only: gitignore, project configuration, and supported languages apply. Empty results do not prove absence.',
+      };
+      const fingerprints = new Map<string, string>();
+      const fingerprint = async (filePath: string) => {
+        const file = this.backend.getFile(filePath);
+        if (!file) throw new GraphSourceChangedError();
+        let absolute: string;
+        try {absolute = await realpath(path.resolve(this.storage.workspaceRoot, filePath));}
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new GraphSourceChangedError();
+          throw error;
+        }
+        const relative = path.relative(this.storage.workspaceRoot, absolute);
+        if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new GraphSourceChangedError();
+        if ((await stat(absolute)).size > 1024 * 1024) return null;
+        const hash = createHash('sha256').update(await readFile(absolute)).digest('hex');
+        if (hash !== file.contentHash) throw new GraphSourceChangedError();
+        return hash;
+      };
+      for (const node of context.nodes.slice(0, maxNodes)) {
+        const hash = fingerprints.get(node.filePath) ?? await fingerprint(node.filePath);
+        if (!hash) {result.truncated = true; continue;}
+        fingerprints.set(node.filePath, hash);
+        const symbol = toSymbol(node);
+        // Avoid returning unbounded docstrings/signatures alongside bounded code.
+        delete symbol.docstring;
+        if (symbol.signature) symbol.signature = symbol.signature.slice(0, 512);
+        result.symbols.push(symbol);
+        if (result.snippets.length < 5) {
+          const source = await this.backend.getCode(node.id);
+          if (source !== null) {
+            result.snippets.push({symbolId: node.id, filePath: node.filePath, startLine: node.startLine,
+              endLine: node.endLine, contentHash: hash, text: source.slice(0, 1600), truncated: source.length > 1600});
+            if (source.length > 1600) result.truncated = true;
+          }
+        } else {result.truncated = true;}
+      }
+      for (const [file, hash] of fingerprints) if (await fingerprint(file) !== hash) throw new GraphSourceChangedError();
+      const ids = new Set(result.symbols.map(symbol => symbol.id));
+      for (const edge of context.edges) {
+        if (!ids.has(edge.source) || !ids.has(edge.target)) continue;
+        if (result.relationships.length >= 40) {result.truncated = true; break;}
+        result.relationships.push({source: edge.source, target: edge.target, kind: edge.kind,
+          metadata: {...(edge.line === undefined ? {} : {line: edge.line}), ...(edge.column === undefined ? {} : {column: edge.column})}});
+      }
+      result.relatedFiles = [...new Set(result.symbols.map(symbol => symbol.filePath))];
+      while (JSON.stringify(result).length > maxCharacters) {
+        result.truncated = true;
+        if (result.snippets.length) result.snippets.pop();
+        else if (result.relationships.length) result.relationships.pop();
+        else if (result.symbols.length) {
+          result.symbols.pop(); result.relatedFiles = [...new Set(result.symbols.map(symbol => symbol.filePath))];
+        } else {result.summary = ''; break;}
+      }
+      return result;
+    });
   }
 
   /** Wait for admitted operations before closing SQLite; repeated closes share a promise. */

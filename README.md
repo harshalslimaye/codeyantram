@@ -18,7 +18,7 @@ Its coordinator shares a workspace operation queue, reconciles before queries,
 and awaits synchronization after recorded edits. Both forms of `init` use it.
 The server lazily acquires a workspace coordinator on first graph use and
 retains its lease until shutdown. Palette `/init` uses this service; ordinary
-chat opens no graph. Agent navigation tools in `core` will use the bound service. See
+chat without navigation opens no graph. Core's `explore` and `graph` tools use the bound service. See
 [packages/graph/README.md](packages/graph/README.md) for the package boundary.
 
 Direct dependencies use exact versions. If a package is used by more than one workspace, keep its declared version identical in each workspace. The root `package-lock.json` records the resolved dependency tree.
@@ -109,7 +109,8 @@ Compaction makes a separate paid model call. Available input/output and cache
 usage is reported separately from chat replies, including when a complete
 summary is rejected for insufficient reduction. Missing usage stays unknown.
 Token estimates use `ceil(UTF-8 text bytes / 4) + 6` per message, plus 32 tokens
-for a summary wrapper; they are not provider token counts or a context-fit
+for a summary wrapper. Tool parts count their serialized JSON bytes; these
+estimates are not provider token counts or a context-fit
 guarantee. Requests over 4 MB or estimated to exceed the selected model's window
 are rejected before generation. Try compacting earlier or using a larger-context
 model if the input is too large. Automatic compaction, session persistence, and
@@ -138,11 +139,12 @@ configuration paths, precedence, and the custom JSON format are documented in
 
 `@codeyantram/shared` exports tool schemas and their inferred TypeScript types
 from `packages/shared/src/tools`. Definitions currently describe metadata
-(`name` and `description`); per-tool argument schemas and executors will live
+(`name` and `description`); per-tool argument schemas and executors live
 with the tool implementations. Tool names use letters, digits, and underscores,
 start with a letter or underscore, and have a maximum length of 64 characters.
 
-A `ToolCall` carries `toolCallId`, `toolName`, and a JSON object `input`.
+A `ToolCall` carries `toolCallId`, `toolName`, and a JSON object `input`, plus
+optional opaque `providerOptions` required for replay by some providers.
 A `ToolResult` repeats the ID and name, with either `status: 'success'` and
 JSON `output`, or `status: 'error'` and a structured `{code, message}` error.
 Inputs and outputs reject non-JSON values, including nested `undefined`,
@@ -151,10 +153,20 @@ tool-specific input fields are preserved for validation by the implementation.
 The schemas validate individual payloads; matching results to outstanding calls
 and validating arguments against the selected tool belong to the execution layer.
 
-Stored parts and stream events share the shapes `{type: 'tool-call', call}` and
-`{type: 'tool-result', result}`. These contracts are exported separately from
-the existing text-only chat schemas until tool execution, history replay, and
-CLI rendering are integrated. No tool executors or agent loop are included yet.
+Stored assistant parts and stream events share the shapes
+`{type: 'tool-call', call}` and `{type: 'tool-result', result}`. User parts remain
+text-only. Chat validates paired calls/results, replays them to the provider,
+and preserves them in compaction. The CLI shows tool activity and completion
+without dumping source results into scrollback. Interrupted calls are closed
+for replay with an explicit unknown-outcome error.
+
+`explore({query, maxNodes?, maxCharacters?})` returns relevant symbols,
+relationships, and verified source snippets after synchronizing the selected
+workspace. It lazily builds the initial index if necessary. `graph({})` reports
+lifecycle, freshness, pending changes, and failures without opening SQLite.
+Both tools are read-only; arguments cannot change the selected root or storage.
+Navigation uses at most six provider steps and twelve executions per turn.
+`find`, `inspect`, `trace`, mutation tools, and filesystem watchers remain next steps.
 
 ## Tests
 

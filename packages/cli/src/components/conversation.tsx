@@ -42,7 +42,11 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 	const messageLines = useMemo(() => messages.map((message, index) => {
 		const pending = isStreaming && index === messages.length - 1 && message.role === 'assistant';
 		if (!message.parts.length && !pending) return [];
-		const text = message.parts.map(part => part.text).join('') || (pending ? 'Waiting for response…' : '');
+		const text = message.parts.map(part => {
+			if (part.type === 'text') return part.text;
+			if (part.type === 'tool-call') return `\nTool ${part.call.toolName} · ${JSON.stringify(part.call.input).slice(0, 160)}\n`;
+			return `\n${part.result.toolName} · ${part.result.status === 'error' ? part.result.error.message : 'completed'}\n`;
+		}).join('') || (pending ? 'Waiting for response…' : '');
 		return [
 			{kind: message.role, text: message.role === 'user' ? 'You' : 'Assistant'},
 			...renderMessage(message, text).map(text => ({kind: 'text', text})),

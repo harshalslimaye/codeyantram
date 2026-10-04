@@ -24,7 +24,9 @@ export function createApp(options: ServerAppOptions = {}) {
   const chatRouter = createChatRouter({
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),
     // Tests can supply a fake stream to avoid calling AI providers.
-    streamChat: options.streamChat ?? streamChat,
+    streamChat: (request, streamOptions) => (options.streamChat ?? streamChat)(request, {
+      ...streamOptions, ...(options.workspaceRoot ? {workspaceGraph} : {}),
+    }),
   });
   const compactRouter = createCompactRouter({
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),

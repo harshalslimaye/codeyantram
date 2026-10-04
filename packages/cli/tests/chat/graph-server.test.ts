@@ -3,8 +3,11 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {getUserGraphDirectory} from '@codeyantram/shared';
+import {streamChat as coreStreamChat} from '@codeyantram/core';
+import {sseResponse, openaiEvents, openaiToolEvents} from '../../../core/tests/chat/fixtures.js';
 import {startChatServer} from '../../src/chat/server.js';
 import {requestChat} from '../../src/chat/client.js';
+import {ChatSession} from '../../src/chat/session.js';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
   ...await importOriginal<typeof import('@codeyantram/shared')>(), getUserGraphDirectory: vi.fn(),
@@ -18,6 +21,58 @@ afterEach(async () => {
 });
 
 describe('CLI server graph lifetime with the installed SDK', () => {
+  it('executes navigation through provider, HTTP, and session history and reconciles manual edits before the next explore', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'codeyantram-tools-e2e-'));
+    const root = path.join(directory, 'project');
+    const global = path.join(directory, 'user-config', 'codeyantram', 'graphs');
+    vi.mocked(getUserGraphDirectory).mockReturnValue(global);
+    await mkdir(root);
+    const sourcePath = path.join(root, 'entry.ts');
+    await writeFile(sourcePath, 'export function greet() { return "initial source"; }\n');
+    const providerFetch = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(sseResponse(openaiToolEvents('graph', {}, 'diagnostic-1')))
+      .mockResolvedValueOnce(sseResponse(openaiEvents))
+      .mockResolvedValueOnce(sseResponse(openaiToolEvents('explore', {query: 'greet'}, 'explore-1')))
+      .mockResolvedValueOnce(sseResponse(openaiEvents))
+      .mockResolvedValueOnce(sseResponse(openaiToolEvents('explore', {query: 'greet'}, 'explore-2')))
+      .mockResolvedValueOnce(sseResponse(openaiEvents));
+    const server = await startChatServer({workspaceRoot: root,
+      readConfig: async () => ({providers: {openai: {apiKey: 'test-openai'}}}),
+      streamChat: (request, options) => coreStreamChat(request, {...options, fetch: providerFetch}),
+    }); servers.push(server);
+    const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
+    await session.send('Check graph status', 'gpt-6.1-sol');
+    expect(session.getSnapshot().error).toBeUndefined();
+    expect(server.workspaceGraph.getStatus().lifecycle).toBe('unopened');
+    await expect(stat(global)).rejects.toMatchObject({code: 'ENOENT'});
+    expect(JSON.stringify(session.getSnapshot().messages[1].parts)).toContain('before-every-query');
+
+    await session.send('Locate greet', 'gpt-6.1-sol');
+    expect(session.getSnapshot().error).toBeUndefined();
+    expect(server.workspaceGraph.getStatus()).toMatchObject({lifecycle: 'open', graph: {readiness: 'ready'}});
+    const first = session.getSnapshot().messages[3];
+    expect(first.parts.map(part => part.type)).toEqual(['tool-call', 'tool-result', 'text']);
+    expect(JSON.stringify(first.parts)).toContain('initial source');
+    const continuation = String(providerFetch.mock.calls[3][1]?.body);
+    expect(continuation).toContain('function_call_output');
+    expect(continuation).toContain('initial source');
+    expect(continuation).toMatch(/[a-f0-9]{64}/);
+
+    await writeFile(sourcePath, 'export function greet() { return "manually updated source"; }\n');
+    await session.send('Check greet again', 'gpt-6.1-sol');
+    expect(session.getSnapshot().error).toBeUndefined();
+    expect(JSON.stringify(session.getSnapshot().messages[5].parts)).toContain('manually updated source');
+    const replay = String(providerFetch.mock.calls[4][1]?.body);
+    expect(replay).toContain('explore-1');
+    expect(replay).toContain('initial source');
+    const updated = String(providerFetch.mock.calls[5][1]?.body);
+    expect(updated).toContain('explore-2');
+    expect(updated).toContain('manually updated source');
+    expect(providerFetch).toHaveBeenCalledTimes(6);
+    expect(await readdir(root)).toEqual(['entry.ts']);
+    expect(await readdir(global)).toHaveLength(1);
+  }, 30_000);
+
   it('leaves ordinary chat lazy, retains palette initialization, shares workspace leases, and catches up after reopening', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'codeyantram-server-graph-'));
     const root = path.join(directory, 'project');

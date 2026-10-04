@@ -1,3 +1,4 @@
+import {requireTextPart} from '../helpers/message-parts.js';
 import {describe, expect, it} from 'vitest';
 import {Buffer} from 'node:buffer';
 import {chatRequestSchema, formatContextSummary, toRequestMessage} from '@codeyantram/shared';
@@ -35,7 +36,7 @@ describe('chat context builder', () => {
 			contextSummary: '  Prior working state.\n ',
 			messages: transcript.slice(4).map(toRequestMessage),
 		});
-		expect(context.messages[1]?.parts[0]?.text).toBe('Partial answer');
+		expect(context.messages[1]?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer');
 	});
 
 	it('includes a newly appended user message after a fully covered transcript', () => {
@@ -56,7 +57,7 @@ describe('chat context builder', () => {
 	it('does not mutate history and isolates outgoing text parts from display history', () => {
 		const original = structuredClone(transcript);
 		const context = buildChatContext(transcript);
-		context.messages[0]!.parts[0]!.text = 'Changed request';
+		context.messages[0]!.parts.map(requireTextPart)[0]!.text = 'Changed request';
 		context.messages[0]!.parts.push({type: 'text', text: 'More text'});
 		expect(transcript).toEqual(original);
 	});
@@ -92,7 +93,7 @@ describe('context token estimates', () => {
 		const compacted = {summary: 'Preserve constraints.', coveredMessageCount: 4};
 		const status = getContextStatus('gemma-4-31b-it', transcript, compacted);
 		const changedArchive = structuredClone(transcript);
-		changedArchive[0]!.parts[0]!.text = 'Archived log.'.repeat(10_000);
+		changedArchive[0]!.parts.map(requireTextPart)[0]!.text = 'Archived log.'.repeat(10_000);
 		expect(getContextStatus('gemma-4-31b-it', changedArchive, compacted)).toEqual(status);
 		expect(status.usedTokens).toBeGreaterThan(getContextStatus('gemma-4-31b-it', transcript.slice(4)).usedTokens);
 	});
@@ -111,7 +112,7 @@ describe('context token estimates', () => {
 		expect(baseline).toBeGreaterThan(0);
 		expect(estimateContextTokens({messages, contextSummary: 'Prior decisions.'})).toBeGreaterThan(baseline);
 		const longer = structuredClone(messages);
-		longer[0]!.parts[0]!.text += '\n' + 'Additional source code.\n'.repeat(100);
+		longer[0]!.parts.map(requireTextPart)[0]!.text += '\n' + 'Additional source code.\n'.repeat(100);
 		expect(estimateContextTokens({messages: longer})).toBeGreaterThan(baseline);
 	});
 
