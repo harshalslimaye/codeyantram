@@ -5,11 +5,11 @@ import {CommandPalette} from './command-palette.js';
 import {ThemePicker} from './theme-picker.js';
 import {ModelPicker} from './model-picker.js';
 import {ProviderPicker} from './provider-picker.js';
+import {Help} from './help.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import type {EffortLevel} from '@codeyantram/shared';
 import type {ModelPreferences} from '../models/preferences.js';
-import {COMMANDS} from '../lib/commands.js';
 import type {SessionOperation} from '../chat/session.js';
 
 export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact}: {
@@ -23,6 +23,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 }) {
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
+	const [showHelp, setShowHelp] = useState(false);
 	const {palette, notice, noticeTone, setNotice} = useTheme();
 	const {owner, getOwner, isOwner, push, pop} = useKeyboardOwner();
 	const {exit} = useApp();
@@ -36,6 +37,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 	// so it cannot accept input or leave a nested keyboard owner after cancellation.
 	useEffect(() => {
 		if (!isBusy) return;
+		setShowHelp(false);
 		let activeOwner = getOwner();
 		while (activeOwner !== 'input-bar') {
 			pop(activeOwner);
@@ -52,9 +54,10 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 		if (isBusy) return;
 		updateDraft('');
 		setNotice(undefined);
+		setShowHelp(false);
 		switch (command) {
 			case '/help':
-				setNotice(COMMANDS.map(item => `${item.command}: ${item.description}`).join('\n'));
+				setShowHelp(true);
 				break;
 			case '/model':
 				push('model-picker');
@@ -88,6 +91,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 			return;
 		}
 		setNotice(undefined);
+		setShowHelp(false);
 		updateDraft('');
 		onSubmit(text);
 	}
@@ -102,6 +106,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 
 	function handleChange(next: string) {
 		setValue(next);
+		setShowHelp(false);
 		setNotice(undefined);
 		updateCommandPalette(next);
 	}
@@ -113,6 +118,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 		}
 		if (!isOwner('input-bar') && !isOwner('command-palette')) return;
 		if (key.escape) {
+			setShowHelp(false);
 			if (isOwner('input-bar')) updateDraft('');
 			else pop('command-palette');
 			return;
@@ -131,6 +137,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 			<Box flexDirection="column">
 				{isBusy ? <Spinner label={operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
 				: <Text color={palette.muted}>Enter to send · Mouse/trackpad scroll history · /help commands</Text>}
+				{showHelp && !isBusy && <Help />}
 				{notice && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}
 			</Box>
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">

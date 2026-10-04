@@ -43,6 +43,12 @@ export function ThemeProvider({
 	const themes = useMemo(() => registry.list(), [registry]);
 	const uiTheme = useMemo(() => extendTheme(defaultTheme, {
 		components: {
+			UnorderedList: {
+				styles: {
+					marker: () => ({color: palette.muted}),
+					content: () => ({flexGrow: 1, flexShrink: 1}),
+				},
+			},
 			Select: {
 				styles: {
 					focusIndicator: () => ({color: palette.prompt}),
