@@ -5,6 +5,7 @@ import type {ChatMessage} from '@codeyantram/shared';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useMouseWheel} from '../terminal/mouse.js';
+import {createMarkdownRenderer} from '../terminal/markdown.js';
 
 export function Conversation({messages, isStreaming}: {messages: ChatMessage[]; isStreaming: boolean}) {
 	const {palette} = useTheme();
@@ -15,16 +16,28 @@ export function Conversation({messages, isStreaming}: {messages: ChatMessage[]; 
 	// null follows the newest output; a fixed end preserves the reading position
 	// when more text arrives while the user is looking at earlier lines.
 	const [end, setEnd] = useState<number | null>(null);
+	const renderMessage = useMemo(() => {
+		const width = Math.max(1, columns - 2);
+		const renderMarkdown = createMarkdownRenderer(width, palette);
+		const cache = new WeakMap<ChatMessage, string[]>();
+		return (message: ChatMessage, text: string) => {
+			const cached = cache.get(message);
+			if (cached) return cached;
+			const lines = message.role === 'assistant' ? renderMarkdown(text) : wrapAnsi(text, width, {hard: true}).split('\n');
+			cache.set(message, lines);
+			return lines;
+		};
+	}, [columns, palette]);
 	const lines = useMemo(() => messages.flatMap((message, index) => {
 		const pending = isStreaming && index === messages.length - 1 && message.role === 'assistant';
 		if (!message.parts.length && !pending) return [];
 		const text = message.parts.map(part => part.text).join('') || (pending ? 'Waiting for response…' : '');
 		return [
 			{kind: message.role, text: message.role === 'user' ? 'You' : 'Assistant'},
-			...wrapAnsi(text, Math.max(1, columns - 2), {hard: true}).split('\n').map(text => ({kind: 'text', text})),
+			...renderMessage(message, text).map(text => ({kind: 'text', text})),
 			{kind: 'text', text: ''},
 		];
-	}), [messages, isStreaming, columns]);
+	}), [messages, isStreaming, renderMessage]);
 	useEffect(() => {
 		if (viewport.current) setHeight(Math.max(1, Math.floor(measureElement(viewport.current).height)));
 	});

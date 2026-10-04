@@ -378,6 +378,63 @@ describe('CLI chat UI', () => {
 		expect(ui.frame()).not.toContain('Answer 2');
 	});
 
+	it('renders assistant Markdown, leaves user text literal, and sends original Markdown in follow-up context', async () => {
+		const markdown = '# Result\n\n**Assistant bold** and `inline code`.\n\n- **First item**\n\n[Docs](https://example.com)';
+		const chat = vi.fn<ChatTransport>().mockImplementation(async function* () {
+			yield {type: 'text-delta', text: markdown};
+			yield {type: 'done', durationMs: 1};
+		});
+		const session = new ChatSession(chat);
+		const ui = renderWorkspace(session);
+		await session.send('Keep **user markup** and `user code`.', preferences.modelId);
+		await vi.waitFor(() => expect(ui.frame()).toContain('Assistant bold and inline code.'));
+		expect(ui.frame()).toContain('Keep **user markup** and `user code`.');
+		expect(ui.frame()).toContain('* First item');
+		expect(ui.frame()).toContain('Docs (https://example.com)');
+		expect(ui.frame()).not.toContain('# Result');
+		expect(session.getSnapshot().messages[1]?.parts[0]?.text).toBe(markdown);
+		await session.send('Continue.', preferences.modelId);
+		await ui.flush();
+		expect(chat.mock.calls[1]![0].messages[1]?.parts[0]?.text).toBe(markdown);
+	});
+
+	it('renders fragmented streamed code and tables while scrolling and resizing above the fixed footer', async () => {
+		let continueStream!: () => void;
+		const continued = new Promise<void>(resolve => {continueStream = resolve;});
+		const code = Array.from({length: 40}, (_, index) => `const row${index + 1} = ${index + 1};`).join('\n');
+		const session = new ChatSession(async function* () {
+			yield {type: 'text-delta', text: '# Streamed result\n\n```typescript\n' + code};
+			await continued;
+			yield {type: 'text-delta', text: '\n```\n\n| Name | Description |\n| --- | --- |\n| Widget | A lengthy explanation with several words |\n\n**Finished**'};
+			yield {type: 'done', durationMs: 1};
+		});
+		const ui = renderWorkspace(session);
+		const sending = session.send('Render this.', preferences.modelId);
+		await vi.waitFor(() => expect(ui.frame()).toContain('const row40 = 40;'));
+		expect(ui.frame()).not.toContain('```');
+		for (let step = 0; step < 20; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Streamed result'));
+		expect(ui.frame()).toContain('const row1 = 1;');
+		const reading = ui.frame().split('\n').slice(0, 18).join('\n');
+		continueStream();
+		await sending;
+		await ui.flush();
+		expect(ui.frame().split('\n').slice(0, 18).join('\n')).toBe(reading);
+		for (let step = 0; step < 25; step++) ui.wheel('down');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Finished'));
+		expect(ui.frame()).toContain('Widget');
+		ui.stdout.columns = 30;
+		ui.stdout.rows = 16;
+		ui.stdout.emit('resize');
+		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(16));
+		expect(ui.frame()).toContain('Widget');
+		expect(ui.frame()).not.toContain('**Finished**');
+		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:main');
+		for (let step = 0; step < 35; step++) ui.wheel('up');
+		await vi.waitFor(() => expect(ui.frame()).toContain('const row1 = 1;'));
+		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:main');
+	});
+
 	it('lets the mouse reach every line of a long answer while the input and status stay at the bottom', async () => {
 		const text = Array.from({length: 60}, (_value, index) => `Line ${index + 1}`).join('\n');
 		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response([
