@@ -16,7 +16,10 @@ export function ChatWorkspace({session, modelPreferences, effort, branch, onSele
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 }) {
 	const {rows} = useWindowSize();
-	const {messages, isStreaming, error, notice} = useSyncExternalStore(session.subscribe, session.getSnapshot);
+	const {messages, operation, isStreaming, compaction, error, notice} = useSyncExternalStore(session.subscribe, session.getSnapshot);
+	const contextTurnCount = compaction
+		? messages.slice(compaction.coveredMessageCount).filter(message => message.role === 'user').length
+		: undefined;
 	return (
 		<Box flexDirection="column" height={rows}>
 			<Conversation messages={messages} isStreaming={isStreaming} />
@@ -25,12 +28,13 @@ export function ChatWorkspace({session, modelPreferences, effort, branch, onSele
 			<InputBar
 				modelPreferences={modelPreferences}
 				onSelectModel={onSelectModel}
-				isStreaming={isStreaming}
+				operation={operation}
 				onSubmit={text => {void session.send(text, modelPreferences.modelId, effort);}}
 				onCancel={() => session.cancel()}
 				onClear={() => session.clear()}
+				onCompact={() => {void session.compact(modelPreferences.modelId);}}
 			/>
-			<StatusBar branch={branch} model={modelPreferences.modelId} effort={effort} />
+			<StatusBar branch={branch} model={modelPreferences.modelId} effort={effort} contextTurnCount={contextTurnCount} />
 		</Box>
 	);
 }

@@ -48,16 +48,28 @@ selected again. Ink retains its default Ctrl+C exit behavior.
 Selecting a command closes the command palette before notifying its caller.
 `InputBar` clears the draft and executes the command. Selecting `/theme` opens
 the theme picker without leaving the palette on the stack. `/help` lists commands,
-`/clear` resets the conversation, and `/exit` closes the CLI. Reopening the command
+`/compact` summarizes older conversation context, `/clear` resets the conversation,
+and `/exit` closes the CLI. Reopening the command
 palette mounts a fresh selection starting at `/help`.
 
 Enter in the input bar submits a nonempty message to the chat server. The submit
 handler checks both rendered and current ownership so Enter used by the command
-palette cannot also submit its draft as chat text. During generation the text
-input is disabled, while the input bar's Escape listener cancels the request.
+palette cannot also submit its draft as chat text. During generation or compaction
+the text input and pickers are disabled, while the input bar's Escape listener
+cancels the active operation. If an operation starts programmatically while a
+picker is open, that interaction closes and keyboard ownership returns to the
+input bar. Generation and compaction have distinct progress labels.
 Partial assistant text remains in history after cancellation. PgUp/PgDn scroll
 the conversation when the input bar owns the keyboard. Exiting unmounts the UI,
 aborts the active request, and closes the CLI's server.
+
+`/compact` runs with the active model and keeps the latest two user-led turns
+verbatim while retaining the full scrollable transcript. The command itself
+does not become a chat message. Success, no-op, failure, and cancellation use the
+session notice/error channel. After success, the status bar shows
+`Context: compacted` and the current number of recent turns sent alongside the
+summary; this count grows with subsequent messages. `/clear` removes the summary
+and its indicator. A short history makes no summarization request.
 
 Selecting `/model` opens `ModelPicker`. Selecting a model with effort support
 pushes `effort-picker` above `model-picker`; only that model's supported efforts

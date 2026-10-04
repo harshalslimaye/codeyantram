@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {Box, Text, useApp, useInput} from 'ink';
 import {Spinner, StatusMessage, TextInput} from '@inkjs/ui';
 import {CommandPalette} from './command-palette.js';
@@ -10,24 +10,38 @@ import {useKeyboardOwner} from '../keyboard/provider.js';
 import type {EffortLevel} from '@codeyantram/shared';
 import type {ModelPreferences} from '../models/preferences.js';
 import {COMMANDS} from '../lib/commands.js';
+import type {SessionOperation} from '../chat/session.js';
 
-export function InputBar({modelPreferences, onSelectModel, isStreaming, onSubmit, onCancel, onClear}: {
+export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact}: {
 	modelPreferences: ModelPreferences;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
-	isStreaming: boolean;
+	operation: SessionOperation;
 	onSubmit: (text: string) => void;
 	onCancel: () => void;
 	onClear: () => void;
+	onCompact: () => void;
 }) {
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
 	const {palette, notice, noticeTone, setNotice} = useTheme();
-	const {owner, isOwner, push, pop} = useKeyboardOwner();
+	const {owner, getOwner, isOwner, push, pop} = useKeyboardOwner();
 	const {exit} = useApp();
-	const isEditing = !isStreaming && (owner === 'input-bar' || owner === 'command-palette');
+	const isBusy = operation !== 'idle';
+	const isEditing = !isBusy && (owner === 'input-bar' || owner === 'command-palette');
 	const commandQuery = value.startsWith('/') && value.length > 1 && !value.includes(' ')
 		? value.slice(1)
 		: undefined;
+
+	// A programmatic operation may start while a picker is open. Close that flow
+	// so it cannot accept input or leave a nested keyboard owner after cancellation.
+	useEffect(() => {
+		if (!isBusy) return;
+		let activeOwner = getOwner();
+		while (activeOwner !== 'input-bar') {
+			pop(activeOwner);
+			activeOwner = getOwner();
+		}
+	}, [isBusy, getOwner, pop]);
 
 	function updateDraft(next: string) {
 		setValue(next);
@@ -35,7 +49,9 @@ export function InputBar({modelPreferences, onSelectModel, isStreaming, onSubmit
 	}
 
 	function onSelectCommand(command: string) {
+		if (isBusy) return;
 		updateDraft('');
+		setNotice(undefined);
 		switch (command) {
 			case '/help':
 				setNotice(COMMANDS.map(item => `${item.command}: ${item.description}`).join('\n'));
@@ -52,6 +68,9 @@ export function InputBar({modelPreferences, onSelectModel, isStreaming, onSubmit
 			case '/clear':
 				onClear();
 				break;
+			case '/compact':
+				onCompact();
+				break;
 			case '/exit':
 				exit();
 				break;
@@ -63,7 +82,7 @@ export function InputBar({modelPreferences, onSelectModel, isStreaming, onSubmit
 
 	function submitDraft(text: string) {
 		// The command palette owns Enter while it is open.
-		if (owner !== 'input-bar' || !isOwner('input-bar') || isStreaming || !text.trim()) return;
+		if (owner !== 'input-bar' || !isOwner('input-bar') || isBusy || !text.trim()) return;
 		if (text.trim().startsWith('/')) {
 			onSelectCommand(text.trim().toLowerCase());
 			return;
@@ -88,29 +107,33 @@ export function InputBar({modelPreferences, onSelectModel, isStreaming, onSubmit
 	}
 
 	useInput((_input, key) => {
+		if (isBusy) {
+			if (key.escape) onCancel();
+			return;
+		}
 		if (!isOwner('input-bar') && !isOwner('command-palette')) return;
 		if (key.escape) {
-			if (isStreaming) onCancel();
-			else if (isOwner('input-bar')) updateDraft('');
+			if (isOwner('input-bar')) updateDraft('');
 			else pop('command-palette');
 			return;
 		}
 
-	}, {isActive: isEditing || isStreaming});
+	}, {isActive: isEditing || isBusy});
 
 	return (
 		<Box flexDirection="column" width="100%">
-			<CommandPalette query={commandQuery} onSelect={onSelectCommand} />
-			{owner === 'theme-picker' && <ThemePicker />}
-			{(owner === 'model-picker' || owner === 'effort-picker') && (
+			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} />}
+			{!isBusy && owner === 'theme-picker' && <ThemePicker />}
+			{!isBusy && (owner === 'model-picker' || owner === 'effort-picker') && (
 				<ModelPicker preferences={modelPreferences} onSelect={onSelectModel} />
 			)}
-			{(owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
+			{!isBusy && (owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
 				<TextInput key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} onSubmit={submitDraft} />
 			</Box>
-			{isStreaming ? <Spinner label="Generating · Esc to cancel" /> : <Text color={palette.muted}>Enter to send · PgUp/PgDn history · /help commands</Text>}
+			{isBusy ? <Spinner label={operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
+				: <Text color={palette.muted}>Enter to send · PgUp/PgDn history · /help commands</Text>}
 			{notice && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}
 		</Box>
 	);
