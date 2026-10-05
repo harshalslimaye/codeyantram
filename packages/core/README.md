@@ -109,6 +109,11 @@ to enable `explore` and `graph`. Omitting it keeps chat without tool definitions
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 
+Each tool owns its schema, description, and handler in a separate file:
+`src/tools/explore.ts` and `src/tools/graph.ts`. `src/tools/index.ts` assembles
+the tools with a shared per-turn executor from `execution.ts`; host-service
+and executor interfaces live in `types.ts`.
+
 `explore` accepts a nonblank query of at most 1,024 characters, optional
 `maxNodes` (1–20, default 12), and `maxCharacters` (2,048–24,000, default 12,000).
 It uses the service's reconciliation barrier and returns context plus observation

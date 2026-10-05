@@ -145,9 +145,15 @@ instance's lock and database-replacement checks from its actual SQLite path.
 Extraction, resolution, source reads, and project configuration continue to use
 the original source root. No symlink or generated Git exclusion is needed.
 
+The script also fixes 1.6.2's Git scanner: tracked paths absent from the working
+tree are skipped by both scan variants. Otherwise an unstaged deletion or move
+produces a read error during initialization and incremental sync. Existing-file
+permission and other I/O errors remain failures. This requires no Git staging
+and lets the SDK remove stale symbols and relationships normally.
+
 The root `postinstall` applies the extension to installed platform bundles on
-`npm install` and `npm ci`. It checks the exact package version and entire source
-checksum, validates all bundles before writing, and supports repeated installs.
+`npm install` and `npm ci`. It checks the exact package version and entire facade
+and extraction source checksums, validates all bundles before writing, and supports repeated installs.
 An upstream upgrade requires reviewing the extension and updating its version
 and checksum. If install scripts were disabled, run
 `node scripts/patch-codegraph.mjs` before opening a graph. The

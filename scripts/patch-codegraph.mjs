@@ -5,10 +5,11 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 // 1.6.2 has no public factory separating the source root from database storage.
-// Extend the facade, preserving upstream extraction, resolution, and locking.
-// Check both the release and the complete original file before changing it.
+// Extend the facade and fix scans of unstaged Git deletions, preserving resolution
+// and locking. Check the release and each complete original file before changes.
 const VERSION = '1.6.2';
 const ORIGINAL_SHA256 = '1813127b36983344d0cfbf94ecd650ec2d85885ab8936bf7a42f16558ea22b4f';
+const EXTRACTION_SHA256 = '34799d83bfdf14d8577b23e29ff32155617fb0e6ace4315744f41c6eb7ee1464';
 const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-arm64', 'win32-x64'];
 const originalLock = "path.join((0, directory_2.getCodeGraphDir)(projectRoot), 'codegraph.lock')";
 const externalLock = "path.join(path.dirname(db.getPath()), 'codegraph.lock')";
@@ -56,6 +57,38 @@ export function extendCodeGraphSource(source) {
   return replaceOnce(result, insertionPoint, factory + insertionPoint);
 }
 
+const scanLoop = '        for (const filePath of gitFiles) {\n';
+const missingFileGuard = '            if (isMissingWorkingTreeFile(rootDir, filePath))\n                continue;\n';
+const missingFileHelper = `// Codeyantram extension: ignore Git entries deleted from the working tree.
+function isMissingWorkingTreeFile(rootDir, filePath) {
+    try {
+        fs.statSync(path.join(rootDir, filePath));
+        return false;
+    } catch (error) {
+        // Keep permission and other I/O failures visible to the indexer.
+        return error.code === 'ENOENT' || error.code === 'ENOTDIR';
+    }
+}
+`;
+
+/** Git still lists unstaged deletions; neither index nor sync should read them. */
+export function extendCodeGraphExtractionSource(source) {
+  const patched = source.includes(missingFileHelper);
+  let original = source;
+  if (patched) {
+    original = replaceOnce(original, missingFileHelper, '');
+    if (original.split(missingFileGuard).length !== 3) throw new Error('Unexpected CodeGraph 1.6.2 extraction source; review the working-tree fix.');
+    original = original.replaceAll(missingFileGuard, '');
+  }
+  if (createHash('sha256').update(original).digest('hex') !== EXTRACTION_SHA256) {
+    throw new Error('Unexpected CodeGraph 1.6.2 extraction source; review the working-tree fix.');
+  }
+  if (patched) return source;
+  if (original.split(scanLoop).length !== 3) throw new Error('Unexpected CodeGraph 1.6.2 scan loops; review the working-tree fix.');
+  return replaceOnce(original.replaceAll(scanLoop, scanLoop + missingFileGuard),
+    'function scanDirectory(rootDir, onProgress) {', missingFileHelper + 'function scanDirectory(rootDir, onProgress) {');
+}
+
 export function patchCodeGraph(root = fileURLToPath(new URL('../', import.meta.url))) {
   const require = createRequire(path.join(root, 'package.json'));
   const main = require('@colbymchenry/codegraph/package.json');
@@ -71,9 +104,11 @@ export function patchCodeGraph(root = fileURLToPath(new URL('../', import.meta.u
     }
     const metadata = JSON.parse(readFileSync(packageFile, 'utf8'));
     if (metadata.version !== VERSION) throw new Error(`CodeGraph ${platform} bundle must be ${VERSION}; found ${metadata.version}.`);
-    const filename = path.join(path.dirname(packageFile), 'lib', 'dist', 'index.js');
-    const source = readFileSync(filename, 'utf8');
-    updates.push({filename, source, extended: extendCodeGraphSource(source)});
+    for (const [relative, extend] of [['index.js', extendCodeGraphSource], ['extraction/index.js', extendCodeGraphExtractionSource]]) {
+      const filename = path.join(path.dirname(packageFile), 'lib', 'dist', relative);
+      const source = readFileSync(filename, 'utf8');
+      updates.push({filename, source, extended: extend(source)});
+    }
   }
   if (!updates.length) throw new Error('No CodeGraph platform bundle is installed. Install optional dependencies.');
   // Validate every installed bundle before modifying any of them. Reruns heal

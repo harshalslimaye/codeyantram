@@ -10,7 +10,7 @@ function setup() {
 }
 const execution = (toolCallId = 'call-1') => ({toolCallId, messages: [], context: {}});
 
-describe('bound navigation tools', () => {
+describe('bound navigation tool registry', () => {
   it.each([{query: ''}, {query: ' '}, {query: 'x'.repeat(1025)}, {query: 'q', maxNodes: 21},
     {query: 'q', maxCharacters: 24_001}, {query: 'q', workspaceRoot: '/other'}, {query: 'q', databasePath: '/other.db'}])
     ('rejects invalid or model-selected workspace arguments (case %#)', input => {

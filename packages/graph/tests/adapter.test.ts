@@ -1,6 +1,8 @@
-import {mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {chmod, mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import path from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {getUserGraphDirectory} from '@codeyantram/shared';
@@ -15,6 +17,13 @@ let directory: string;
 let workspace: string;
 let globalStorage: string;
 let graphs: WorkspaceGraph[];
+const git = promisify(execFile);
+
+async function trackFixture() {
+  await git('git', ['init', '--quiet'], {cwd: workspace});
+  await git('git', ['add', '.'], {cwd: workspace});
+  return readFile(path.join(workspace, '.git', 'index'));
+}
 
 beforeEach(async () => {
   graphs = [];
@@ -51,6 +60,48 @@ async function sourceSnapshot() {
 }
 
 describe('real CodeGraph adapter', () => {
+  it('initializes a Git working tree with unstaged deletions without changing the Git index', async () => {
+    const gitIndex = await trackFixture();
+    await rm(path.join(workspace, 'src/helper.ts'));
+    const graph = await open();
+    expect(await graph.index()).toMatchObject({success: true, state: 'complete', filesErrored: 0, errors: []});
+    expect(graph.search('greet').some(result => result.symbol.filePath === 'src/helper.ts')).toBe(false);
+    expect((await graph.sync()).success).toBe(true);
+    expect(await readFile(path.join(workspace, '.git/index'))).toEqual(gitIndex);
+  }, 30_000);
+
+  it('syncs unstaged Git deletions and moves and discovers untracked replacements', async () => {
+    const gitIndex = await trackFixture();
+    const graph = await open();
+    expect((await graph.index()).success).toBe(true);
+    const old = graph.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    await rename(path.join(workspace, 'src/helper.ts'), path.join(workspace, 'src/moved.ts'));
+    await writeFile(path.join(workspace, 'src/main.ts'), 'import {greet} from "./moved";\nexport function welcome() { return greet(); }\n');
+    expect(await graph.sync()).toMatchObject({success: true, filesRemoved: 1, filesAdded: 1, failedFilePaths: []});
+    expect(graph.getSymbol(old.id)).toBeNull();
+    const moved = graph.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    expect(moved.filePath).toBe('src/moved.ts');
+    expect(graph.getCallers(moved.id).map(relation => relation.symbol.name)).toContain('welcome');
+    await rm(path.join(workspace, 'src/main.ts'));
+    expect(await graph.sync()).toMatchObject({success: true, filesRemoved: 1, failedFilePaths: []});
+    expect(graph.search('welcome')).toEqual([]);
+    expect(graph.getCallers(moved.id)).toEqual([]);
+    expect(await readFile(path.join(workspace, '.git/index'))).toEqual(gitIndex);
+  }, 30_000);
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('still reports unreadable existing Git files as indexing failures', async () => {
+    await trackFixture();
+    const source = path.join(workspace, 'src/helper.ts');
+    await chmod(source, 0o000);
+    try {
+      const graph = await open();
+      const report = await graph.index();
+      expect(report.success).toBe(false);
+      expect(report.filesErrored).toBeGreaterThan(0);
+      expect(report.errors).toContainEqual(expect.objectContaining({filePath: 'src/helper.ts', code: 'read_error', severity: 'error'}));
+    } finally {await chmod(source, 0o644);}
+  }, 30_000);
+
   it('builds bounded context with verified snippets, locations, relationships, and explicit coverage', async () => {
     const graph = await open(); await graph.index();
     const context = await graph.explore('greet');

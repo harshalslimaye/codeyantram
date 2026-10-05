@@ -11,7 +11,7 @@ import {ChatError, toChatErrorEvent} from './errors.js';
 import {resolveChatModel, type ProviderCredentials} from './models.js';
 import {toModelMessages} from './messages.js';
 import {toTokenUsage} from './usage.js';
-import {createNavigationTools, type NavigationGraphService} from '../tools/navigation.js';
+import {createNavigationTools, type NavigationGraphService} from '../tools/index.js';
 
 export interface ChatStreamOptions {
   credentials: ProviderCredentials;
