@@ -9,6 +9,7 @@ export const COMMANDS: Command[] = [
     { command: '/init', description: 'Build or refresh the project code graph' },
     { command: '/model', description: 'Change the active model' },
     { command: '/connect', description: 'Configure a provider API key' },
+    { command: '/jev', description: 'Toggle JEV usage on or off' },
     { command: '/theme', description: 'Choose a terminal theme' },
     { command: '/compact', description: 'Summarize older conversation context' },
     { command: '/clear', description: 'Clear the conversation' },

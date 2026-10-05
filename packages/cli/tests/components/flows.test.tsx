@@ -1,7 +1,7 @@
 import React from 'react';
 import {Text} from 'ink';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {readConfiguredProviders, saveModelPreference, saveProviderApiKey, type SupportedChatModelId} from '@codeyantram/shared';
+import {JevNotConfiguredError, readConfiguredProviders, readJevConfiguration, saveModelPreference, saveProviderApiKey, toggleJevUsage, type SupportedChatModelId} from '@codeyantram/shared';
 import {InputBar} from '../../src/components/input-bar.js';
 import {App} from '../../src/app.js';
 import {KeyboardProvider, useKeyboardOwner} from '../../src/keyboard/provider.js';
@@ -17,6 +17,7 @@ vi.mock('../../src/lib/utils.js', () => ({getGitBranch: vi.fn(() => 'project-bra
 vi.mock('@codeyantram/shared', async importOriginal => ({
 	...await importOriginal<typeof import('@codeyantram/shared')>(),
 	readConfiguredProviders: vi.fn(), saveModelPreference: vi.fn(), saveProviderApiKey: vi.fn(),
+	readJevConfiguration: vi.fn(), toggleJevUsage: vi.fn(),
 }));
 vi.mock('../../src/theme/utils/index.js', async importOriginal => ({
 	...await importOriginal<typeof import('../../src/theme/utils/index.js')>(), saveThemePreference: vi.fn(),
@@ -24,6 +25,8 @@ vi.mock('../../src/theme/utils/index.js', async importOriginal => ({
 
 beforeEach(() => {
 	vi.mocked(readConfiguredProviders).mockResolvedValue([]);
+	vi.mocked(readJevConfiguration).mockResolvedValue({enabled: false, configured: false});
+	vi.mocked(toggleJevUsage).mockResolvedValue({enabled: true, configured: true});
 	vi.mocked(saveProviderApiKey).mockResolvedValue(undefined);
 	vi.mocked(saveThemePreference).mockImplementation(async id => id);
 });
@@ -86,6 +89,28 @@ async function chooseProvider(ui: UI) {
 }
 
 describe('provider connection flow', () => {
+	it('configures TypeSafe through masked key entry independently of coding-model selection', async () => {
+		vi.mocked(readJevConfiguration).mockResolvedValue({enabled: false, configured: true});
+		const ui = setup();
+		await command(ui, '/connect', 'Choose a provider');
+		await vi.waitFor(() => expect(ui.frame()).toContain('TypeSafe (JEV) · configured'));
+		for (let index = 0; index < 3; index++) {
+			ui.stdin.write('\x1b[B');
+			await ui.flush();
+		}
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Enter API key for TypeSafe (JEV)'));
+		ui.stdin.write('secret-jev-key');
+		await ui.flush();
+		expect(ui.frame()).not.toContain('secret-jev-key');
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('TypeSafe (JEV) API key saved'));
+		expect(saveProviderApiKey).toHaveBeenCalledExactlyOnceWith('typesafe', 'secret-jev-key');
+		expect(toggleJevUsage).not.toHaveBeenCalled();
+		await command(ui, '/model', 'Choose a model');
+		expect(ui.frame()).not.toMatch(/JEV|jev-latest|TypeSafe/);
+	});
+
 	it('shows configured providers, masks and saves a key, then restores chat input', async () => {
 		vi.mocked(readConfiguredProviders).mockResolvedValue(['google']);
 		const ui = setup();
@@ -335,6 +360,60 @@ describe('model selection flow', () => {
 });
 
 describe('input commands', () => {
+	it('toggles JEV through the palette and reports each saved state without submitting chat', async () => {
+		vi.mocked(toggleJevUsage)
+			.mockResolvedValueOnce({enabled: true, configured: true})
+			.mockResolvedValueOnce({enabled: false, configured: true});
+		const ui = setup();
+		await command(ui, '/jev', 'JEV usage enabled; saved to user config.');
+		expect(ui.keyboard().getOwner()).toBe('input-bar');
+		await command(ui, '/jev', 'JEV usage disabled; saved to user config.');
+		expect(toggleJevUsage).toHaveBeenCalledTimes(2);
+		expect(ui.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('directs users to key setup when enabling without a configured key', async () => {
+		vi.mocked(toggleJevUsage).mockRejectedValueOnce(new JevNotConfiguredError());
+		const ui = setup();
+		await command(ui, '/jev', 'Configure TypeSafe (JEV) through /connect before enabling JEV usage.');
+		expect(ui.theme().noticeTone).toBe('error');
+		expect(ui.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('reports a save failure without exposing raw configuration and allows retry', async () => {
+		vi.mocked(toggleJevUsage).mockRejectedValueOnce(new Error('secret-from-invalid-config'));
+		const ui = setup();
+		await command(ui, '/jev', 'Could not update JEV usage.');
+		expect(ui.frame()).not.toContain('secret-from-invalid-config');
+		await command(ui, '/jev', 'JEV usage enabled; saved to user config.');
+	});
+
+	it('blocks duplicate commands and cancellation while saving the preference', async () => {
+		const saving = deferred<{enabled: boolean; configured: boolean}>();
+		vi.mocked(toggleJevUsage).mockReturnValueOnce(saving.promise);
+		const ui = setup();
+		await command(ui, '/jev', 'Saving JEV preference');
+		ui.stdin.write('/jev\r\x1b');
+		await settleEscape(ui);
+		expect(toggleJevUsage).toHaveBeenCalledOnce();
+		expect(ui.onSubmit).not.toHaveBeenCalled();
+		saving.resolve({enabled: true, configured: true});
+		await vi.waitFor(() => expect(ui.frame()).toContain('JEV usage enabled; saved to user config.'));
+	});
+
+	it.each(['resolve', 'reject'] as const)('does not post a late toggle notice after unmount: %s', async outcome => {
+		const saving = deferred<{enabled: boolean; configured: boolean}>();
+		vi.mocked(toggleJevUsage).mockReturnValueOnce(saving.promise);
+		const ui = setup();
+		await command(ui, '/jev', 'Saving JEV preference');
+		ui.unmount();
+		if (outcome === 'resolve') saving.resolve({enabled: true, configured: true});
+		else saving.reject(new Error('write failed'));
+		await saving.promise.catch(() => {});
+		await ui.flush();
+		expect(ui.theme().notice).toBeUndefined();
+	});
+
 	it('closes the palette when a space is added and executes the typed command case-insensitively', async () => {
 		const ui = setup();
 		await vi.waitFor(() => expect(ui.frame()).toContain('Enter to send'));

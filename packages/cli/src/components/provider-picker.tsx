@@ -1,39 +1,41 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {Spinner} from '@inkjs/ui';
-import {readConfiguredProviders, SUPPORTED_PROVIDERS, type SupportedProvider} from '@codeyantram/shared';
+import {readConfiguredProviders, readJevConfiguration, SUPPORTED_PROVIDERS, type ConnectableProvider} from '@codeyantram/shared';
 import {Picker} from './picker.js';
 import {ApiKeyInput} from './api-key-input.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useTheme} from '../theme/provider.js';
 
-const PROVIDER_NAMES: Record<SupportedProvider, string> = {
+const CONNECTABLE_PROVIDERS: readonly ConnectableProvider[] = [...SUPPORTED_PROVIDERS, 'typesafe'];
+const PROVIDER_NAMES: Record<ConnectableProvider, string> = {
 	anthropic: 'Anthropic',
 	openai: 'OpenAI',
 	google: 'Google',
+	typesafe: 'TypeSafe (JEV)',
 };
 
 export function ProviderPicker() {
-	const [configuredProviders, setConfiguredProviders] = useState<SupportedProvider[]>([]);
-	const [selectedProvider, setSelectedProvider] = useState<SupportedProvider>();
+	const [configuredProviders, setConfiguredProviders] = useState<ConnectableProvider[]>([]);
+	const [selectedProvider, setSelectedProvider] = useState<ConnectableProvider>();
 	const [isLoading, setIsLoading] = useState(true);
 	const {owner, push, pop} = useKeyboardOwner();
 	const {setNotice} = useTheme();
 
 	useEffect(() => {
 		let active = true;
-		void readConfiguredProviders()
-			.then(providers => { if (active) setConfiguredProviders(providers); })
+		void Promise.all([readConfiguredProviders(), readJevConfiguration()])
+			.then(([providers, jev]) => { if (active) setConfiguredProviders([...providers, ...(jev.configured ? ['typesafe' as const] : [])]); })
 			.catch(() => { if (active) setNotice('Could not read provider configuration.', 'error'); })
 			.finally(() => { if (active) setIsLoading(false); });
 		return () => { active = false; };
 	}, []);
 
-	const options = useMemo(() => SUPPORTED_PROVIDERS.map(provider => ({
+	const options = useMemo(() => CONNECTABLE_PROVIDERS.map(provider => ({
 		value: provider,
 		label: `${PROVIDER_NAMES[provider]}${configuredProviders.includes(provider) ? ' · configured' : ''}`,
 	})), [configuredProviders]);
 
-	function selectProvider(provider: SupportedProvider) {
+	function selectProvider(provider: ConnectableProvider) {
 		setNotice(undefined);
 		setSelectedProvider(provider);
 		push('api-key-input');

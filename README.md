@@ -73,6 +73,16 @@ to scroll through the conversation. The input and status bars stay at the bottom
 Use `/clear` to reset the conversation, `/help` to list commands, or `/exit` to quit.
 Conversations stay in memory for the current CLI session.
 
+Use `/connect` and select **TypeSafe (JEV)** to save its evaluation API key.
+Use `/jev` to toggle JEV usage on or off; the command appears in the palette
+and `/help`, reports the saved state, and requires a configured key before
+enabling. Saving a key does not enable usage. The key is stored at
+`providers.typesafe.apiKey`, and the opt-in preference at
+`integrations.jev.enabled`, in the global user config. Disabling preserves the
+key. JEV is an evaluation integration and does not appear in `/model`.
+This currently configures the integration only; evaluation requests and
+web-fetch filtering will be implemented separately.
+
 Use `/status` to add a session snapshot to scrollback showing the active model,
 estimated context tokens against its catalog window, a usage bar, and estimated
 percentage remaining. The footer shows live estimated context usage. Status cards

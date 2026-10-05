@@ -2,7 +2,7 @@ export * from './preferences.js';
 
 import {readConfig, writeConfig} from '../../filesystem/config.js';
 import {asObject} from '../../utils/objects.js';
-import {findSupportedChatModel, SUPPORTED_PROVIDERS, type ProviderCredentials, type SupportedProvider} from '../config/index.js';
+import {findSupportedChatModel, SUPPORTED_PROVIDERS, type ConnectableProvider, type ProviderCredentials, type SupportedProvider} from '../config/index.js';
 
 function readApiKey(providers: Record<string, unknown>, provider: SupportedProvider): string | undefined {
 	const {apiKey} = asObject(providers[provider]);
@@ -15,8 +15,8 @@ export async function readConfiguredProviders(): Promise<SupportedProvider[]> {
 	return SUPPORTED_PROVIDERS.filter(provider => readApiKey(providers, provider) !== undefined);
 }
 
-export async function saveProviderApiKey(provider: SupportedProvider, apiKey: string): Promise<void> {
-	if (!SUPPORTED_PROVIDERS.includes(provider)) throw new Error('Unsupported provider.');
+export async function saveProviderApiKey(provider: ConnectableProvider, apiKey: string): Promise<void> {
+	if (provider !== 'typesafe' && !SUPPORTED_PROVIDERS.includes(provider)) throw new Error('Unsupported provider.');
 	const key = apiKey.trim();
 	if (!key) throw new Error('An API key is required.');
 	const config = await readConfig();

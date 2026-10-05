@@ -1,12 +1,12 @@
 import React, {useRef, useState} from 'react';
 import {Box, Text, useInput} from 'ink';
 import {PasswordInput, Spinner} from '@inkjs/ui';
-import {saveProviderApiKey, type SupportedProvider} from '@codeyantram/shared';
+import {saveProviderApiKey, type ConnectableProvider} from '@codeyantram/shared';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useTheme} from '../theme/provider.js';
 
 export function ApiKeyInput({provider, providerName, onSaved}: {
-	provider: SupportedProvider;
+	provider: ConnectableProvider;
 	providerName: string;
 	onSaved: () => void;
 }) {

@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {Box, Text, useApp, useInput, useWindowSize} from 'ink';
 import {Spinner, StatusMessage, TextInput} from '@inkjs/ui';
 import {CommandPalette} from './command-palette.js';
@@ -8,7 +8,7 @@ import {ProviderPicker} from './provider-picker.js';
 import {Help} from './help.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
-import type {EffortLevel, ModelPreferences} from '@codeyantram/shared';
+import {JevNotConfiguredError, toggleJevUsage, type EffortLevel, type ModelPreferences} from '@codeyantram/shared';
 import type {SessionOperation} from '../chat/session.js';
 
 export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact, onStatus, onInit}: {
@@ -26,14 +26,37 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
 	const [showHelp, setShowHelp] = useState(false);
+	const [isSavingJev, setIsSavingJev] = useState(false);
+	const savingJev = useRef(false);
+	const mounted = useRef(true);
 	const {palette, notice, noticeTone, setNotice} = useTheme();
 	const {owner, getOwner, isOwner, push, pop} = useKeyboardOwner();
 	const {exit} = useApp();
-	const isBusy = operation !== 'idle';
+	const isBusy = operation !== 'idle' || isSavingJev;
 	const isEditing = !isBusy && (owner === 'input-bar' || owner === 'command-palette');
 	const commandQuery = value.startsWith('/') && value.length > 1 && !value.includes(' ')
 		? value.slice(1)
 		: undefined;
+
+	useEffect(() => {
+		mounted.current = true;
+		return () => { mounted.current = false; };
+	}, []);
+
+	async function toggleJev() {
+		if (savingJev.current) return;
+		savingJev.current = true;
+		setIsSavingJev(true);
+		try {
+			const settings = await toggleJevUsage();
+			if (mounted.current) setNotice(`JEV usage ${settings.enabled ? 'enabled' : 'disabled'}; saved to user config.`);
+		} catch (error) {
+			if (mounted.current) setNotice(error instanceof JevNotConfiguredError ? error.message : 'Could not update JEV usage. Check your user config and try again.', 'error');
+		} finally {
+			savingJev.current = false;
+			if (mounted.current) setIsSavingJev(false);
+		}
+	}
 
 	// A programmatic operation may start while a picker is open. Close that flow
 	// so it cannot accept input or leave a nested keyboard owner after cancellation.
@@ -53,7 +76,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 	}
 
 	function onSelectCommand(command: string) {
-		if (isBusy) return;
+		if (isBusy || savingJev.current) return;
 		updateDraft('');
 		setNotice(undefined);
 		setShowHelp(false);
@@ -72,6 +95,9 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 				break;
 			case '/connect':
 				push('provider-picker');
+				break;
+			case '/jev':
+				void toggleJev();
 				break;
 			case '/theme':
 				push('theme-picker');
@@ -93,7 +119,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 
 	function submitDraft(text: string) {
 		// The command palette owns Enter while it is open.
-		if (owner !== 'input-bar' || !isOwner('input-bar') || isBusy || !text.trim()) return;
+		if (owner !== 'input-bar' || !isOwner('input-bar') || isBusy || savingJev.current || !text.trim()) return;
 		if (text.trim().startsWith('/')) {
 			onSelectCommand(text.trim().toLowerCase());
 			return;
@@ -120,6 +146,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 	}
 
 	useInput((_input, key) => {
+		if (savingJev.current) return;
 		if (isBusy) {
 			if (key.escape) onCancel();
 			return;
@@ -143,7 +170,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 			)}
 			{!isBusy && (owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
 			<Box flexDirection="column">
-				{isBusy ? <Spinner label={operation === 'init' ? 'Initializing graph · Esc to cancel' : operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
+				{isBusy ? <Spinner label={isSavingJev ? 'Saving JEV preference…' : operation === 'init' ? 'Initializing graph · Esc to cancel' : operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
 				: <Text color={palette.muted}>Enter to send · Mouse/trackpad scroll history · /help commands</Text>}
 				{showHelp && !isBusy && <Help />}
 				{notice && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}

@@ -102,3 +102,9 @@ Escape in the list closes the flow. Enter saves a nonempty API key to
 The prompt stays disabled throughout the flow. Saving blocks additional input,
 and failures keep the key input open for retry. Provider labels show whether a
 key is configured; saving does not verify the key against the provider's API.
+
+`/connect` also lists TypeSafe (JEV) for evaluation-key setup, independently of
+the coding-model catalog. `/jev` toggles the persisted opt-in preference and
+reports the saved state. Enabling requires a configured TypeSafe key; disabling
+keeps the key. The input bar blocks commands and prompt submission during the
+write, then restores input. The command makes no model request.
