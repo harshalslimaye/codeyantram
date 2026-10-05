@@ -80,8 +80,9 @@ enabling. Saving a key does not enable usage. The key is stored at
 `providers.typesafe.apiKey`, and the opt-in preference at
 `integrations.jev.enabled`, in the global user config. Disabling preserves the
 key. JEV is an evaluation integration and does not appear in `/model`.
-This currently configures the integration only; evaluation requests and
-web-fetch filtering will be implemented separately.
+Core provides a reusable JEV evaluation adapter. Automatic server-side opt-in
+resolution and web-fetch filtering will be implemented separately; configuring
+the integration currently makes no evaluation request.
 
 Use `/status` to add a session snapshot to scrollback showing the active model,
 estimated context tokens against its catalog window, a usage bar, and estimated

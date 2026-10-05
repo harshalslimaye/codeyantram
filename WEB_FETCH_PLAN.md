@@ -1,6 +1,6 @@
 # Web Fetch Implementation Plan
 
-Status: Web fetch and JEV evaluation are proposed. JEV key setup and the `/jev` usage toggle are implemented as configuration foundations.
+Status: JEV key setup, the `/jev` usage toggle, and a reusable core evaluation adapter are implemented. Server-side runtime integration, web fetch, and relevance filtering remain proposed.
 
 Build this feature in two milestones: a working web-fetch tool first, then optional JEV filtering. Keep the implementation inside `packages/core/src/tools/web-fetch/` and integrate it with the existing tool execution and chat streaming infrastructure.
 
@@ -107,7 +107,7 @@ The contracts, limits, module names, and thresholds below are proposed starting 
 1. Add a separate JEV integration configuration containing its API key and an `enabled` preference. Keep it separate from the main chat-provider selection.
 2. Default JEV usage to disabled. Saving a key must not enable it automatically.
 3. Use the existing global user configuration and credential-storage conventions.
-4. Use `/connect` with **TypeSafe (JEV)** for key setup and `/jev` to toggle usage. Keep JEV out of the coding-model catalog. The key lives at `providers.typesafe.apiKey`; the opt-in preference lives at `integrations.jev.enabled`. These configuration flows are implemented; the evaluation adapter and runtime integration remain to be built.
+4. Use `/connect` with **TypeSafe (JEV)** for key setup and `/jev` to toggle usage. Keep JEV out of the coding-model catalog. The key lives at `providers.typesafe.apiKey`; the opt-in preference lives at `integrations.jev.enabled`. These configuration flows and the reusable core evaluation adapter are implemented; runtime integration remains to be built.
 5. Load configuration through the host and inject only the required JEV options into core.
 6. Define the following configuration and runtime behavior:
 
@@ -138,8 +138,8 @@ The contracts, limits, module names, and thresholds below are proposed starting 
 2. Chunk converted Markdown or text by headings, paragraphs, lists, and code blocks. Split oversized sections at sensible boundaries and retain their heading context.
 3. Give every chunk a stable identifier, source URL, section path, and position in the extracted document.
 4. Supply a trusted relevance objective. Add an optional `query` argument for the fetch purpose and use the current user request as a fallback. Do not send the whole conversation or derive the objective from page instructions.
-5. Implement the JEV adapter with strict response validation, bounded batches, limited concurrency, cancellation, and its own short deadline.
-6. Start with a Noul question per chunk: whether it contains useful evidence for the stated task. Noul returns the probability of “yes”; it does not return a separate confidence field or measure the degree of relevance. [TypeSafe Noul documentation](https://docs.typesafe.ai/primitives/noul)
+5. Use core's `createJevEvaluator` adapter, which provides typed evaluations, response validation, input limits, cancellation, and its own short deadline. Implement bounded batches and limited concurrency in the chunk-evaluation caller.
+6. Start with an AI SDK Boolean question per chunk: whether it contains useful evidence for the stated task. The TypeSafe provider maps this to Noul and returns `.probability`. This is the probability of “yes”; it does not return a separate confidence field or measure the degree of relevance. [AI SDK TypeSafe provider](https://ai-sdk.dev/providers/ai-sdk-providers/typesafe-ai), [TypeSafe Noul documentation](https://docs.typesafe.ai/primitives/noul)
 7. Begin conservatively: discard only clearly irrelevant chunks, retain uncertain chunks, and preserve headings or adjacent context needed to understand selected evidence. Validate thresholds using real examples.
 8. Leave small documents and explicitly requested raw HTML unfiltered. If no useful objective exists, skip filtering rather than guessing.
 

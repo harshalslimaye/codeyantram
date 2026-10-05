@@ -102,6 +102,55 @@ effort, or missing credentials. `streamChat` translates these into error events.
 Run `npm test -- --project core` from the repository root. Tests use the actual
 SDK with simulated HTTP responses and do not make live model requests.
 
+## JEV evaluation
+
+`createJevEvaluator` provides TypeSafe evaluations through `@ai-sdk/typesafe-ai`
+and the AI SDK's experimental evaluation API. JEV is separate from coding models
+and does not participate in chat or compaction model resolution.
+
+```ts
+import {createJevEvaluator} from '@codeyantram/core';
+
+// The host must check integrations.jev.enabled and load the TypeSafe key first.
+const evaluator = createJevEvaluator({apiKey});
+const result = await evaluator.evaluate({
+  state: {task: 'Find the API signature', chunk: extractedContent},
+  questions: {
+    relevant: {
+      type: 'boolean',
+      instructions: 'Does the chunk contain evidence useful to the task?',
+    },
+  },
+  abortSignal: controller.signal,
+});
+// result.answers.relevant.probability is P(true), not a graded relevance score.
+```
+
+The adapter supports Boolean, Choice, and Score questions with inferred answer
+types. It defaults to `jev-latest`, accepts an explicit model ID for pinning,
+and reports the resolved model ID. Results include duration, available token
+usage, rounding precision, and any Choice/Score confidence. Missing usage stays
+absent. Raw provider responses and credentials are not returned.
+
+Each batch accepts 1–64 questions and at most 1 MiB of serialized UTF-8 state
+and questions. Choice questions support 1–255 options, and Score questions
+support 2–10 levels. Input is validated and copied before sending. Core requires
+an explicit nonblank key and does not fall back to an environment key. An injected
+`fetch` supports host transport control and deterministic tests.
+
+Calls use a five-second default deadline, configurable up to thirty seconds,
+and zero retries. Cancellation and timeout stop waiting even if an injected
+transport ignores the abort signal; such a transport remains responsible for
+actually releasing its own resources. Late responses are never returned.
+Failures throw `EvaluationError` with a stable code and sanitized message.
+The SDK validates that answers match the requested IDs, types, ranges, and
+probability distributions, respecting TypeSafe's declared rounding precision.
+
+This adapter does not select chunks, apply relevance thresholds, read user
+configuration, or run automatically during chat. Server-side opt-in resolution
+and web-fetch filtering are subsequent integration steps. The host owns fallback
+behavior and records evaluation usage separately from chat usage.
+
 ## Workspace navigation
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
