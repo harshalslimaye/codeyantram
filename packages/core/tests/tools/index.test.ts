@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import {createNavigationTools, exploreInputSchema, graphInputSchema, type NavigationGraphService} from '../../src/index.js';
 import {GraphSourceChangedError} from '@codeyantram/graph';
+import {reference} from './helpers.js';
 
 function setup() {
   const query = vi.fn().mockResolvedValue({value: {symbols: [], truncated: false}, freshness: {epoch: 'epoch', revision: 1, reconciledAt: 1}});
@@ -11,6 +12,14 @@ function setup() {
 const execution = (toolCallId = 'call-1') => ({toolCallId, messages: [], context: {}});
 
 describe('bound navigation tool registry', () => {
+  it('registers all five tools and shares the execution limit across focused navigation', async () => {
+    const {tools, query} = setup();
+    expect(Object.keys(tools)).toEqual(['explore', 'graph', 'find', 'inspect', 'trace']);
+    for (let i = 0; i < 6; i++) await tools.find.execute!({query: 'greet'}, execution(`find-${i}`));
+    for (let i = 0; i < 6; i++) await tools.inspect.execute!({reference}, execution(`inspect-${i}`));
+    expect(await tools.trace.execute!({reference, direction: 'callers'}, execution('over-limit'))).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
+    expect(query).toHaveBeenCalledTimes(12);
+  });
   it.each([{query: ''}, {query: ' '}, {query: 'x'.repeat(1025)}, {query: 'q', maxNodes: 21},
     {query: 'q', maxCharacters: 24_001}, {query: 'q', workspaceRoot: '/other'}, {query: 'q', databasePath: '/other.db'}])
     ('rejects invalid or model-selected workspace arguments (case %#)', input => {

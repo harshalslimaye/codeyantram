@@ -35,6 +35,9 @@ export const toolErrorCodeSchema = z.enum([
   'cancelled',
   'graph_unavailable',
   'graph_stale',
+  'stale_reference',
+  'not_found',
+  'source_too_large',
   'tool_limit',
 ]);
 

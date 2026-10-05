@@ -4,13 +4,41 @@
 The package provides a workspace-bound CodeGraph adapter, synchronization
 coordinator, and global storage.
 
+## Source organization
+
+`src/index.ts` is the public entry point; consumers continue to import from
+`@codeyantram/graph`. Internal modules are grouped by responsibility:
+
+| Folder | Responsibility |
+| --- | --- |
+| `contracts/` | Public graph, navigation, coordination, and storage types; read/index interfaces |
+| `sdk/` | SDK compatibility, narrow backend ports, and locked connection setup |
+| `storage/` | Canonical workspace identity and global database paths |
+| `workspace/` | Public composition facade, operation admission/draining, indexing reports, and low-level lookups |
+| `navigation/` | Separate explore/find/inspect/trace queries, shared source verification, references, and result bounds |
+| `coordination/` | Serialized queue, change generations, reconciliation, scoped reads/edits, and workspace leases |
+
+The workspace facade composes operations and applies lifecycle admission;
+query modules own their navigation behavior. Each query receives only the
+backend and verification capabilities it needs. Source containment and file
+hash checks have one implementation shared by all navigation queries.
+
+The coordinator orchestrates domain interfaces rather than deriving its contract
+from the concrete SDK adapter. Queueing, change tracking, reconciliation, and
+callback lifetimes remain separate modules. No implementation inheritance is
+needed: collaborators are composed, and SDK-compatible structural ports can be
+substituted independently. The SDK instance stays private to these modules.
+
+## Workspace API
+
 The [tools and synchronization strategy](STRATEGY.md) describes the proposed
 navigation tools, synchronization after edits, freshness rules, and implementation order.
 
 `openWorkspaceGraph(workspaceRoot)` opens persisted state or creates an empty
 SQLite index for an explicit workspace root. The adapter provides `index()` for
 full indexing, `sync()` for incremental reconciliation, `getStatus()`, `search()`,
-`getSymbol()`, `getSource()`, `getCallers()`, `getCallees()`, `explore()`, and asynchronous
+`getSymbol()`, `getSource()`, `getCallers()`, `getCallees()`, `explore()`, `find()`,
+`inspect()`, `trace()`, and asynchronous
 `close()`. Its results use graph-package types; callers do not receive the raw
 SDK instance. Search limits and traversal depths are bounded.
 
@@ -38,8 +66,8 @@ Opening the low-level adapter does not index or sync automatically. Callers must
 state and operation reports. Full indexing reports extraction errors and index
 completeness; sync reports failed paths and cancellation, and lock failures
 reject. Queries do not establish filesystem freshness themselves. The operation
-watcher remains subsequent work. Core exposes read-only `explore` and diagnostic
-`graph` tools through the server-bound service. The CLI `init` command builds a missing/incomplete/outdated baseline or
+watcher remains subsequent work. Core exposes read-only `explore`, `find`,
+`inspect`, and `trace` tools, plus diagnostic `graph`, through the server-bound service. The CLI `init` command builds a missing/incomplete/outdated baseline or
 incrementally syncs a complete index. `close()` rejects new work and drains admitted
 asynchronous operations before closing SQLite. Read caches are invalidated
 before queries so another instance's completed writes become visible.
@@ -107,11 +135,14 @@ External notifications during a query reject its result. Unreported external
 writes during the callback are not an atomic filesystem snapshot. `explore()`
 checks each returned file's SHA-256 against its indexed content hash around
 source extraction and rejects mismatches with `GraphSourceChangedError`.
-Durable symbol-reference rules remain necessary before `inspect` and `trace`.
+`find`, `inspect`, and `trace` use workspace- and file-hash-backed symbol
+references and report `GraphNavigationError` with `stale_reference` when those
+checks disagree. These remain valid through no-op observations and unrelated
+file edits; they do not pin the coordinator's observation epoch/revision.
 SDK cross-process locks protect writes, but the operation
 queue itself is process-local. The server's lazy `WorkspaceGraphService` owns
 a lease for its selected root and drains its operations before releasing it
-on shutdown. Watchers and focused navigation tools remain subsequent work.
+on shutdown. Watchers and mutation tools remain subsequent work.
 
 `explore()` normalizes the pinned SDK's JSON `buildContext` string into graph
 types, keeps at most 20 symbols, 40 relationships, and five snippets (1,600
@@ -120,6 +151,30 @@ Callers can request smaller budgets; defaults are 12 symbols and 12,000 characte
 Snippets carry relative paths, symbol line ranges, file hashes, and individual
 truncation flags. Files over 1 MB are omitted. Context includes explicit indexed
 coverage and truncation; an empty result does not prove a symbol is absent.
+
+Focused queries run through the same adapter admission and coordinator queue:
+
+```ts
+const found = await coordinator.query(graph => graph.find('handleRequest'));
+// Select the intended candidate when multiple symbols match.
+const reference = found.value.matches[0]?.symbol.reference;
+if (reference) {
+  const inspected = await coordinator.query(graph => graph.inspect({reference}));
+  const callers = await coordinator.query(graph => graph.trace(reference, {direction: 'callers', depth: 2}));
+}
+const outline = await coordinator.query(graph => graph.inspect({filePath: 'src/handler.ts'}));
+```
+
+`find()` bounds candidates to 50; file outlines also keep at most 50 symbols.
+Defaults are 20 entries and 12,000 serialized characters, with budgets of
+2,048–24,000 characters. `inspect()` verifies a complete reference before SDK
+source extraction and checks fingerprints again afterward. `trace()` bounds
+SDK BFS to the requested related-symbol limit plus a lookahead, at depth 1–3;
+only resolved `calls` and `instantiates` edges are followed, with up to 100
+returned relationships. Results preserve relative paths and available edge
+locations/metadata. Trimmed context is marked, with no dangling returned edges.
+References bind the canonical workspace hash, symbol ID, file path, and exact
+file content hash. They require explicit rediscovery after relevant changes.
 
 `resolveGraphStoragePaths(workspaceRoot)` resolves an existing directory to its
 canonical path and hashes that path to select storage under the user's global
@@ -171,7 +226,7 @@ manages graph instances for active workspaces and their lifecycle. `shared`
 continues to own wire contracts used by the CLI and server. The graph package
 does not own model calls, tool execution, HTTP routes, or terminal UI.
 
-Source lives in `src/` and tests belong in `tests/`, mirroring source paths.
+Source lives in `src/`; integration tests and focused module tests live in `tests/`.
 The root TypeScript configuration includes this package, and Vitest has a named
 `graph` project. Run its tests from the repository root with
 `npm test -- --project graph`.

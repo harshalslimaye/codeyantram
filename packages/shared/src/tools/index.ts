@@ -28,3 +28,5 @@ export type {
   ToolResultPart,
   ToolStreamEvent,
 } from './types.js';
+export {navigationFilePathSchema, symbolReferenceSchema} from './navigation.js';
+export type {SymbolReference} from './navigation.js';

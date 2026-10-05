@@ -105,12 +105,12 @@ SDK with simulated HTTP responses and do not make live model requests.
 ## Workspace navigation
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
-to enable `explore` and `graph`. Omitting it keeps chat without tool definitions.
+to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting it keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 
 Each tool owns its schema, description, and handler in a separate file:
-`src/tools/explore.ts` and `src/tools/graph.ts`. `src/tools/index.ts` assembles
+`src/tools/explore.ts`, `graph.ts`, `find.ts`, `inspect.ts`, and `trace.ts`. `src/tools/index.ts` assembles
 the tools with a shared per-turn executor from `execution.ts`; host-service
 and executor interfaces live in `types.ts`.
 
@@ -121,6 +121,35 @@ freshness. `graph` takes an empty object and reads cached diagnostics, with at
 most 20 pending paths and sanitized error messages. It does not open or index
 the workspace. Arguments are strict; neither tool accepts a root or database.
 There is no watcher; every explore reconciles manual saves before reading.
+
+`find` accepts `query`, optional `limit` (1–50, default 20), and the same
+`maxCharacters` budget. It returns all retained candidates rather than resolving
+ambiguous names automatically. Candidate symbols, explore symbols, and trace
+symbols carry a `reference` with `workspaceId`, `symbolId`, `filePath`, and
+`contentHash`. The shared `symbolReferenceSchema` validates this wire format.
+
+`inspect` takes exactly one of `reference` or workspace-relative `filePath`.
+A reference returns verified symbol metadata and sanitized SDK source; a path
+returns an indexed file outline ordered by source location. Optional `limit`
+bounds the outline (1–50, default 20); `maxCharacters` bounds either result.
+Files outside indexed scope return `not_found`. Source over 1 MB returns
+`source_too_large`; file paths cannot traverse outside the bound workspace.
+
+`trace` takes a `reference`, `direction` (`callers` or `callees`), optional
+`depth` (1–3, default 1), `limit` (1–50 related symbols, default 20), and
+`maxCharacters`. It uses bounded SDK traversal over resolved calls and
+instantiations and returns related symbols plus directed edges with available
+line/column and metadata. Dynamic and unresolved calls may be absent; this
+tool does not calculate a complete impact radius.
+
+All three pass through the same reconciliation barrier. A reference remains
+usable after no-op scans and unrelated file edits, including across observation
+revisions. Edits, moves, or deletion of its own file, changed symbol IDs, and
+foreign-workspace references return `stale_reference`. The model must rediscover;
+tools never silently substitute a matching name. File hashes are rechecked around
+reads, while external processes can still change the filesystem after a response.
+Symbols expose `metadataTruncated`; context and source carry their own truncation
+flags. These references are content checks, not an atomic filesystem snapshot.
 
 The loop allows six provider steps and twelve executions per turn. Results have
 an 80 KB serialized UTF-8 ceiling. A tool failure is a structured result the model

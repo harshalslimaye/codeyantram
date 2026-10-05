@@ -18,7 +18,7 @@ Its coordinator shares a workspace operation queue, reconciles before queries,
 and awaits synchronization after recorded edits. Both forms of `init` use it.
 The server lazily acquires a workspace coordinator on first graph use and
 retains its lease until shutdown. Palette `/init` uses this service; ordinary
-chat without navigation opens no graph. Core's `explore` and `graph` tools use the bound service. See
+chat without navigation opens no graph. Core's five navigation tools use the bound service. See
 [packages/graph/README.md](packages/graph/README.md) for the package boundary.
 
 Direct dependencies use exact versions. If a package is used by more than one workspace, keep its declared version identical in each workspace. The root `package-lock.json` records the resolved dependency tree.
@@ -166,7 +166,15 @@ workspace. It lazily builds the initial index if necessary. `graph({})` reports
 lifecycle, freshness, pending changes, and failures without opening SQLite.
 Both tools are read-only; arguments cannot change the selected root or storage.
 Navigation uses at most six provider steps and twelve executions per turn.
-`find`, `inspect`, `trace`, mutation tools, and filesystem watchers remain next steps.
+`find({query, limit?, maxCharacters?})` returns symbol candidates with verified
+references. `inspect` accepts one reference to read source, or a relative
+`filePath` for an indexed outline. `trace` follows callers or callees of a
+reference, with bounded depth. References bind the workspace, symbol, path,
+and file hash; changes to that file produce `stale_reference` and require
+rediscovery. No-op scans and unrelated edits preserve them. The CLI displays
+queries and file targets while retaining complete references for model replay.
+Each tool has its own file in `packages/core/src/tools`. Mutation tools and
+filesystem watchers remain next steps.
 
 ## Tests
 

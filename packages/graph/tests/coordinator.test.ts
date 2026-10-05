@@ -21,6 +21,7 @@ function setup(options?: {cleanupTimeoutMs: number}) {
     index: vi.fn().mockResolvedValue(indexReport), sync: vi.fn().mockResolvedValue(syncReport),
     search: vi.fn().mockReturnValue([]), getSymbol: vi.fn().mockReturnValue(null),
     explore: vi.fn(),
+    find: vi.fn(), inspect: vi.fn(), trace: vi.fn(),
     getSource: vi.fn().mockResolvedValue(null), getCallers: vi.fn().mockReturnValue([]), getCallees: vi.fn().mockReturnValue([]),
     close: vi.fn().mockResolvedValue(undefined),
   };
@@ -210,6 +211,26 @@ describe('workspace graph coordinator', () => {
     source.resolve('code');
     await reading; await editing;
     expect(() => reader.search('late')).toThrow('inside their query');
+    await coordinator.close();
+  });
+
+  it.each(['find', 'inspect', 'trace'] as const)('drains asynchronous %s reads and expires the navigation reader', async method => {
+    const {graph, coordinator} = setup();
+    const result = deferred<unknown>(), entered = deferred<void>();
+    graph[method].mockImplementation(() => {entered.resolve(); return result.promise;});
+    let reader!: GraphReader;
+    const invoke = (current: GraphReader) => {
+      if (method === 'find') return current.find('greet');
+      if (method === 'inspect') return current.inspect({filePath: 'src/helper.ts'});
+      return current.trace({workspaceId: 'a'.repeat(64), symbolId: 'id', filePath: 'src/helper.ts', contentHash: 'b'.repeat(64)}, {direction: 'callers'});
+    };
+    const reading = coordinator.query(current => {reader = current; void invoke(current); return 'finished callback';});
+    const write = vi.fn(() => 'no changes');
+    const writing = coordinator.edit(write);
+    await entered.promise;
+    expect(write).not.toHaveBeenCalled();
+    result.resolve({}); await reading; await writing;
+    expect(() => invoke(reader)).toThrow('inside their query');
     await coordinator.close();
   });
 

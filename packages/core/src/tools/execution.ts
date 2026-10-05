@@ -1,4 +1,4 @@
-import {GraphSourceChangedError, GraphCoordinatorError} from '@codeyantram/graph';
+import {GraphSourceChangedError, GraphCoordinatorError, GraphNavigationError} from '@codeyantram/graph';
 import {toolResultSchema, type ToolResult} from '@codeyantram/shared';
 import type {NavigationExecutor} from './types.js';
 
@@ -18,6 +18,7 @@ export function createNavigationExecutor(): NavigationExecutor {
       return result;
     } catch (failure) {
       if (signal?.aborted) return error('cancelled', 'Navigation cancelled.');
+      if (failure instanceof GraphNavigationError) return error(failure.code, failure.message);
       if (failure instanceof GraphSourceChangedError) return error('graph_stale', failure.message);
       if (failure instanceof GraphCoordinatorError && failure.code === 'changes_during_sync') return error('graph_stale', 'The workspace changed during navigation. Retry explore.');
       return error('graph_unavailable', 'Graph navigation could not establish current context. Use graph for diagnostics or /init to retry.');

@@ -2,7 +2,8 @@ import {mkdtemp, mkdir, readdir, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {getUserGraphDirectory} from '@codeyantram/shared';
+import {getUserGraphDirectory, symbolReferenceSchema, type SymbolReference, type ToolResult} from '@codeyantram/shared';
+import type {GraphFindResult} from '@codeyantram/graph';
 import {streamChat as coreStreamChat} from '@codeyantram/core';
 import {sseResponse, openaiEvents, openaiToolEvents} from '../../../core/tests/chat/fixtures.js';
 import {startChatServer} from '../../src/chat/server.js';
@@ -21,6 +22,69 @@ afterEach(async () => {
 });
 
 describe('CLI server graph lifetime with the installed SDK', () => {
+  it('finds, inspects, and traces in one provider turn, then rediscovers after a manual edit invalidates its reference', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'codeyantram-focused-tools-e2e-'));
+    const root = path.join(directory, 'project');
+    vi.mocked(getUserGraphDirectory).mockReturnValue(path.join(directory, 'global', 'graphs'));
+    await mkdir(root);
+    await writeFile(path.join(root, 'helper.ts'), 'export function greet() { return "before edit"; }\n');
+    await writeFile(path.join(root, 'main.ts'), 'import {greet} from "./helper";\nexport function welcome() { return greet(); }\n');
+    let step = 0, original!: SymbolReference;
+    const providerFetch = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const outputs = (body.input as {type: string; output?: string}[]).filter(item => item.type === 'function_call_output');
+      const last = outputs.length ? JSON.parse(outputs.at(-1)!.output!) as ToolResult : undefined;
+      const referenceFromFind = () => {
+        if (last?.status !== 'success') throw new Error('Expected find result');
+        const context = (last.output as unknown as {context: GraphFindResult}).context;
+        return symbolReferenceSchema.parse(context.matches.find(match => match.symbol.name === 'greet')!.symbol.reference);
+      };
+      switch (step++) {
+        case 0:
+          expect(body.tools.map((tool: {name: string}) => tool.name)).toEqual(['explore', 'graph', 'find', 'inspect', 'trace']);
+          return sseResponse(openaiToolEvents('find', {query: 'greet'}, 'find-1'));
+        case 1:
+          original = referenceFromFind();
+          return sseResponse(openaiToolEvents('inspect', {reference: original}, 'inspect-1'));
+        case 2:
+          expect(last).toMatchObject({status: 'success', output: {context: {source: {text: expect.stringContaining('before edit')}}}});
+          return sseResponse(openaiToolEvents('trace', {reference: original, direction: 'callers'}, 'trace-1'));
+        case 3:
+          expect(last).toMatchObject({status: 'success', output: {context: {symbols: expect.arrayContaining([expect.objectContaining({name: 'welcome'})])}}});
+          return sseResponse(openaiEvents);
+        case 4:
+          expect(JSON.stringify(body.input)).toContain('trace-1');
+          return sseResponse(openaiToolEvents('inspect', {reference: original}, 'stale-inspect'));
+        case 5:
+          expect(last).toMatchObject({status: 'error', error: {code: 'stale_reference'}});
+          return sseResponse(openaiToolEvents('find', {query: 'greet'}, 'find-2'));
+        case 6: {
+          const updated = referenceFromFind();
+          expect(updated.contentHash).not.toBe(original.contentHash);
+          return sseResponse(openaiToolEvents('inspect', {reference: updated}, 'inspect-2'));
+        }
+        case 7:
+          expect(last).toMatchObject({status: 'success', output: {context: {source: {text: expect.stringContaining('after manual edit')}}}});
+          return sseResponse(openaiEvents);
+        default: throw new Error('Unexpected provider step');
+      }
+    });
+    const server = await startChatServer({workspaceRoot: root,
+      readConfig: async () => ({providers: {openai: {apiKey: 'test-openai'}}}),
+      streamChat: (request, options) => coreStreamChat(request, {...options, fetch: providerFetch}),
+    }); servers.push(server);
+    const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
+    await session.send('Find greet, inspect it, and trace its callers', 'gpt-6.1-sol');
+    expect(session.getSnapshot().error).toBeUndefined();
+    expect(session.getSnapshot().messages[1].parts.map(part => part.type)).toEqual(['tool-call', 'tool-result', 'tool-call', 'tool-result', 'tool-call', 'tool-result', 'text']);
+    await writeFile(path.join(root, 'helper.ts'), 'export function greet() { return "after manual edit"; }\n');
+    await session.send('Inspect greet again and recover if it changed', 'gpt-6.1-sol');
+    expect(session.getSnapshot().error).toBeUndefined();
+    expect(session.getSnapshot().messages[3].parts).toContainEqual(expect.objectContaining({type: 'tool-result', result: expect.objectContaining({status: 'error', error: expect.objectContaining({code: 'stale_reference'})})}));
+    expect(providerFetch).toHaveBeenCalledTimes(8);
+    expect(await readdir(root)).toEqual(['helper.ts', 'main.ts']);
+  }, 30_000);
+
   it('executes navigation through provider, HTTP, and session history and reconciles manual edits before the next explore', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'codeyantram-tools-e2e-'));
     const root = path.join(directory, 'project');

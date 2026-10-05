@@ -5,11 +5,19 @@ storage paths, a workspace-bound SDK adapter, and a synchronization coordinator.
 The CLI and palette `init` commands build or refresh the selected project's
 global index through that coordinator. The server now owns a lazy workspace
 lease and drains graph work on shutdown; palette `init` uses that service.
-Read-only `explore` and diagnostic `graph` now execute through chat, stream
-activity to the CLI, and survive history replay and compaction. Focused queries,
-mutation tools, and watchers remain unimplemented.
+Read-only `explore`, `find`, `inspect`, `trace`, and diagnostic `graph` execute
+through chat, stream activity to the CLI, and survive history replay and
+compaction. Mutation tools and watchers remain unimplemented.
 
 ## Package responsibilities
+
+Graph implementation modules are organized under `contracts`, `sdk`, `storage`,
+`workspace`, `navigation`, and `coordination`. The public `src/index.ts` preserves
+the package boundary. Each navigation query is independent; verification and
+reference handling are shared services behind narrow interfaces. The
+coordinator composes a queue, change journal, reconciler, and scoped callbacks
+instead of combining their implementations in one class. See the
+[source organization](README.md#source-organization) for folder responsibilities.
 
 | Package | Responsibility |
 | --- | --- |
@@ -36,9 +44,9 @@ when the first tool is working end to end.
 | --- | --- | --- | --- |
 | `explore` | Implemented: `query`, optional `maxNodes`/`maxCharacters` | Relevant symbols, verified source snippets, relationships, freshness, coverage, and truncation | JSON `buildContext`, normalized by our adapter |
 | `graph` | Implemented: empty object | Lifecycle state, last successful reconciliation, bounded pending changes, watcher disabled, and last sync failure | Cached service/coordinator state without opening the graph |
-| `find` | Query, bounded result limit | Candidate symbols and locations | `searchNodes` |
-| `inspect` | Revision-scoped symbol reference | Symbol metadata and source | `getNode` and `getCode`, subject to pinned-release verification |
-| `trace` | Symbol reference, direction (`callers`, `callees`, or `impact`), bounded depth/limit | Related symbols and relationship provenance | `getCallers`, `getCallees`, or `getImpactRadius` |
+| `find` | Implemented: `query`, optional `limit`/`maxCharacters` | Candidates, locations, and content-backed references | `searchNodes` plus file-hash verification |
+| `inspect` | Implemented: exactly one `reference` or `filePath`, optional bounds | Symbol metadata and verified source, or indexed file outline | `getNode`, `getCode`, `getNodesInFile` |
+| `trace` | Implemented: `reference`, `direction` (`callers`/`callees`), optional depth/limit/budget | Related symbols and relationship provenance | Bounded SDK `traverse` over resolved calls/instantiations; impact remains future work |
 
 The documented TypeScript facade supplies search, traversal, impact, context,
 and incremental sync. Verify exact option and result types against the installed
@@ -54,15 +62,15 @@ Every successful navigation response includes an index epoch/revision, relative
 paths, source line ranges where available, and explicit truncation/coverage
 information. Preserve relationship provenance when the SDK supplies it.
 
-Treat symbol IDs as references to one index revision. The current upstream
+Treat bare symbol IDs as references to indexed locations. The current upstream
 implementation notes that IDs can change when edits move a symbol's line.
-Define stable content revisions or fingerprint-backed references before adding
-`inspect` and `trace`: the coordinator's current observation revision advances
+The implemented fingerprint-backed references bind workspace, symbol ID, path,
+and file content hash. The coordinator's current observation revision advances
 on each successful reconciliation, including no-op scans, and cannot directly
-serve as a reusable symbol-reference version. Reject references from a different
-epoch/content revision and return a recoverable stale-reference error.
-Rediscovery may use path, qualified name, and kind, but
-must still handle ambiguity. See the
+serve as a reusable symbol-reference version. References survive no-op scans
+and unrelated edits; mismatched workspace, file content, path, or symbol IDs
+return `stale_reference` and require explicit rediscovery. Name matching never
+silently replaces a stale reference. See the
 [upstream facade](https://github.com/colbymchenry/codegraph/blob/main/src/index.ts).
 
 ## Synchronization contract
@@ -153,11 +161,10 @@ Use a workspace-owned bounded cleanup operation rather than the cancelled chat
 signal. A timeout leaves the graph dirty and blocks normal navigation until
 recovery; it does not prove the underlying SDK operation has stopped.
 
-The current shared tool call/result contracts can carry navigation payloads,
-but chat message parts and stream events still support only text. Complete tool
-history conversion, result replay, CLI display, context estimation, and
-compaction before exposing graph tools to the model. Keep source and tool
-results as untrusted conversation data, separate from system instructions.
+Shared tool call/result contracts carry navigation payloads. Chat message parts
+and stream events include tool calls/results, and replay, CLI display, context
+estimation, and compaction preserve them. Source and tool results remain
+untrusted conversation data, separate from system instructions.
 
 ## Lifecycle and multiple sessions
 

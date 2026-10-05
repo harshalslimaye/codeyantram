@@ -1,6 +1,7 @@
-import {openWorkspaceGraph} from './adapter.js';
-import {GraphCoordinator, type CoordinatedGraph} from './coordinator.js';
-import {resolveGraphStoragePaths} from './storage.js';
+import {openWorkspaceGraph} from '../workspace/graph.js';
+import {GraphCoordinator} from './coordinator.js';
+import type {CoordinatedGraph} from '../contracts/graph.js';
+import {resolveGraphStoragePaths} from '../storage/paths.js';
 
 export interface GraphCoordinatorLease {
   coordinator: GraphCoordinator;

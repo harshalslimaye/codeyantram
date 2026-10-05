@@ -62,7 +62,7 @@ Include previous user and assistant messages in `messages` for a continuing
 conversation. Effort is optional and must be supported by the selected model.
 Assistant parts may include complete `tool-call`/`tool-result` pairs; user parts
 are text-only. Duplicate IDs, mismatched results, and unresolved calls are rejected.
-The host-selected root enables core's `explore`/`graph` loop. Clients cannot
+The host-selected root enables core's `explore`/`graph`/`find`/`inspect`/`trace` loop. Clients cannot
 select graph roots or storage through requests. There is no tool HTTP endpoint.
 The request body limit is 4 MB.
 An optional `contextSummary` supplies compacted historical context; core replays

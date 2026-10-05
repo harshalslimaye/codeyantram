@@ -1,7 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState, useMemo} from 'react';
 import {Box, Text, measureElement, useWindowSize, type DOMElement} from 'ink';
 import wrapAnsi from 'wrap-ansi';
-import type {ChatMessage} from '@codeyantram/shared';
+import type {ChatMessage, ToolInput} from '@codeyantram/shared';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useMouseWheel} from '../terminal/mouse.js';
@@ -13,6 +13,13 @@ import type {StatusEntry} from '../chat/session.js';
 
 type ConversationLine = {kind: string; text: string};
 type ConversationBlock = {id: string; start: number; height: number; lines?: ConversationLine[]; status?: StatusEntry};
+
+function toolInputSummary(input: ToolInput): string {
+	const reference = input.reference;
+	const filePath = reference && typeof reference === 'object' && !Array.isArray(reference) ? reference.filePath : input.filePath;
+	const target = typeof input.query === 'string' ? input.query : typeof filePath === 'string' ? filePath : JSON.stringify(input);
+	return [target, typeof input.direction === 'string' ? input.direction : ''].filter(Boolean).join(' · ').slice(0, 160);
+}
 
 export function Conversation({messages, statusEntries, isStreaming}: {messages: ChatMessage[]; statusEntries: StatusEntry[]; isStreaming: boolean}) {
 	const {palette} = useTheme();
@@ -44,7 +51,7 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 		if (!message.parts.length && !pending) return [];
 		const text = message.parts.map(part => {
 			if (part.type === 'text') return part.text;
-			if (part.type === 'tool-call') return `\nTool ${part.call.toolName} · ${JSON.stringify(part.call.input).slice(0, 160)}\n`;
+			if (part.type === 'tool-call') return `\nTool ${part.call.toolName} · ${toolInputSummary(part.call.input)}\n`;
 			return `\n${part.result.toolName} · ${part.result.status === 'error' ? part.result.error.message : 'completed'}\n`;
 		}).join('') || (pending ? 'Waiting for response…' : '');
 		return [

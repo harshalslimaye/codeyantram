@@ -3,7 +3,7 @@ import React, {useState, type ReactNode} from 'react';
 import {PassThrough} from 'node:stream';
 import {render, type Instance} from 'ink';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import type {ChatRequest, CompactRequest, CompactStreamEvent} from '@codeyantram/shared';
+import type {ChatRequest, ChatStreamEvent, CompactRequest, CompactStreamEvent} from '@codeyantram/shared';
 import {App} from '../../src/app.js';
 import {InputBar} from '../../src/components/input-bar.js';
 import {KeyboardProvider} from '../../src/keyboard/provider.js';
@@ -155,23 +155,28 @@ describe('CLI chat UI', () => {
 	it('shows navigation activity and completion without dumping source results', async () => {
 		let finish!: () => void;
 		const pending = new Promise<void>(resolve => {finish = resolve;});
-		const session = new ChatSession(async function* () {
+		const session = new ChatSession(async function* (): AsyncGenerator<ChatStreamEvent> {
 			yield {type: 'start', messageId: 'tool-ui-1'};
 			yield {type: 'tool-call', call: {toolCallId: 'c1', toolName: 'explore', input: {query: 'greet'}}};
-			await pending;
 			yield {type: 'tool-result', result: {toolCallId: 'c1', toolName: 'explore', status: 'success', output: {source: 'LARGE_HISTORICAL_SOURCE'}}};
+			yield {type: 'tool-call', call: {toolCallId: 'c2', toolName: 'inspect', input: {reference: {workspaceId: 'a'.repeat(64), symbolId: 'hidden-symbol-id', filePath: 'entry.ts', contentHash: 'b'.repeat(64)}}}};
+			await pending;
+			yield {type: 'tool-result', result: {toolCallId: 'c2', toolName: 'inspect', status: 'success', output: {source: 'LARGE_HISTORICAL_SOURCE'}}};
 			yield {type: 'text-delta', text: 'Found greet in entry.ts.'};
 			yield {type: 'done', durationMs: 1};
 		});
 		const ui = renderWorkspace(session);
 		const sending = session.send('Locate greet', 'gpt-6.1-sol');
 		try {
-			await vi.waitFor(() => expect(ui.frame()).toContain('Tool explore'));
+			await vi.waitFor(() => expect(ui.frame()).toContain('Tool inspect · entry.ts'));
 			expect(ui.frame()).toContain('greet');
+			expect(ui.frame()).not.toContain('workspaceId');
+			expect(ui.frame()).not.toContain('hidden-symbol-id');
+			expect(ui.frame()).not.toContain('b'.repeat(64));
 			expect(session.getSnapshot().isStreaming).toBe(true);
 		} finally {finish();}
 		await sending;
-		await vi.waitFor(() => expect(ui.frame()).toContain('explore · completed'));
+		await vi.waitFor(() => expect(ui.frame()).toContain('inspect · completed'));
 		expect(ui.frame()).toContain('Found greet in entry.ts.');
 		expect(ui.frame()).not.toContain('LARGE_HISTORICAL_SOURCE');
 	});

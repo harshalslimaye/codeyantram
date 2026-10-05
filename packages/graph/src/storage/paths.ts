@@ -2,14 +2,7 @@ import {createHash} from 'node:crypto';
 import {realpath, stat} from 'node:fs/promises';
 import path from 'node:path';
 import {getUserGraphDirectory} from '@codeyantram/shared';
-
-export interface GraphStoragePaths {
-  workspaceRoot: string;
-  workspaceId: string;
-  directory: string;
-  databasePath: string;
-  lockPath: string;
-}
+import type {GraphStoragePaths} from '../contracts/storage.js';
 
 /** Resolves storage without creating directories or opening a database. */
 export async function resolveGraphStoragePaths(workspaceRoot: string): Promise<GraphStoragePaths> {
