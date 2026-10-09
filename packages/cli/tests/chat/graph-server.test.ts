@@ -41,7 +41,7 @@ describe('CLI server graph lifetime with the installed SDK', () => {
       };
       switch (step++) {
         case 0:
-          expect(body.tools.map((tool: {name: string}) => tool.name)).toEqual(['explore', 'graph', 'find', 'inspect', 'trace']);
+          expect(body.tools.map((tool: {name: string}) => tool.name)).toEqual(['explore', 'graph', 'find', 'inspect', 'trace', 'web_fetch']);
           return sseResponse(openaiToolEvents('find', {query: 'greet'}, 'find-1'));
         case 1:
           original = referenceFromFind();

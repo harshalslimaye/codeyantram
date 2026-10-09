@@ -62,7 +62,8 @@ Include previous user and assistant messages in `messages` for a continuing
 conversation. Effort is optional and must be supported by the selected model.
 Assistant parts may include complete `tool-call`/`tool-result` pairs; user parts
 are text-only. Duplicate IDs, mismatched results, and unresolved calls are rejected.
-The host-selected root enables core's `explore`/`graph`/`find`/`inspect`/`trace` loop. Clients cannot
+The host-selected root enables core's `explore`/`graph`/`find`/`inspect`/`trace` loop.
+`web_fetch` is available independently of the graph, including before `/init`. Clients cannot
 select graph roots or storage through requests. There is no tool HTTP endpoint.
 The request body limit is 4 MB.
 An optional `contextSummary` supplies compacted historical context; core replays
@@ -71,8 +72,13 @@ it as a labeled user message before `messages`.
 The selected model's provider key is loaded from the shared user configuration
 on every valid request, using the same `providers.<provider>.apiKey` field written
 by the CLI's `/connect` command. Clients do not submit credentials in the request.
-The configuration file is read in full, but only the selected provider's key is
-passed to core. Environment keys are not loaded.
+One configuration snapshot supplies both the selected coding-provider credentials
+and the JEV opt-in state. Only an enabled, configured JEV integration creates an
+evaluator; missing keys and initialization failure become filtering fallback
+notices without disabling normal web fetching. The JEV key stays inside the
+evaluator, never in tool arguments, chat credentials, or events. Environment keys
+are not loaded. `webTransport` and `createJevEvaluator` options support deterministic
+host integration tests. Evaluations are bound to the chat request's cancellation.
 
 Valid requests return HTTP 200 with `Content-Type: text/event-stream`. Each
 SSE data frame contains one shared `ChatStreamEvent`:
@@ -88,12 +94,14 @@ data: {"type":"done","durationMs":20,"usage":{"inputTokens":10,"outputTokens":3}
 
 Core failures, including missing credentials and provider errors, are sent as
 an `error` event and end the stream. A `done` event also ends the stream.
-Navigation calls and results use `{type: 'tool-call', call}` and
+Navigation and web calls and results use `{type: 'tool-call', call}` and
 `{type: 'tool-result', result}` events between text deltas. Tool errors are results
 the model can act on; exhaustion of the six-step loop ends with `tool_limit`.
 SSE comments (`: keep-alive`) are sent every 15 seconds while waiting; clients
 should ignore comments. Writes wait for the socket to drain when necessary.
-Disconnecting the client aborts core generation and stops the heartbeat.
+Disconnecting the client aborts core generation, web requests, and JEV evaluation,
+and stops the heartbeat. JEV token usage is recorded in each web result's filtering
+metadata and is not added to the coding provider's `done.usage`.
 
 Errors before streaming return a shared error event as a JSON body:
 

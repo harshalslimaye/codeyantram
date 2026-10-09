@@ -146,15 +146,72 @@ Failures throw `EvaluationError` with a stable code and sanitized message.
 The SDK validates that answers match the requested IDs, types, ranges, and
 probability distributions, respecting TypeSafe's declared rounding precision.
 
-This adapter does not select chunks, apply relevance thresholds, read user
-configuration, or run automatically during chat. Server-side opt-in resolution
-and web-fetch filtering are subsequent integration steps. The host owns fallback
-behavior and records evaluation usage separately from chat usage.
+The adapter itself does not select chunks or read user configuration. The server
+resolves opt-in once per chat turn and injects an evaluator into web fetch.
+Calls use only the fixed `https://api.typesafe.ai/v1/systemone` destination and
+reject redirects. Evaluation usage remains in web-fetch filtering metadata,
+separate from chat usage.
+
+## Web fetch
+
+Supply a `webFetch: createWebFetchService({transport?, jev?})` capability to
+`streamChat`. It works independently of `workspaceGraph`. The default server
+always supplies web fetch. Both tool families share twelve executions and six
+provider steps per turn, and keep the existing ToolResult/SSE/history contracts.
+
+Input is `{url, format?: 'markdown' | 'text' | 'html', timeout?: number,
+query?: string, filter?: boolean}`. URLs are at most 4,096 characters including
+normalization, timeout is an integer in seconds (default 30, maximum 120), and
+the optional relevance query is at most 2,048 characters. Without query, core
+uses only the latest user text, capped at 2,048 characters. It never sends the
+conversation or summary to JEV. `filter:false` overrides filtering only; it
+cannot enable JEV against host configuration.
+
+The native GET transport validates every resolved address and every redirect,
+rejects non-public IPv4/IPv6 and transition ranges, and pins validated addresses
+in socket lookup while preserving Host/SNI/TLS verification. It sends no cookies
+or credentials, follows at most five redirects, detects loops, and caps both wire
+and decompressed bytes at 5 MiB. Supported compression is gzip, deflate, and br.
+Unsupported MIME types are rejected before body reading. Supported documents
+are HTML/XHTML, Markdown, plain text, JSON, XML, and application +json/+xml.
+Text decoding uses a valid declared charset, then BOM, then UTF-8. Binary data
+is rejected. HTTP failures return sanitized status messages without error bodies.
+Cancellation covers DNS, connection, redirects, and streaming bodies.
+
+HTML conversion uses htmlparser2 and Turndown with GFM tables. Scripts, styles,
+hidden elements, and embedded documents are removed; HTTP(S) links resolve
+against the final URL. Conversion rejects over 50,000 elements or depth 128.
+Explicit HTML skips conversion and filtering. Non-HTML text is preserved, with
+an accurate returned format (JSON/XML remain text; Markdown remains Markdown).
+JavaScript rendering, attachment downloads, cookies, caching, and paging are absent.
+
+Enabled JEV filters converted documents of at least 6,000 characters. Stable
+chunks have source URL, UTF-16 offsets, position, heading ancestry, and at most
+2,400 characters. Documents requiring more than 4,096 chunks fall back to normal
+bounded content before evaluation. Each Boolean answer is P(useful evidence), not confidence.
+Up to the first 32 chunks are evaluated in batches of eight, with two concurrent
+batches and a five-second overall filtering deadline in addition to the fetch
+timeout. Only probabilities below 0.05 permit removal; this cutoff is provisional.
+Uncertain, failed, and unevaluated chunks survive. Selection preserves heading
+context, adjacent positive context, whole fenced examples, and source order.
+Chunks are copied verbatim with explicit gap markers. All-negative selection
+falls back to the original content. Small pages, missing objectives, disabled
+JEV, and explicit HTML skip evaluation.
+
+Results include requested/final URL, HTTP status, content type, returned format,
+untrusted content framing, warnings, `filtering`, and `truncation`. Filtering has
+status (`skipped`, `completed`, `partial`, `failed`), counts, incompleteness,
+duration, and available JEV usage. Output truncation is independent of relevance
+selection. Content is capped at 24,000 characters and the complete output at
+60,000 UTF-8 JSON bytes, leaving room under the shared 80,000-byte envelope.
+Forged boundary markers are escaped; framing is not a prompt-injection guarantee.
+See [WEB_FETCH_EVALUATION.md](WEB_FETCH_EVALUATION.md) for validation and limitations.
 
 ## Workspace navigation
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
-to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting it keeps chat without tool definitions.
+to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting both graph and
+web-fetch capabilities keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 

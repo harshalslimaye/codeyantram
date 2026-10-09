@@ -2,7 +2,7 @@ import {once} from 'node:events';
 import {createServer, type Server} from 'node:http';
 import {brotliCompressSync, deflateSync, gzipSync} from 'node:zlib';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {streamChat as coreStreamChat, type streamChat} from '@codeyantram/core';
+import {streamChat as coreStreamChat, createJevEvaluator, type streamChat, type WebFetchOutput} from '@codeyantram/core';
 import {chatStreamEventSchema, type ChatRequest, type ChatStreamEvent} from '@codeyantram/shared';
 import {createApp, type ServerAppOptions} from '@codeyantram/server';
 
@@ -54,6 +54,71 @@ afterEach(async () => {
 });
 
 describe('POST /chat', () => {
+  it.each(['disabled', 'key_only', 'enabled', 'missing_key', 'initialization_failed', 'evaluation_failed'] as const)
+  ('resolves JEV %s from one configuration snapshot and returns bounded web content', async state => {
+    const readConfig = vi.fn(async () => ({
+      providers: {...config.providers, ...(state === 'missing_key' || state === 'disabled' ? {} : {typesafe: {apiKey: 'private-jev-key'}})},
+      integrations: {jev: {enabled: !['disabled', 'key_only'].includes(state)}},
+    }));
+    const jevFetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (_url, init) => {
+      if (state === 'evaluation_failed') throw new Error('private-jev-key');
+      const body = JSON.parse(String(init?.body));
+      return Response.json({model: 'fixture', answers: Object.fromEntries(Object.keys(body.questions).map(id => [id, {type: 'noul', noul: 0.8}])), usage: {input_tokens: 20, output_tokens: 2}});
+    });
+    const factory = vi.fn<typeof createJevEvaluator>(options => {
+      if (state === 'initialization_failed') throw new Error('private-jev-key');
+      return createJevEvaluator({...options, fetch: jevFetch});
+    });
+    let result: WebFetchOutput | undefined;
+    const stream = vi.fn<typeof streamChat>().mockImplementation(async function* (_request, options) {
+      yield start;
+      result = await options.webFetch!.fetch({url: 'https://example.com/docs'}, {objective: 'Read the API reference', abortSignal: options.abortSignal});
+      yield {type: 'tool-call', call: {toolCallId: 'web-1', toolName: 'web_fetch', input: {url: 'https://example.com/docs'}}};
+      yield {type: 'tool-result', result: {toolCallId: 'web-1', toolName: 'web_fetch', status: 'success', output: JSON.parse(JSON.stringify(result))}};
+      yield done;
+    });
+    const response = await post(await listen({readConfig, streamChat: stream, createJevEvaluator: factory, webTransport: {fetch: async url => ({
+      requestedUrl: url, finalUrl: url, status: 200, contentType: 'text/markdown', text: '# API\n\n' + 'Evidence and prerequisites. '.repeat(500),
+    })}}));
+    const text = await response.text();
+    expect(parseEvents(text).at(-1)?.type).toBe('done');
+    expect(text).not.toContain('private-jev-key');
+    expect(readConfig).toHaveBeenCalledOnce();
+    expect(result!.content).toContain('Evidence and prerequisites.');
+    expect(result!.filtering.status).toBe(state === 'enabled' ? 'completed' : state === 'evaluation_failed' ? 'failed' : 'skipped');
+    if (['missing_key', 'initialization_failed', 'evaluation_failed'].includes(state)) expect(result!.warnings.length).toBeGreaterThan(0);
+    expect(factory).toHaveBeenCalledTimes(['enabled', 'initialization_failed', 'evaluation_failed'].includes(state) ? 1 : 0);
+    expect(jevFetch.mock.calls.length > 0).toBe(['enabled', 'evaluation_failed'].includes(state));
+    expect(stream.mock.calls[0]![1].credentials).toEqual({openai: 'test-openai-key'});
+    expect(stream.mock.calls[0]![1].workspaceGraph).toBeUndefined();
+  });
+
+  it.each(['fetch', 'evaluation'] as const)('cancels in-flight web %s when the client disconnects', async phase => {
+    const entered = deferred();
+    const cleaned = deferred();
+    let workSignal: AbortSignal | undefined;
+    const text = 'API evidence. '.repeat(1000);
+    const webTransport = {fetch: async (url: string, _format: unknown, signal: AbortSignal) => {
+      if (phase === 'fetch') {workSignal = signal; entered.resolve(); await new Promise(() => {});}
+      return {requestedUrl: url, finalUrl: url, status: 200, contentType: 'text/plain', text};
+    }};
+    const factory: typeof createJevEvaluator = options => createJevEvaluator({...options, fetch: async (_url, init) => {
+      workSignal = init?.signal ?? undefined; entered.resolve(); return new Promise(() => {});
+    }});
+    const stream = vi.fn<typeof streamChat>().mockImplementation(async function* (_request, options) {
+      try {
+        yield start;
+        await options.webFetch!.fetch({url: 'https://example.com'}, {objective: 'API task', abortSignal: options.abortSignal});
+        yield done;
+      } finally {cleaned.resolve();}
+    });
+    const response = await post(await listen({streamChat: stream, webTransport, createJevEvaluator: factory,
+      readConfig: async () => ({...config, providers: {...config.providers, typesafe: {apiKey: 'test-key'}}, integrations: {jev: {enabled: true}}}),
+    }));
+    const reader = response.body!.getReader(); await reader.read(); await entered.promise; await reader.cancel(); await cleaned.promise;
+    expect(workSignal?.aborted).toBe(true);
+  });
+
   it('forwards SSE events, history, effort, credentials, and usage', async () => {
     const stream = eventStream(start, {type: 'text-delta', text: 'Hello\nworld'}, done);
     const response = await post(await listen({streamChat: stream}));
@@ -66,6 +131,7 @@ describe('POST /chat', () => {
     expect(text).not.toContain('test-openai-key');
     expect(stream).toHaveBeenCalledWith(request, {
       credentials: {openai: 'test-openai-key'}, abortSignal: expect.any(AbortSignal),
+      webFetch: {fetch: expect.any(Function)},
     });
   });
 

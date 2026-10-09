@@ -22,7 +22,13 @@ export function createJevEvaluator(options: JevEvaluatorOptions): JevEvaluator {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_JEV_TIMEOUT_MS) {
     throw new EvaluationError('invalid_input', 'JEV timeout must be an integer from 1 to 30000 milliseconds.');
   }
-  const model = createTypeSafeAi({apiKey, fetch: options.fetch}).evaluationModel(modelId);
+  const transport = options.fetch ?? globalThis.fetch;
+  const model = createTypeSafeAi({apiKey, fetch: (url, init) => {
+    if (String(url) !== 'https://api.typesafe.ai/v1/systemone') {
+      throw new EvaluationError('provider_error', 'JEV attempted an unsupported API destination.');
+    }
+    return transport(url, {...init, redirect: 'error'});
+  }}).evaluationModel(modelId);
 
   return {async evaluate<const Questions extends EvaluationQuestions>(input: EvaluationInput<Questions>): Promise<EvaluationResult<Questions>> {
     if (input.abortSignal?.aborted) throw new EvaluationError('cancelled', 'JEV evaluation cancelled.');

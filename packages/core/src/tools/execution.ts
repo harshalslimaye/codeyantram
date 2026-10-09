@@ -1,27 +1,30 @@
-import {GraphSourceChangedError, GraphCoordinatorError, GraphNavigationError} from '@codeyantram/graph';
 import {toolResultSchema, type ToolResult} from '@codeyantram/shared';
-import type {NavigationExecutor} from './types.js';
+import type {ToolExecutor} from './types.js';
+import {mapGraphError} from './graph-errors.js';
+import {WebFetchError} from './web-fetch/errors.js';
 
-/** Create once per turn so all navigation tools share the same call budget. */
-export function createNavigationExecutor(): NavigationExecutor {
+/** Create once per turn so navigation and web tools share the same call budget. */
+export function createToolExecutor(): ToolExecutor {
   let executions = 0;
   return async (name, id, signal, run) => {
     const error = (code: Extract<ToolResult, {status: 'error'}>['error']['code'], message: string): ToolResult =>
       ({toolCallId: id, toolName: name, status: 'error', error: {code, message}});
-    if (++executions > 12) return error('tool_limit', 'The navigation call limit was reached. Narrow the task or continue in another turn.');
+    if (++executions > 12) return error('tool_limit', 'The tool call limit was reached. Narrow the task or continue in another turn.');
     try {
       signal?.throwIfAborted();
       const output = await run();
       signal?.throwIfAborted();
       const result = toolResultSchema.parse({toolCallId: id, toolName: name, status: 'success', output});
-      if (Buffer.byteLength(JSON.stringify(result), 'utf8') > 80_000) return error('execution_failed', 'Navigation output exceeded the host limit. Request less context.');
+      if (Buffer.byteLength(JSON.stringify(result), 'utf8') > 80_000) return error('execution_failed', 'Tool output exceeded the host limit. Request less context.');
       return result;
     } catch (failure) {
-      if (signal?.aborted) return error('cancelled', 'Navigation cancelled.');
-      if (failure instanceof GraphNavigationError) return error(failure.code, failure.message);
-      if (failure instanceof GraphSourceChangedError) return error('graph_stale', failure.message);
-      if (failure instanceof GraphCoordinatorError && failure.code === 'changes_during_sync') return error('graph_stale', 'The workspace changed during navigation. Retry explore.');
-      return error('graph_unavailable', 'Graph navigation could not establish current context. Use graph for diagnostics or /init to retry.');
+      if (signal?.aborted) return error('cancelled', 'Tool execution cancelled.');
+      if (failure instanceof WebFetchError) return error(failure.code, failure.message);
+      if (name === 'web_fetch') return error('execution_failed', 'Web fetch could not complete the request.');
+      const mapped = mapGraphError(failure);
+      return error(mapped.code, mapped.message);
     }
   };
 }
+
+export const createNavigationExecutor = createToolExecutor;

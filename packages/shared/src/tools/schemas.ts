@@ -38,6 +38,9 @@ export const toolErrorCodeSchema = z.enum([
   'stale_reference',
   'not_found',
   'source_too_large',
+  'unsupported_content',
+  'http_error',
+  'network_error',
   'tool_limit',
 ]);
 

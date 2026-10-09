@@ -1,10 +1,12 @@
 # Web Fetch Implementation Plan
 
-Status: JEV key setup, the `/jev` usage toggle, and a reusable core evaluation adapter are implemented. Server-side runtime integration, web fetch, and relevance filtering remain proposed.
+Status: Baseline web fetch (Phases 1–6), optional JEV configuration and server integration (Phase 7), chunking and relevance evaluation (Phase 8), and selection/recovery (Phase 9) are implemented. Phase 10 includes deterministic end-to-end tests, documentation, five synthetic evidence-retention fixtures, and an opt-in live evaluation runner. Live JEV accuracy, answer quality, cost, and threshold validation remain a rollout check: the saved JEV preference is disabled and has not been changed. Implementation changes are intentionally uncommitted for review.
 
 Build this feature in two milestones: a working web-fetch tool first, then optional JEV filtering. Keep the implementation inside `packages/core/src/tools/web-fetch/` and integrate it with the existing tool execution and chat streaming infrastructure.
 
-The contracts, limits, module names, and thresholds below are proposed starting points. Confirm them during the relevant phase before implementing them.
+Baseline contract: Markdown by default; GET only; 30-second default and 120-second maximum timeout; five redirects; 5 MiB limits on both wire and decompressed bytes. Oversized responses are rejected. Converted content is capped at 24,000 characters and the complete output JSON at 60,000 UTF-8 bytes, within the shared 80,000-byte tool-result ceiling. Conversion accepts at most 50,000 HTML elements and 128 nesting levels; explicit HTML mode skips conversion. Every destination is checked and connections use the validated DNS addresses. Navigation and fetching share twelve executions and six provider steps per turn.
+
+Baseline modules are `schema.ts`, `types.ts`, `limits.ts`, `errors.ts`, `url-policy.ts`, `cancellation.ts`, `transport.ts`, `response-body.ts`, `decoding.ts`, `content.ts`, `output.ts`, `service.ts`, and the tool definition `web-fetch.ts`. Filtering is in `chunks.ts` and `selection.ts`, using the existing core JEV adapter. Documents under 6,000 characters and explicit HTML requests skip filtering. Chunks are at most 2,400 characters; at most the first 32 chunks are evaluated in batches of eight with concurrency two and a five-second overall filtering deadline. Unevaluated chunks remain. Only probabilities below the provisional 0.05 cutoff permit removal. See [evaluation results and runner](packages/core/WEB_FETCH_EVALUATION.md).
 
 ## Phase 1 — Define the feature contract
 
@@ -45,7 +47,7 @@ The contracts, limits, module names, and thresholds below are proposed starting 
      output.ts
    ```
 
-2. Put the AI SDK tool definition and input schema in `web-fetch.ts`. Keep network, conversion, and output logic in their respective modules.
+2. Put the AI SDK tool definition in `web-fetch.ts` and its input schema in `schema.ts`. Keep network, conversion, and output logic in their respective modules.
 3. Define small interfaces for the transport and, later, the relevance evaluator. Inject them so tests can run without external services.
 4. Generalize the existing navigation executor into a shared tool executor. Preserve graph-specific error handling through a separate error mapper.
 5. Share the existing per-turn execution budget across navigation and web tools. Creating a second executor must not accidentally double the budget.
@@ -58,7 +60,7 @@ The contracts, limits, module names, and thresholds below are proposed starting 
 1. Validate URLs before opening a connection: accept HTTP/HTTPS, reject embedded credentials, and normalize the URL.
 2. Implement the public-network policy for IPv4, IPv6, and DNS results, including loopback, private, link-local, and other non-public destinations.
 3. Ensure the connection uses an address that passed validation. A DNS check followed by an independent lookup must not create a bypass.
-4. Follow redirects explicitly, validate every destination, detect loops, and enforce a proposed five-hop limit.
+4. Follow redirects explicitly, validate every destination, detect loops, and enforce a five-hop limit.
 5. Send predictable headers with a Codeyantram user agent and format-aware `Accept` preferences.
 6. Combine caller cancellation with the request deadline. Cover DNS resolution, connection establishment, redirects, and body reading; release readers and sockets when cancelled.
 7. Return useful errors for unreachable hosts, rejected destinations, authentication failures, rate limits, and other HTTP failures. Keep error-body excerpts short and treat them as untrusted content.
@@ -69,7 +71,7 @@ The contracts, limits, module names, and thresholds below are proposed starting 
 
 1. Classify the response from its MIME type rather than assuming everything is HTML.
 2. Reject unsupported declared content types before reading their bodies.
-3. Read the response incrementally, enforcing the proposed 5 MiB cap on decompressed bytes. Reject oversized responses instead of silently returning an incomplete document.
+3. Read the response incrementally, enforcing the 5 MiB cap on both wire and decompressed bytes. Reject oversized responses instead of silently returning an incomplete document.
 4. Treat `Content-Length` as an early check, while enforcing the actual streaming limit independently.
 5. Resolve text encoding using a valid declared charset, byte-order information, and an appropriate fallback. Account for supported encodings when detecting binary content.
 6. Produce a transport result containing decoded text and response metadata. Keep HTML conversion outside this layer.
@@ -107,8 +109,8 @@ The contracts, limits, module names, and thresholds below are proposed starting 
 1. Add a separate JEV integration configuration containing its API key and an `enabled` preference. Keep it separate from the main chat-provider selection.
 2. Default JEV usage to disabled. Saving a key must not enable it automatically.
 3. Use the existing global user configuration and credential-storage conventions.
-4. Use `/connect` with **TypeSafe (JEV)** for key setup and `/jev` to toggle usage. Keep JEV out of the coding-model catalog. The key lives at `providers.typesafe.apiKey`; the opt-in preference lives at `integrations.jev.enabled`. These configuration flows and the reusable core evaluation adapter are implemented; runtime integration remains to be built.
-5. Load configuration through the host and inject only the required JEV options into core.
+4. Use `/connect` with **TypeSafe (JEV)** for key setup and `/jev` to toggle usage. Keep JEV out of the coding-model catalog. The key lives at `providers.typesafe.apiKey`; the opt-in preference lives at `integrations.jev.enabled`. These configuration flows and the reusable core evaluation adapter are implemented.
+5. Load configuration through the host and inject only the required JEV capability into core. Implemented: the server uses one configuration snapshot per chat turn, creates an evaluator only when enabled and configured, preserves an unavailable diagnostic for incomplete configuration or initialization failure, and binds evaluation cancellation to the chat request. Evaluation usage remains separate from coding-model usage. Web results and the CLI display consumer-facing fallback notices.
 6. Define the following configuration and runtime behavior:
 
    | Configuration | Behavior |
@@ -130,10 +132,9 @@ The contracts, limits, module names, and thresholds below are proposed starting 
    web-fetch/
      chunks.ts
      selection.ts
-     jev/
-       client.ts
-       schemas.ts
    ```
+
+   Reuse `packages/core/src/evaluation/` for the JEV client and schemas instead of duplicating them inside web fetch.
 
 2. Chunk converted Markdown or text by headings, paragraphs, lists, and code blocks. Split oversized sections at sensible boundaries and retain their heading context.
 3. Give every chunk a stable identifier, source URL, section path, and position in the extracted document.
@@ -172,7 +173,7 @@ The contracts, limits, module names, and thresholds below are proposed starting 
 5. Compare filtered and unfiltered runs for evidence retention, answer quality, provider input size, total cost, and added latency. Choose thresholds from those results rather than assuming filtering is beneficial.
 6. Run `npm run typecheck` and the repository test suite. Use `npm test -- --maxWorkers=1` for the full suite where necessary to avoid the known CLI timing sensitivity. Run focused checks within earlier phases as their implementations land, rather than postponing all validation until this phase.
 7. Document formats, limits, JEV setup, fallback behavior, and the fact that enabling JEV sends fetched chunks and the relevance objective to that service.
-8. Commit in reviewable increments: baseline fetch, chat integration, JEV configuration, and JEV filtering.
+8. Leave these implementation changes uncommitted for user review, as requested. Suggested future commit boundaries are baseline fetch, chat integration, and JEV filtering/evaluation.
 
 **Completion condition:** The baseline feature works independently, JEV remains optional, and filtering has demonstrated acceptable evidence retention.
 
@@ -180,4 +181,4 @@ The contracts, limits, module names, and thresholds below are proposed starting 
 
 ## Recommended implementation order
 
-Establish JEV configuration first, using the foundations in Phase 7. Complete the baseline web-fetch feature in Phases 1–6, then finish JEV runtime integration and filtering in Phases 7–10. Keep JEV disabled by default throughout rollout.
+Implementation is complete through selection and recovery. Deterministic tests and the offline evaluation runner validate mechanics and evidence retention with authored judgments. After explicit JEV enablement, use `npm run evaluate:web-fetch -- --live` and optionally `--model=<configured-model>` to evaluate real classification, answer quality, reported token usage, total estimated cost, and latency before adjusting thresholds. Keep JEV disabled by default throughout rollout.

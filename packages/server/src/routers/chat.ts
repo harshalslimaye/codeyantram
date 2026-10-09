@@ -1,10 +1,11 @@
 import {Router} from 'express';
-import type {streamChat, ProviderCredentials} from '@codeyantram/core';
+import type {streamChat, ProviderCredentials, ChatStreamOptions} from '@codeyantram/core';
 import {chatRequestSchema, type ChatStreamEvent} from '@codeyantram/shared';
 import {serveEventStream} from '../http/stream.js';
 
 export interface ChatDependencies {
   readCredentials: (modelId: string) => Promise<ProviderCredentials>;
+  readOptions?: (modelId: string, signal: AbortSignal) => Promise<ChatStreamOptions>;
   streamChat: typeof streamChat;
 }
 
@@ -24,6 +25,7 @@ export function createChatRouter(dependencies: ChatDependencies): Router {
     await serveEventStream(response, {
       request: parsed.data,
       readCredentials: dependencies.readCredentials,
+      readOptions: dependencies.readOptions,
       generate: dependencies.streamChat,
       errorMessage: 'The chat request could not be completed.',
     });

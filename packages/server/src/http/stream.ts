@@ -6,6 +6,7 @@ import {openEventStream, startHeartbeat, writeStreamEvent} from './sse.js';
 interface EventStreamOptions<TRequest extends {model: string}> {
   request: TRequest;
   readCredentials: (modelId: string) => Promise<ProviderCredentials>;
+  readOptions?: (modelId: string, signal: AbortSignal) => Promise<ChatStreamOptions>;
   generate: (request: TRequest, options: ChatStreamOptions) => AsyncIterable<ChatStreamEvent | CompactStreamEvent>;
   errorMessage: string;
 }
@@ -27,13 +28,14 @@ export async function serveEventStream<TRequest extends {model: string}>(
   response.once('error', abort);
 
   try {
-    const credentials = await options.readCredentials(options.request.model);
+    const streamOptions = options.readOptions ? await options.readOptions(options.request.model, controller.signal)
+      : {credentials: await options.readCredentials(options.request.model)};
     if (controller.signal.aborted || response.destroyed) return;
 
     openEventStream(response);
     heartbeat = startHeartbeat(response);
     for await (const event of options.generate(options.request, {
-      credentials, abortSignal: controller.signal,
+      ...streamOptions, abortSignal: controller.signal,
     })) {
       if (controller.signal.aborted || response.destroyed) break;
       await writeStreamEvent(response, event, controller.signal);

@@ -152,7 +152,26 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
-	it('shows navigation activity and completion without dumping source results', async () => {
+  it('shows a fetched URL, truncation, and JEV fallback notices without dumping the page', async () => {
+    const session = new ChatSession(async function* (): AsyncGenerator<ChatStreamEvent> {
+      yield {type: 'start', messageId: 'web-ui'};
+      yield {type: 'tool-call', call: {toolCallId: 'web-call', toolName: 'web_fetch', input: {url: 'https://example.com/docs', query: 'authentication'}}};
+      yield {type: 'tool-result', result: {toolCallId: 'web-call', toolName: 'web_fetch', status: 'success', output: {
+        content: 'PRIVATE_PAGE_BODY', truncation: {truncated: true}, filtering: {status: 'skipped'},
+        warnings: ['JEV filtering skipped: configure TypeSafe through /connect. Normal content returned.'],
+      }}};
+      yield {type: 'done', durationMs: 1};
+    });
+    const ui = renderWorkspace(session);
+    await session.send('Read this URL', 'gpt-6.1-sol');
+    await vi.waitFor(() => expect(ui.frame()).toContain('https://example.com/docs'));
+    expect(ui.frame()).toContain('web_fetch · completed');
+    expect(ui.frame()).toContain('output truncated');
+    expect(ui.frame()).toContain('JEV filtering skipped');
+    expect(ui.frame()).not.toContain('PRIVATE_PAGE_BODY');
+  });
+
+  it('shows navigation activity and completion without dumping source results', async () => {
 		let finish!: () => void;
 		const pending = new Promise<void>(resolve => {finish = resolve;});
 		const session = new ChatSession(async function* (): AsyncGenerator<ChatStreamEvent> {

@@ -33,6 +33,7 @@ describe('JEV evaluation provider', () => {
     expect(fetch).toHaveBeenCalledOnce();
     const [url, init] = fetch.mock.calls[0]!;
     expect(String(url)).toBe('https://api.typesafe.ai/v1/systemone');
+    expect(init?.redirect).toBe('error');
     expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${apiKey}`);
     expect(JSON.parse(String(init?.body))).toEqual({model: 'jev-latest', state: input.state,
       questions: {relevant: {...input.questions.relevant, type: 'noul'}}});

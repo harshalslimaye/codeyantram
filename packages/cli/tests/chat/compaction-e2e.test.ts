@@ -15,7 +15,7 @@ afterEach(async () => {await Promise.all(servers.splice(0).map(server => server.
 // Use the actual SDK adapters, replacing only outbound HTTP. Adjacent user
 // blocks may be merged by Anthropic; compare ordered text blocks, not messages.
 function wireText(body: Record<string, any>): string[] {
-  if (body.input) return body.input.flatMap((message: any) =>
+  if (body.input) return body.input.filter((message: any) => !['system', 'developer'].includes(message.role)).flatMap((message: any) =>
     typeof message.content === 'string' ? [message.content] : message.content.map((part: any) => part.text));
   if (body.messages) return body.messages.flatMap((message: any) => message.content.map((part: any) => part.text));
   return body.contents.flatMap((message: any) => message.parts.map((part: any) => part.text));

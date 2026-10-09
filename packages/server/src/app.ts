@@ -1,11 +1,12 @@
 import express from 'express';
-import {compactChat, streamChat} from '@codeyantram/core';
+import {compactChat, streamChat, createWebFetchService, createJevEvaluator, type WebTransport} from '@codeyantram/core';
 import {readConfig, readProviderCredentials} from '@codeyantram/shared';
 import {handleError} from './middlewares/index.js';
 import {createChatRouter} from './routers/chat.js';
 import {createCompactRouter} from './routers/compact.js';
 import {WorkspaceGraphService} from './graph/workspace.js';
 import type {acquireGraphCoordinator} from '@codeyantram/graph';
+import {resolveJevCapability} from './integrations/jev.js';
 
 export interface ServerAppOptions {
   /** Project root selected by the host; graph storage canonicalizes it on first use. */
@@ -14,6 +15,8 @@ export interface ServerAppOptions {
   readConfig?: typeof readConfig;
   streamChat?: typeof streamChat;
   compactChat?: typeof compactChat;
+  createJevEvaluator?: typeof createJevEvaluator;
+  webTransport?: WebTransport;
 }
 
 export function createApp(options: ServerAppOptions = {}) {
@@ -23,6 +26,14 @@ export function createApp(options: ServerAppOptions = {}) {
   app.locals.workspaceGraph = workspaceGraph;
   const chatRouter = createChatRouter({
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),
+    readOptions: async (modelId, signal) => {
+      const config = await (options.readConfig ?? readConfig)();
+      return {
+        credentials: await readProviderCredentials(modelId, async () => config),
+        webFetch: createWebFetchService({transport: options.webTransport,
+          jev: resolveJevCapability(config, signal, options.createJevEvaluator)}),
+      };
+    },
     // Tests can supply a fake stream to avoid calling AI providers.
     streamChat: (request, streamOptions) => (options.streamChat ?? streamChat)(request, {
       ...streamOptions, ...(options.workspaceRoot ? {workspaceGraph} : {}),

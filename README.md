@@ -80,9 +80,22 @@ enabling. Saving a key does not enable usage. The key is stored at
 `providers.typesafe.apiKey`, and the opt-in preference at
 `integrations.jev.enabled`, in the global user config. Disabling preserves the
 key. JEV is an evaluation integration and does not appear in `/model`.
-Core provides a reusable JEV evaluation adapter. Automatic server-side opt-in
-resolution and web-fetch filtering will be implemented separately; configuring
-the integration currently makes no evaluation request.
+The server resolves this preference on each chat turn. When enabled, web fetch
+can send fetched chunks and the current task objective to TypeSafe for relevance
+evaluation. Saving a key alone makes no evaluation request. Failed or incomplete
+evaluation retains unevaluated content and reports a fallback notice.
+
+The `web_fetch` tool reads public HTTP(S) URLs without requiring `/init`. It
+returns Markdown by default, with text and explicit raw HTML options. Requests
+use GET without cookies or credentials; JavaScript and binary attachments are
+unsupported. Every destination, including redirects, must resolve to public IPs.
+The default request timeout is 30 seconds (maximum 120), with five redirects and
+5 MiB limits on both wire and decompressed bytes. Output is limited to 24,000
+characters and 60,000 serialized UTF-8 bytes, with explicit truncation metadata.
+JEV filtering is optional; `filter:false` requests unfiltered bounded content.
+The CLI shows the URL, completion/errors, truncation, and filtering fallback notices.
+See [web-fetch evaluation](packages/core/WEB_FETCH_EVALUATION.md) for reproducible
+fixtures and opt-in live evidence, answer-quality, latency, and cost comparisons.
 
 Use `/status` to add a session snapshot to scrollback showing the active model,
 estimated context tokens against its catalog window, a usage bar, and estimated

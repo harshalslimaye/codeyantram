@@ -1,7 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState, useMemo} from 'react';
 import {Box, Text, measureElement, useWindowSize, type DOMElement} from 'ink';
 import wrapAnsi from 'wrap-ansi';
-import type {ChatMessage, ToolInput} from '@codeyantram/shared';
+import type {ChatMessage, ToolInput, ToolResult} from '@codeyantram/shared';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useMouseWheel} from '../terminal/mouse.js';
@@ -17,8 +17,19 @@ type ConversationBlock = {id: string; start: number; height: number; lines?: Con
 function toolInputSummary(input: ToolInput): string {
 	const reference = input.reference;
 	const filePath = reference && typeof reference === 'object' && !Array.isArray(reference) ? reference.filePath : input.filePath;
-	const target = typeof input.query === 'string' ? input.query : typeof filePath === 'string' ? filePath : JSON.stringify(input);
+	const target = typeof input.url === 'string' ? input.url : typeof input.query === 'string' ? input.query : typeof filePath === 'string' ? filePath : JSON.stringify(input);
 	return [target, typeof input.direction === 'string' ? input.direction : ''].filter(Boolean).join(' · ').slice(0, 160);
+}
+
+function toolResultSummary(result: ToolResult): string {
+	if (result.status === 'error') return result.error.message;
+	if (result.toolName !== 'web_fetch' || !result.output || typeof result.output !== 'object' || Array.isArray(result.output)) return 'completed';
+	const details = ['completed'];
+	const {warnings, truncation, filtering} = result.output;
+	if (filtering && typeof filtering === 'object' && !Array.isArray(filtering) && filtering.status === 'completed') details.push('JEV filtered');
+	if (truncation && typeof truncation === 'object' && !Array.isArray(truncation) && truncation.truncated === true) details.push('output truncated');
+	if (Array.isArray(warnings)) details.push(...warnings.filter((warning): warning is string => typeof warning === 'string').map(warning => warning.slice(0, 240)));
+	return details.join(' · ');
 }
 
 export function Conversation({messages, statusEntries, isStreaming}: {messages: ChatMessage[]; statusEntries: StatusEntry[]; isStreaming: boolean}) {
@@ -52,7 +63,7 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 		const text = message.parts.map(part => {
 			if (part.type === 'text') return part.text;
 			if (part.type === 'tool-call') return `\nTool ${part.call.toolName} · ${toolInputSummary(part.call.input)}\n`;
-			return `\n${part.result.toolName} · ${part.result.status === 'error' ? part.result.error.message : 'completed'}\n`;
+			return `\n${part.result.toolName} · ${toolResultSummary(part.result)}\n`;
 		}).join('') || (pending ? 'Waiting for response…' : '');
 		return [
 			{kind: message.role, text: message.role === 'user' ? 'You' : 'Assistant'},

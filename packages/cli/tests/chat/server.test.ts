@@ -60,8 +60,10 @@ describe('CLI-owned chat server', () => {
 		const serialized = JSON.stringify(nextBody);
 		expect(serialized).not.toContain('ARCHIVED_ONE');
 		expect(serialized).not.toContain('ARCHIVED_TWO');
-		expect(nextBody.input[0]).toMatchObject({role: 'user', content: [{text: expect.stringContaining(summary)}]});
-		expect(nextBody.input.slice(1).map((message: {content: string | {text: string}[]}) =>
+		expect(nextBody.input[0]).toMatchObject({role: 'developer', content: expect.stringContaining('web_fetch')});
+		const history = nextBody.input.filter((message: {role: string}) => !['developer', 'system'].includes(message.role));
+		expect(history[0]).toMatchObject({role: 'user', content: [{text: expect.stringContaining(summary)}]});
+		expect(history.slice(1).map((message: {content: string | {text: string}[]}) =>
 			typeof message.content === 'string' ? message.content : message.content.map(part => part.text).join(''),
 		)).toEqual([...transcript.slice(4).map(message => message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part)).join('')), 'NEXT_QUESTION']);
 		expect(session.getSnapshot().messages.slice(0, 8)).toEqual(transcript);

@@ -8,9 +8,11 @@ export interface NavigationGraphService {
 }
 
 /** Shared per-turn execution policy, injected into each tool definition. */
-export type NavigationExecutor = (
+export type ToolExecutor = (
   name: string,
   id: string,
   signal: AbortSignal | undefined,
   run: () => Promise<unknown>,
 ) => Promise<ToolResult>;
+
+export type NavigationExecutor = ToolExecutor;
