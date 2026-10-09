@@ -11,6 +11,10 @@
     "test:watch": "vitest --watch",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint --config oxlint.config.mjs .",
+    "lint:fix": "oxlint --config oxlint.config.mjs --fix .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
     "evaluate:web-fetch": "node --import tsx packages/core/evaluations/web-fetch/run.ts"
   },
   "engines": {
@@ -24,8 +28,19 @@
     "packages/shared"
   ],
   "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/eslint-parser": "7.29.9",
+    "@babel/plugin-syntax-typescript": "7.29.7",
     "@types/node": "22.20.4",
     "@vitest/coverage-v8": "5.0.3",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-security": "4.2.0",
+    "esquery": "1.7.0",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2003",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vitest": "5.0.3"

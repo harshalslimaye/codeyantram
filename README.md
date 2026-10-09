@@ -215,9 +215,29 @@ npm test -- --project core           # Run only core tests
 npm test -- --project server         # Run only server tests
 npm test -- packages/cli/tests/models/preferences.test.ts
 npm run typecheck                    # Check source, tests, and Vitest configuration
+npm run lint                         # Check correctness with Oxlint
+npm run lint:fix                     # Apply automatic lint fixes
+npm run format:check                 # Check formatting without writing files
+npm run format                       # Format files with Oxfmt
 ```
 
 The CLI workspace also supports `npm test --workspace=@codeyantram/cli`.
+
+Linting uses `oxlint.config.mjs`, with type-aware rules provided by
+`oxlint-tsgolint`. The requested strict rules run as errors, including file,
+function, complexity, and nesting limits. Rules missing from native Oxlint use
+JavaScript plugins; those import rules have the `import-js/` prefix, and
+`no-restricted-syntax` has the `eslint-js/` prefix. Imported files are parsed with
+Babel through `scripts/oxlint-import-parser.cjs`, avoiding a dependency on a
+TypeScript compiler version unsupported by the TypeScript ESLint parser.
+Tests, evaluation runners, and development scripts may use declared development
+dependencies; each workspace checks its own manifest and the root manifest.
+
+`no-restricted-imports`, `import-js/no-restricted-paths`, and
+`eslint-js/no-restricted-syntax` are enabled without specific prohibited imports,
+path zones, or AST selectors. Add those project policies to the config to make
+these three rules enforce restrictions. `lint` and `format:check` only report
+issues; `lint:fix` and `format` modify files.
 
 Each package has a `tests/` folder beside `src/`. Keep all tests in `tests/`,
 mirroring the relative source paths: `src/theme/utils/colors.ts` is tested by

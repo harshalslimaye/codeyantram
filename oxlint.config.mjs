@@ -1,0 +1,300 @@
+import {fileURLToPath} from 'node:url';
+import {defineConfig} from 'oxlint';
+
+const config = {
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc",
+    "react",
+    "vitest",
+    "import",
+    "promise"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "node": true
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/.vitest/**"
+  ],
+  "options": {
+    "typeAware": true
+  },
+  "jsPlugins": [
+    {
+      "name": "import-js",
+      "specifier": "eslint-plugin-import"
+    },
+    "eslint-plugin-security",
+    {
+      "name": "eslint-js",
+      "specifier": "./scripts/oxlint-eslint-rules.mjs"
+    }
+  ],
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "no-unused-vars": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/strict-boolean-expressions": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/no-unnecessary-type-arguments": "error",
+    "typescript/no-unnecessary-boolean-literal-compare": "error",
+    "typescript/no-unnecessary-template-expression": "error",
+    "typescript/no-confusing-void-expression": "error",
+    "typescript/require-await": "error",
+    "typescript/no-deprecated": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+    "no-console": "error",
+    "no-unreachable": "error",
+    "no-empty": "error",
+    "no-unused-expressions": "error",
+    "no-constant-condition": "error",
+    "no-cond-assign": "error",
+    "no-shadow": "error",
+    "no-param-reassign": "error",
+    "no-magic-numbers": "error",
+    "no-nested-ternary": "error",
+    "no-eval": "error",
+    "no-new-func": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "eqeqeq": "error",
+    "max-lines": [
+      "error",
+      300
+    ],
+    "max-lines-per-function": [
+      "error",
+      50
+    ],
+    "complexity": [
+      "error",
+      10
+    ],
+    "max-depth": [
+      "error",
+      3
+    ],
+    "max-params": [
+      "error",
+      4
+    ],
+    "max-classes-per-file": [
+      "error",
+      1
+    ],
+    "max-statements": [
+      "error",
+      30
+    ],
+    "max-nested-callbacks": [
+      "error",
+      3
+    ],
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-self-import": "error",
+    "import-js/no-internal-modules": "error",
+    "import-js/no-restricted-paths": "error",
+    "import-js/no-extraneous-dependencies": [
+      "error",
+      {
+        "devDependencies": [
+          "**/tests/**",
+          "**/evaluations/**",
+          "scripts/**",
+          "*.config.*"
+        ]
+      }
+    ],
+    "import-js/no-deprecated": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [],
+        "patterns": []
+      }
+    ],
+    "eslint-js/no-restricted-syntax": "error",
+    "no-warning-comments": "error",
+    "unicorn/no-abusive-eslint-disable": "error",
+    "unicorn/prefer-module": "error",
+    "unicorn/prefer-node-protocol": "error",
+    "unicorn/no-array-for-each": "error",
+    "unicorn/no-useless-undefined": "error",
+    "unicorn/no-useless-promise-resolve-reject": "error",
+    "unicorn/no-useless-spread": "error",
+    "unicorn/no-useless-switch-case": "error",
+    "unicorn/no-useless-length-check": "error",
+    "unicorn/no-unnecessary-await": "error",
+    "unicorn/no-process-exit": "error",
+    "unicorn/error-message": "error",
+    "unicorn/prefer-type-error": "error",
+    "promise/catch-or-return": "error",
+    "promise/no-return-wrap": "error",
+    "promise/no-nesting": "error",
+    "promise/always-return": "error",
+    "promise/no-multiple-resolved": "error",
+    "security/detect-object-injection": "error",
+    "security/detect-non-literal-fs-filename": "error",
+    "security/detect-child-process": "error",
+    "security/detect-eval-with-expression": "error",
+    "security/detect-unsafe-regex": "error",
+    "security/detect-buffer-noassert": "error"
+  },
+  "settings": {
+    "import/resolver": {
+      "typescript": {
+        "project": "./tsconfig.json"
+      },
+      "node": true
+    },
+    "import/extensions": [
+      ".ts",
+      ".tsx",
+      ".mts",
+      ".cts",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs"
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "packages/core/**/*"
+      ],
+      "rules": {
+        "import-js/no-extraneous-dependencies": [
+          "error",
+          {
+            "devDependencies": [
+              "**/tests/**",
+              "**/evaluations/**",
+              "scripts/**",
+              "*.config.*"
+            ],
+            "packageDir": [
+              "./packages/core",
+              "."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/cli/**/*"
+      ],
+      "rules": {
+        "import-js/no-extraneous-dependencies": [
+          "error",
+          {
+            "devDependencies": [
+              "**/tests/**",
+              "**/evaluations/**",
+              "scripts/**",
+              "*.config.*"
+            ],
+            "packageDir": [
+              "./packages/cli",
+              "."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/server/**/*"
+      ],
+      "rules": {
+        "import-js/no-extraneous-dependencies": [
+          "error",
+          {
+            "devDependencies": [
+              "**/tests/**",
+              "**/evaluations/**",
+              "scripts/**",
+              "*.config.*"
+            ],
+            "packageDir": [
+              "./packages/server",
+              "."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/shared/**/*"
+      ],
+      "rules": {
+        "import-js/no-extraneous-dependencies": [
+          "error",
+          {
+            "devDependencies": [
+              "**/tests/**",
+              "**/evaluations/**",
+              "scripts/**",
+              "*.config.*"
+            ],
+            "packageDir": [
+              "./packages/shared",
+              "."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/graph/**/*"
+      ],
+      "rules": {
+        "import-js/no-extraneous-dependencies": [
+          "error",
+          {
+            "devDependencies": [
+              "**/tests/**",
+              "**/evaluations/**",
+              "scripts/**",
+              "*.config.*"
+            ],
+            "packageDir": [
+              "./packages/graph",
+              "."
+            ]
+          }
+        ]
+      }
+    }
+  ]
+};
+
+// The import plugin resolves parser names as modules, so provide an absolute path.
+config.settings['import/parsers'] = {
+  [fileURLToPath(new URL('./scripts/oxlint-import-parser.cjs', import.meta.url))]:
+    config.settings['import/extensions'],
+};
+
+export default defineConfig(config);
