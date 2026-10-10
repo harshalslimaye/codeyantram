@@ -8,7 +8,7 @@ const HTTP_INTERNAL_SERVER_ERROR = 500;
 interface EventStreamOptions<TRequest extends {model: string}> {
   request: TRequest;
   readCredentials: (modelId: string) => Promise<ProviderCredentials>;
-  readOptions?: (modelId: string, signal: AbortSignal) => Promise<ChatStreamOptions>;
+  readOptions?: (request: TRequest, signal: AbortSignal) => Promise<ChatStreamOptions>;
   generate: (request: TRequest, options: ChatStreamOptions) => AsyncIterable<ChatStreamEvent | CompactStreamEvent>;
   errorMessage: string;
 }
@@ -30,7 +30,7 @@ export async function serveEventStream<TRequest extends {model: string}>(
   response.once('error', abort);
 
   try {
-    const streamOptions = options.readOptions ? await options.readOptions(options.request.model, controller.signal)
+    const streamOptions = options.readOptions ? await options.readOptions(options.request, controller.signal)
       : {credentials: await options.readCredentials(options.request.model)};
     if (streamClosed(response, controller.signal)) return;
 

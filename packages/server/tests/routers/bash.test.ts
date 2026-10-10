@@ -38,6 +38,7 @@ describe('server command host capability', () => {
       yield {type: 'done', durationMs: 1};
     });
     const app = createApp({workspaceRoot: directory, streamChat: stream, createJevEvaluator: factory,
+      authorizeAgent: () => ({command: true}),
       ...(mode !== 'no_approver' ? {approveCommand: approve, commandEnvironment: {HOST_FLAG: 'permitted'}} : {}),
       readConfig: async () => ({providers: {openai: {apiKey: 'PRIVATE KEY'}, typesafe: {apiKey: 'PRIVATE JEV KEY'}}, integrations: {jev: {enabled: mode !== 'disabled'}}}),
     });
@@ -47,7 +48,7 @@ describe('server command host capability', () => {
     const address = server.address();
     if (address === null || typeof address === 'string') throw new Error('Expected TCP address.');
     const response = await fetch(`http://127.0.0.1:${address.port}/chat`, {method: 'POST', headers: {'content-type': 'application/json'},
-      body: JSON.stringify({model: 'gpt-6.1-sol', messages: [{id: 'user', role: 'user', parts: [{type: 'text', text: 'Run tests'}]}]}),
+      body: JSON.stringify({model: 'gpt-6.1-sol', agentId: 'build', messages: [{id: 'user', role: 'user', parts: [{type: 'text', text: 'Run tests'}]}]}),
     });
     expect(await response.text()).toContain('done');
     expect(approve).toHaveBeenCalledTimes(mode === 'no_approver' ? 0 : 1);

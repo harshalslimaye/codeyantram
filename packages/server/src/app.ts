@@ -1,14 +1,15 @@
 import express from 'express';
-import {compactChat, streamChat, createWebFetchService, createReadService, createGrepService, createGlobService,
-  createApplyPatchService, createBashService, createGitService, type BashApprover, type PatchApprover,
+import {compactChat, streamChat, createAgentRegistry, type BashApprover, type PatchApprover,
   type createJevEvaluator, type WebTransport} from '@codeyantram/core';
-import {readConfig, readProviderCredentials} from '@codeyantram/shared';
+import {readProviderCredentials, type readConfig, type ChatRequest} from '@codeyantram/shared';
 import {handleError} from './middlewares/index.js';
 import {createChatRouter} from './routers/chat.js';
 import {createCompactRouter} from './routers/compact.js';
 import {WorkspaceGraphService} from './graph/workspace.js';
 import type {acquireGraphCoordinator} from '@codeyantram/graph';
-import {resolveJevCapability} from './integrations/jev.js';
+import {agentMetadata, readChatOptions} from './agents/host.js';
+
+const HTTP_FORBIDDEN = 403;
 
 export interface ServerAppOptions {
   /** Project root selected by the host; graph storage canonicalizes it on first use. */
@@ -22,32 +23,23 @@ export interface ServerAppOptions {
   approvePatch?: PatchApprover;
   approveCommand?: BashApprover;
   commandEnvironment?: Record<string, string>;
+  /** Host-owned authorization, evaluated for each turn. Missing means read-only. */
+  authorizeAgent?: (request: ChatRequest) => {patch?: boolean; command?: boolean; automatic?: boolean};
+  /** Required on every CLI-owned HTTP route when set. */
+  privateSessionToken?: string;
 }
 
 export function createApp(options: ServerAppOptions = {}) {
   const app = express();
   const workspaceGraph = new WorkspaceGraphService(options.workspaceRoot, options.acquireGraphCoordinator);
+  const agents = createAgentRegistry();
   app.locals.workspaceRoot = options.workspaceRoot;
   app.locals.workspaceGraph = workspaceGraph;
   const chatRouter = createChatRouter({
+    agents: () => agentMetadata(agents, options),
+    hasAgent: id => agents.get(id) !== undefined,
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),
-    readOptions: async (modelId, signal) => {
-      const config = await (options.readConfig ?? readConfig)();
-      const jev = resolveJevCapability(config, signal, options.createJevEvaluator);
-      return {
-        credentials: await readProviderCredentials(modelId, async () => config),
-        jev,
-        ...((options.workspaceRoot !== undefined && options.workspaceRoot !== '')
-          ? {read: createReadService({workspaceRoot: options.workspaceRoot, jev}),
-            grep: createGrepService({workspaceRoot: options.workspaceRoot, jev}),
-            glob: createGlobService({workspaceRoot: options.workspaceRoot, jev}),
-            git: createGitService({workspaceRoot: options.workspaceRoot, jev}),
-            ...(options.approvePatch ? {applyPatch: createApplyPatchService({workspaceRoot: options.workspaceRoot, approve: options.approvePatch})} : {}),
-            ...(options.approveCommand ? {bash: createBashService({workspaceRoot: options.workspaceRoot, approve: options.approveCommand, environment: options.commandEnvironment})} : {})} : {}),
-        webFetch: createWebFetchService({transport: options.webTransport,
-          jev}),
-      };
-    },
+    readOptions: (request, signal) => readChatOptions(request, signal, agents, options),
     // Tests can supply a fake stream to avoid calling AI providers.
     streamChat: (request, streamOptions) => (options.streamChat ?? streamChat)(request, {
       ...streamOptions, ...((options.workspaceRoot !== undefined && options.workspaceRoot !== '') ? {workspaceGraph} : {}),
@@ -59,6 +51,13 @@ export function createApp(options: ServerAppOptions = {}) {
   });
 
   app.disable('x-powered-by');
+  if (options.privateSessionToken !== undefined) app.use((request, response, next) => {
+    if (request.header('x-codeyantram-session') !== options.privateSessionToken) {
+      response.status(HTTP_FORBIDDEN).json({type: 'error', code: 'invalid_request', message: 'Private session token required.'});
+      return;
+    }
+    next();
+  });
   app.use(express.json({limit: '4mb'}));
   app.use(chatRouter);
   app.use(compactRouter);

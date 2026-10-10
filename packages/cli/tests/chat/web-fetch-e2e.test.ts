@@ -36,7 +36,7 @@ describe('CLI web fetch end to end', () => {
       createJevEvaluator: options => createJevEvaluator({...options, fetch: jevFetch}),
       streamChat: (request, options) => streamChat(request, {...options, fetch: providerFetch}),
     }); servers.push(server);
-    const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
+    const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal, server.fetchResponse));
     await session.send('Read the authentication docs.', 'gpt-6.1-sol');
     expect(session.getSnapshot().error).toBeUndefined();
     const first = requireValue(session.getSnapshot().messages[1]);

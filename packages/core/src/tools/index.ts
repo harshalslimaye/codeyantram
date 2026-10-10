@@ -1,5 +1,6 @@
 export * from './codegraph/index.js';
 export {createToolExecutor} from './execution.js';
+export {TOOL_CATALOG} from './catalog.js';
 export * from './web-fetch/index.js';
 export * from './read/index.js';
 export * from './grep/index.js';

@@ -46,6 +46,16 @@ There is no watcher yet; manual edits are reconciled before queries.
 
 ## POST /chat
 
+The optional `agentId` selects a server-registered agent; omitted means `ask`.
+Unknown agents return `invalid_request` before streaming. The server resolves
+the agent and applies host authorization before providing tools to core. A
+standalone server defaults to read-only even when a client requests `build` or
+`yolo`. A host enabling edits must supply `authorizeAgent` and the matching
+patch or command approver; automatic actions additionally require explicit
+automatic authorization. `GET /agents` returns public metadata without agent
+instructions. Private CLI servers require `x-codeyantram-session` on every
+route.
+
 Send `Content-Type: application/json` and a shared `ChatRequest`:
 
 ```json

@@ -13,6 +13,7 @@ export function App({
 	initialThemeId,
 	initialModelPreferences,
 	serverBaseUrl,
+	serverSessionToken,
 	workspaceRoot,
 	initializeGraph,
 }: {
@@ -20,6 +21,7 @@ export function App({
 	initialThemeId: string;
 	initialModelPreferences: ModelPreferences;
 	serverBaseUrl: string;
+	serverSessionToken?: string;
 	workspaceRoot: string;
 	initializeGraph: InitTransport;
 }) {
@@ -27,11 +29,13 @@ export function App({
 	const selectedModel: SupportedChatModelDefinition | undefined = findSupportedChatModel(modelPreferences.modelId);
 	const effort = modelPreferences.effortByModel[modelPreferences.modelId] ?? selectedModel?.defaultEffortLevel;
 	const [session] = useState(() => {
+		const privateFetch: typeof fetch = (input, init) => fetch(input, {...init,
+			headers: {...Object.fromEntries(new Headers(init?.headers)), ...(serverSessionToken !== undefined ? {'x-codeyantram-session': serverSessionToken} : {})}});
 		const chatUrl = new URL('/chat', serverBaseUrl).href;
 		const compactUrl = new URL('/compact', serverBaseUrl).href;
 		return new ChatSession(
-			(request, signal) => requestChat(chatUrl, request, signal),
-			(request, signal) => requestCompact(compactUrl, request, signal),
+			(request, signal) => requestChat(chatUrl, request, signal, privateFetch),
+			(request, signal) => requestCompact(compactUrl, request, signal, privateFetch),
 			initializeGraph,
 		);
 	});

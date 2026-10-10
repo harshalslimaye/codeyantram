@@ -55,6 +55,48 @@ afterEach(async () => {
 });
 
 describe('POST /chat', () => {
+  it('resolves Ask by default and rejects an unavailable agent before streaming', async () => {
+    const stream = eventStream(start, done);
+    const url = await listen({streamChat: stream});
+    const rejected = await post(url, {...request, agentId: 'user:missing'});
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({code: 'invalid_request'});
+    expect(stream).not.toHaveBeenCalled();
+    await (await post(url)).text();
+    expect(requireValue(stream.mock.calls[0])[1].agent?.id).toBe('ask');
+  });
+
+  it('caps Build tools and rejects forged Yolo mutation authority', async () => {
+    const stream = eventStream(start, done);
+    const url = await listen({streamChat: stream, workspaceRoot: '/tmp',
+      approvePatch: async () => true, approveCommand: async () => true});
+    await (await post(url, {...request, agentId: 'build'})).text();
+    await (await post(url, {...request, agentId: 'yolo'})).text();
+    for (const call of stream.mock.calls) {
+      expect(call[1].applyPatch).toBeUndefined();
+      expect(call[1].bash).toBeUndefined();
+      expect(call[1].agent?.tools).not.toContain('apply_patch');
+      expect(call[1].agent?.tools).not.toContain('bash');
+    }
+  });
+
+  it('exposes public agent metadata without private instructions', async () => {
+    const url = await listen();
+    const response = await fetch(url.replace('/chat', '/agents'));
+    const agents = await response.json() as Array<Record<string, unknown>>;
+    expect(agents.map(agent => agent.id)).toEqual(['ask', 'build', 'yolo']);
+    expect(agents[0]).not.toHaveProperty('instructions');
+    expect(agents[2]?.available).toBe(false);
+  });
+
+  it('requires the private session token on chat and agent routes', async () => {
+    const url = await listen({privateSessionToken: 'test-secret'});
+    expect((await post(url)).status).toBe(403);
+    expect((await fetch(url.replace('/chat', '/agents'))).status).toBe(403);
+    const response = await fetch(url.replace('/chat', '/agents'), {headers: {'x-codeyantram-session': 'test-secret'}});
+    expect(response.status).toBe(200);
+  });
+
   it.each(['disabled', 'key_only', 'enabled', 'missing_key', 'initialization_failed', 'evaluation_failed'] as const)
   ('resolves JEV %s from one configuration snapshot and returns bounded web content', async state => {
     const readConfig = vi.fn<typeof ReadConfigFunction>(async () => ({
@@ -134,6 +176,7 @@ describe('POST /chat', () => {
       credentials: {openai: 'test-openai-key'}, abortSignal: asymmetric.any(AbortSignal),
       webFetch: {fetch: asymmetric.any(Function)},
       jev: {status: 'disabled'},
+      agent: asymmetric.objectContaining({id: 'ask', approval: 'none'}),
     });
   });
 

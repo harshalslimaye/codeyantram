@@ -69,8 +69,8 @@ describe('compaction end-to-end regressions', () => {
     });
     servers.push(server);
     const session = new ChatSession(
-      (request, signal) => requestChat(server.chatUrl, request, signal),
-      (request, signal) => requestCompact(server.compactUrl, request, signal),
+      (request, signal) => requestChat(server.chatUrl, request, signal, server.fetchResponse),
+      (request, signal) => requestCompact(server.compactUrl, request, signal, server.fetchResponse),
     );
     for (const turn of compactionScenario.turns) {
       await session.send(turn.user, model, 'high');

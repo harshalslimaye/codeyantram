@@ -45,8 +45,8 @@ describe('CLI-owned chat server', () => {
 			compactChat: (input, options) => coreCompactChat(input, {...options, fetch: providerFetch}),
 		});
 		const session = new ChatSession(
-			(request, signal) => requestChat(server.chatUrl, request, signal),
-			(request, signal) => requestCompact(server.compactUrl, request, signal),
+			(request, signal) => requestChat(server.chatUrl, request, signal, server.fetchResponse),
+			(request, signal) => requestCompact(server.compactUrl, request, signal, server.fetchResponse),
 		);
 		const details = 'Preserve /src/chat.ts and port 43187; checks pending.\n'.repeat(150);
 		for (const text of ['ARCHIVED_ONE ' + details, 'ARCHIVED_TWO ' + details, 'RECENT_ONE ' + details, 'RECENT_TWO']) {
@@ -87,7 +87,7 @@ describe('CLI-owned chat server', () => {
 		expect(server.chatUrl).toBe(new URL('/chat', server.baseUrl).href);
 		expect(server.compactUrl).toBe(new URL('/compact', server.baseUrl).href);
 		const events: CompactStreamEvent[] = [];
-		for await (const event of requestCompact(server.compactUrl, compactRequest, new AbortController().signal)) events.push(event);
+		for await (const event of requestCompact(server.compactUrl, compactRequest, new AbortController().signal, server.fetchResponse)) events.push(event);
 		expect(events).toEqual([{type: 'start'}, compactDone]);
 		expect(compact).toHaveBeenCalledWith(compactRequest, {credentials: {openai: 'test-openai'}, abortSignal: asymmetric.any(AbortSignal)});
 		const result = requireValue(events.at(-1));
@@ -96,7 +96,7 @@ describe('CLI-owned chat server', () => {
 			model: 'gemini-3.8-flash', contextSummary: result.summary,
 			messages: [{id: 'recent-u1', role: 'user' as const, parts: [{type: 'text' as const, text: 'Retained tail and next question.'}]}],
 		};
-		for await (const _event of requestChat(server.chatUrl, followUp, new AbortController().signal)) { /* consume */ }
+		for await (const _event of requestChat(server.chatUrl, followUp, new AbortController().signal, server.fetchResponse)) { /* consume */ }
 		expect(requireValue(chat.mock.calls[0])[0]).toEqual(followUp);
 		expect(requireValue(chat.mock.calls[0])[1].credentials).toEqual({google: 'test-google'});
 	});
@@ -112,7 +112,7 @@ describe('CLI-owned chat server', () => {
 			});
 		}});
 		const controller = new AbortController();
-		const stream = requestCompact(server.compactUrl, compactRequest, controller.signal);
+		const stream = requestCompact(server.compactUrl, compactRequest, controller.signal, server.fetchResponse);
 		expect((await stream.next()).value).toEqual({type: 'start'});
 		const pending = stream.next();
 		controller.abort();
@@ -130,7 +130,7 @@ describe('CLI-owned chat server', () => {
 				else requireValue(options.abortSignal).addEventListener('abort', stop, {once: true});
 			});
 		}});
-		const stream = requestCompact(server.compactUrl, compactRequest, new AbortController().signal);
+		const stream = requestCompact(server.compactUrl, compactRequest, new AbortController().signal, server.fetchResponse);
 		expect((await stream.next()).value).toEqual({type: 'start'});
 		const pending = stream.next();
 		const interrupted = captureRejection(pending);
@@ -153,7 +153,7 @@ describe('CLI-owned chat server', () => {
 		});
 		const other = await start({readConfig: async () => ({})});
 		expect(other.baseUrl).not.toBe(server.baseUrl);
-		const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
+		const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal, server.fetchResponse));
 		await session.send('Hi', 'gpt-6.1-sol', 'high');
 		await session.send('Follow up', 'gemini-3.8-flash', 'low');
 		expect(session.getSnapshot().error).toBeUndefined();
@@ -177,7 +177,7 @@ describe('CLI-owned chat server', () => {
 				});
 			},
 		});
-		const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
+		const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal, server.fetchResponse));
 		const sending = session.send('Hi', 'gpt-6.1-sol');
 		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer'));
 		session.cancel();
@@ -199,7 +199,7 @@ describe('CLI-owned chat server', () => {
 				});
 			},
 		});
-		const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
+		const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal, server.fetchResponse));
 		const sending = session.send('Hi', 'gpt-6.1-sol');
 		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer'));
 		servers.splice(servers.indexOf(server), 1);

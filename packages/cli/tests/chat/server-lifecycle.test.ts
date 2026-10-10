@@ -1,4 +1,4 @@
-import {requireValue} from '../../../shared/tests/helpers.js';
+import {requireValue, asymmetric} from '../../../shared/tests/helpers.js';
 import type * as ServerModule from '@codeyantram/server';
 import {EventEmitter} from 'node:events';
 import {describe, expect, it, vi} from 'vitest';
@@ -33,7 +33,7 @@ describe('private server lifecycle failures', () => {
 	it('forwards the selected workspace to its private server app', async () => {
 		fakeServer({port: 1234});
 		const running = await startChatServer({workspaceRoot: '/selected/project'});
-		expect(createApp).toHaveBeenCalledExactlyOnceWith({workspaceRoot: '/selected/project'});
+		expect(createApp).toHaveBeenCalledExactlyOnceWith({workspaceRoot: '/selected/project', privateSessionToken: asymmetric.any(String)});
 		await running.close();
 		expect(appMock().close).toHaveBeenCalledOnce();
 	});

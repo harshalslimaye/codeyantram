@@ -78,7 +78,7 @@ describe('CLI server graph lifetime with the installed SDK', () => {
       readConfig: async () => ({providers: {openai: {apiKey: 'test-openai'}}}),
       streamChat: (request, options) => coreStreamChat(request, {...options, fetch: providerFetch}),
     }); servers.push(server);
-    const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
+    const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal, server.fetchResponse));
     await session.send('Find greet, inspect it, and trace its callers', 'gpt-6.1-sol');
     expect(session.getSnapshot().error).toBeUndefined();
     expect(session.getSnapshot().messages[1].parts.map(part => part.type)).toEqual(['tool-call', 'tool-result', 'tool-call', 'tool-result', 'tool-call', 'tool-result', 'text']);
@@ -109,7 +109,7 @@ describe('CLI server graph lifetime with the installed SDK', () => {
       readConfig: async () => ({providers: {openai: {apiKey: 'test-openai'}}}),
       streamChat: (request, options) => coreStreamChat(request, {...options, fetch: providerFetch}),
     }); servers.push(server);
-    const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal));
+    const session = new ChatSession((request, signal) => requestChat(server.chatUrl, request, signal, server.fetchResponse));
     await session.send('Check graph status', 'gpt-6.1-sol');
     expect(session.getSnapshot().error).toBeUndefined();
     expect(server.workspaceGraph.getStatus().lifecycle).toBe('unopened');
@@ -159,7 +159,7 @@ describe('CLI server graph lifetime with the installed SDK', () => {
     await expect(stat(global)).rejects.toMatchObject({code: 'ENOENT'});
     for await (const _event of requestChat(first.chatUrl, {
       model: 'gpt-6.1-sol', messages: [{id: 'u1', role: 'user', parts: [{type: 'text', text: 'hello'}]}],
-    }, new AbortController().signal)) { /* consume the ordinary chat */ }
+    }, new AbortController().signal, first.fetchResponse)) { /* consume the ordinary chat */ }
     expect(streamChat).toHaveBeenCalledOnce();
     expect(readConfig).toHaveBeenCalledOnce();
     expect(first.workspaceGraph.getStatus().lifecycle).toBe('unopened');

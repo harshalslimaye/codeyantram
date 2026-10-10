@@ -1,11 +1,15 @@
 import {once} from 'node:events';
+import {randomBytes} from 'node:crypto';
 import {createServer} from 'node:http';
 import {createApp, createServerShutdown, type ServerAppOptions} from '@codeyantram/server';
 import {initializeGraphForUI} from '../lib/init.js';
 
+const SESSION_TOKEN_BYTES = 32;
+
 /** Each CLI owns a private localhost server, avoiding conflicts between sessions. */
 export async function startChatServer(options: ServerAppOptions = {}) {
-	const app = createApp(options);
+	const sessionToken = randomBytes(SESSION_TOKEN_BYTES).toString('hex');
+	const app = createApp({...options, privateSessionToken: sessionToken});
 	const server = createServer(app);
 	const close = createServerShutdown(server, () => app.close());
 	let address: ReturnType<typeof server.address>;
@@ -22,8 +26,12 @@ export async function startChatServer(options: ServerAppOptions = {}) {
 	}
 
 	const baseUrl = `http://127.0.0.1:${address.port}`;
+	const fetchResponse: typeof fetch = (input, init) => fetch(input, {...init,
+		headers: {...Object.fromEntries(new Headers(init?.headers)), 'x-codeyantram-session': sessionToken}});
 	return {
 		baseUrl,
+		sessionToken,
+		fetchResponse,
 		chatUrl: new URL('/chat', baseUrl).href,
 		compactUrl: new URL('/compact', baseUrl).href,
 		workspaceGraph: app.workspaceGraph,

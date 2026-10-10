@@ -42,6 +42,7 @@ describe('server patch host capability', () => {
       yield {type: 'done', durationMs: 1};
     });
     const app = createApp({workspaceRoot: directory, streamChat: stream, createJevEvaluator: factory,
+      authorizeAgent: () => ({patch: true}),
       ...(mode !== 'no_approver' ? {approvePatch: approve} : {}),
       readConfig: async () => ({providers: {openai: {apiKey: 'test'}, typesafe: {apiKey: 'PRIVATE KEY'}}, integrations: {jev: {enabled: mode !== 'disabled'}}}),
     });
@@ -51,7 +52,7 @@ describe('server patch host capability', () => {
     const address = server.address();
     if (address === null || typeof address === 'string') throw new Error('Expected TCP address.');
     const response = await fetch(`http://127.0.0.1:${address.port}/chat`, {method: 'POST', headers: {'content-type': 'application/json'},
-      body: JSON.stringify({model: 'gpt-6.1-sol', messages: [{id: 'user', role: 'user', parts: [{type: 'text', text: 'Add file'}]}]}),
+      body: JSON.stringify({model: 'gpt-6.1-sol', agentId: 'build', messages: [{id: 'user', role: 'user', parts: [{type: 'text', text: 'Add file'}]}]}),
     });
     expect(await response.text()).toContain('done');
     expect(approve).toHaveBeenCalledTimes(mode === 'no_approver' ? 0 : 1);
