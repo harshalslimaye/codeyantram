@@ -3,15 +3,20 @@ import {randomBytes} from 'node:crypto';
 import {createServer} from 'node:http';
 import {createApp, createServerShutdown, type ServerAppOptions} from '@codeyantram/server';
 import {initializeGraphForUI} from '../lib/init.js';
+import {ApprovalController} from './approval.js';
 
 const SESSION_TOKEN_BYTES = 32;
 
 /** Each CLI owns a private localhost server, avoiding conflicts between sessions. */
 export async function startChatServer(options: ServerAppOptions = {}) {
 	const sessionToken = randomBytes(SESSION_TOKEN_BYTES).toString('hex');
-	const app = createApp({...options, privateSessionToken: sessionToken});
+	const approvals = new ApprovalController();
+	const app = createApp({...options, privateSessionToken: sessionToken,
+		approvePatch: approvals.approvePatch, approveCommand: approvals.approveCommand,
+		authorizeAgent: request => ({patch: request.agentId === 'build', command: request.agentId === 'build'})});
 	const server = createServer(app);
-	const close = createServerShutdown(server, () => app.close());
+	const shutdown = createServerShutdown(server, () => app.close());
+	const close = async () => {approvals.close(); await shutdown();};
 	let address: ReturnType<typeof server.address>;
 	try {
 		server.listen(0, '127.0.0.1');
@@ -31,6 +36,7 @@ export async function startChatServer(options: ServerAppOptions = {}) {
 	return {
 		baseUrl,
 		sessionToken,
+		approvals,
 		fetchResponse,
 		chatUrl: new URL('/chat', baseUrl).href,
 		compactUrl: new URL('/compact', baseUrl).href,

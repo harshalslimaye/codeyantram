@@ -2,9 +2,14 @@
 
 `KeyboardProvider` in `provider.tsx` keeps a stack of keyboard owners: `input-bar`,
 `command-palette`, `theme-picker`, `model-picker`, `effort-picker`,
-`provider-picker`, or `api-key-input`. It wraps the CLI in `App`. The input bar is
+`provider-picker`, `api-key-input`, or `approval`. It wraps the CLI in `App`. The input bar is
 the permanent bottom entry; only the top entry receives input. Components use
 `useKeyboardOwner()` to access the same ownership state; the hook requires a provider.
+
+When a Build tool requests approval, `approval` owns the keyboard. The exact
+request is shown in a scrollable review: arrows and Page Up/Down scroll, A
+approves, D denies, and Escape denies and cancels the turn. The input bar stays
+disabled until the request resolves.
 
 - `owner` is the React state used to render the active interaction.
 - `isOwner(candidate)` checks the current owner synchronously.

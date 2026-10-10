@@ -180,7 +180,7 @@ function useInputBarKeyboard(context: Pick<DraftContext, 'savingJev' | 'isBusy' 
 	useInput((_input, key) => {
 		if (savingJev.current) return;
 		if (isBusy) {
-			if (key.escape) onCancel();
+			if (isOwner('input-bar') && key.escape) onCancel();
 			return;
 		}
 		if (!isOwner('input-bar') && !isOwner('command-palette')) return;

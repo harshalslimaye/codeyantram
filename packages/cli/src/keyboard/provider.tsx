@@ -1,6 +1,6 @@
-import {createContext, useContext, useRef, useState, type ReactNode} from 'react';
+import {createContext, useCallback, useContext, useRef, useState, type ReactNode} from 'react';
 
-export type KeyboardOwner = 'input-bar' | 'command-palette' | 'theme-picker' | 'model-picker' | 'effort-picker' | 'provider-picker' | 'api-key-input';
+export type KeyboardOwner = 'input-bar' | 'command-palette' | 'theme-picker' | 'model-picker' | 'effort-picker' | 'provider-picker' | 'api-key-input' | 'approval';
 
 const KeyboardContext = createContext<{
 	owner: KeyboardOwner;
@@ -14,21 +14,21 @@ export function KeyboardProvider({children}: {children: ReactNode}) {
 	const [stack, setStack] = useState<KeyboardOwner[]>(['input-bar']);
 	const currentStack = useRef(stack);
 
-	function updateStack(next: KeyboardOwner[]): void {
+	const updateStack = useCallback((next: KeyboardOwner[]): void => {
 		// The next event must see the new owner even before React renders.
 		currentStack.current = next;
 		setStack(next);
-	}
+	}, []);
 
-	function push(owner: Exclude<KeyboardOwner, 'input-bar'>): void {
+	const push = useCallback((owner: Exclude<KeyboardOwner, 'input-bar'>): void => {
 		updateStack([...currentStack.current, owner]);
-	}
+	}, [updateStack]);
 
-	function pop(expectedOwner: Exclude<KeyboardOwner, 'input-bar'>): void {
-		if (currentStack.current.length > 1 && isOwner(expectedOwner)) {
+	const pop = useCallback((expectedOwner: Exclude<KeyboardOwner, 'input-bar'>): void => {
+		if (currentStack.current.length > 1 && currentStack.current.at(-1) === expectedOwner) {
 			updateStack(currentStack.current.slice(0, -1));
 		}
-	}
+	}, [updateStack]);
 
 	function isOwner(candidate: KeyboardOwner): boolean {
 		return currentStack.current[currentStack.current.length - 1] === candidate;

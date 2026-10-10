@@ -7,9 +7,12 @@ import {Conversation} from './conversation.js';
 import {InputBar} from './input-bar.js';
 import {StatusBar} from './status-bar.js';
 import {getContextStatus} from '../chat/context.js';
+import type {ApprovalController} from '../chat/approval.js';
+import {ApprovalView} from './approval-view.js';
 
-export function ChatWorkspace({session, modelPreferences, effort, branch, onSelectModel}: {
+export function ChatWorkspace({session, approvals, modelPreferences, effort, branch, onSelectModel}: {
 	session: ChatSession;
+	approvals?: ApprovalController;
 	modelPreferences: ModelPreferences;
 	effort?: EffortLevel;
 	branch: string;
@@ -17,13 +20,13 @@ export function ChatWorkspace({session, modelPreferences, effort, branch, onSele
 }) {
 	const {rows} = useWindowSize();
 	const {messages, statusEntries, operation, isStreaming, compaction, error, notice} = useSyncExternalStore(session.subscribe, session.getSnapshot);
+	const pending = useSyncExternalStore(approvals?.subscribe ?? emptySubscribe, approvals?.getSnapshot ?? noApproval);
 	const contextStatus = getContextStatus(modelPreferences.modelId, messages, compaction);
-	const contextTurnCount = compaction
-		? messages.slice(compaction.coveredMessageCount).filter(message => message.role === 'user').length
-		: undefined;
+	const contextTurnCount = compactionTurnCount(compaction, messages);
 	return (
 		<Box flexDirection="column" height={rows}>
-			<Conversation messages={messages} statusEntries={statusEntries} isStreaming={isStreaming} />
+			<ReviewOrConversation approvals={approvals} pending={pending} session={session}
+				messages={messages} statusEntries={statusEntries} isStreaming={isStreaming} />
 			<Box flexDirection="column" flexShrink={0}>
 				{(error !== undefined && error !== '') && <StatusMessage variant="error">{error}</StatusMessage>}
 				{(notice !== undefined && notice !== '') && <StatusMessage variant="info">{notice}</StatusMessage>}
@@ -42,4 +45,24 @@ export function ChatWorkspace({session, modelPreferences, effort, branch, onSele
 			</Box>
 		</Box>
 	);
+}
+
+const emptySubscribe = () => () => {};
+const noApproval = () => null;
+
+function ReviewOrConversation({approvals, pending, session, messages, statusEntries, isStreaming}: {
+	approvals?: ApprovalController;
+	pending: ReturnType<ApprovalController['getSnapshot']> | null;
+	session: ChatSession;
+	messages: ReturnType<ChatSession['getSnapshot']>['messages'];
+	statusEntries: ReturnType<ChatSession['getSnapshot']>['statusEntries'];
+	isStreaming: boolean;
+}) {
+	return pending && approvals ? <ApprovalView key={pending.id} controller={approvals} item={pending} onCancel={() => session.cancel()} /> :
+		<Conversation messages={messages} statusEntries={statusEntries} isStreaming={isStreaming} />;
+}
+
+function compactionTurnCount(compaction: ReturnType<ChatSession['getSnapshot']>['compaction'],
+	messages: ReturnType<ChatSession['getSnapshot']>['messages']): number | undefined {
+	return compaction ? messages.slice(compaction.coveredMessageCount).filter(message => message.role === 'user').length : undefined;
 }

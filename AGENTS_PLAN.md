@@ -1,6 +1,6 @@
 # Agents Implementation Plan
 
-Status: Phases 1–3 implemented. Phases 4–8 remain planned.
+Status: Phases 1–4 implemented. Phases 5–8 remain planned.
 
 Phase 1 result: `packages/shared/src/agents/` defines the validated authoring,
 resolved, and public metadata contracts; `packages/core/src/tools/catalog.ts`
@@ -25,6 +25,13 @@ defaults to read-only; Build mutation tools require both a host authorization
 callback and an approver, while Yolo additionally requires automatic
 authorization. The CLI-owned localhost server uses a random session token on
 its HTTP routes. CLI selection and approval UI remain for later phases.
+
+Phase 4 result: the CLI-owned server now supplies a host approval controller
+for Build patches and commands. It queues exact prepared requests, renders a
+scrollable review with paths, actions, hashes, workdir, timeout, and objective,
+and accepts explicit approval or denial. Escape cancels the turn. Disconnect,
+cancellation, and server shutdown deny pending requests. The CLI agent picker
+and ordinary conversation selection remain Phase 6 work.
 
 ## Goal and first-version contract
 

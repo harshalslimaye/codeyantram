@@ -7,6 +7,7 @@ import {KeyboardProvider} from './keyboard/provider.js';
 import type {ThemeRegistry} from './theme/registry/registry.js';
 import {ChatSession, type InitTransport} from './chat/session.js';
 import {requestChat, requestCompact} from './chat/client.js';
+import type {ApprovalController} from './chat/approval.js';
 
 export function App({
 	registry,
@@ -14,6 +15,7 @@ export function App({
 	initialModelPreferences,
 	serverBaseUrl,
 	serverSessionToken,
+	approvals,
 	workspaceRoot,
 	initializeGraph,
 }: {
@@ -22,6 +24,7 @@ export function App({
 	initialModelPreferences: ModelPreferences;
 	serverBaseUrl: string;
 	serverSessionToken?: string;
+	approvals?: ApprovalController;
 	workspaceRoot: string;
 	initializeGraph: InitTransport;
 }) {
@@ -48,7 +51,7 @@ export function App({
 	return (
 		<ThemeProvider registry={registry} initialThemeId={initialThemeId}>
 			<KeyboardProvider>
-				<ChatWorkspace session={session} modelPreferences={modelPreferences} effort={effort} branch={branch} onSelectModel={selectModel} />
+				<ChatWorkspace session={session} approvals={approvals} modelPreferences={modelPreferences} effort={effort} branch={branch} onSelectModel={selectModel} />
 			</KeyboardProvider>
 		</ThemeProvider>
 	);

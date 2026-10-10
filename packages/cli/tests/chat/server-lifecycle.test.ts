@@ -33,7 +33,8 @@ describe('private server lifecycle failures', () => {
 	it('forwards the selected workspace to its private server app', async () => {
 		fakeServer({port: 1234});
 		const running = await startChatServer({workspaceRoot: '/selected/project'});
-		expect(createApp).toHaveBeenCalledExactlyOnceWith({workspaceRoot: '/selected/project', privateSessionToken: asymmetric.any(String)});
+		expect(createApp).toHaveBeenCalledExactlyOnceWith({workspaceRoot: '/selected/project', privateSessionToken: asymmetric.any(String),
+			approvePatch: asymmetric.any(Function), approveCommand: asymmetric.any(Function), authorizeAgent: asymmetric.any(Function)});
 		await running.close();
 		expect(appMock().close).toHaveBeenCalledOnce();
 	});

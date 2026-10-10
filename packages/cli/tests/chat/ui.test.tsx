@@ -15,6 +15,7 @@ import {ChatSession, type ChatTransport, type InitTransport, type SessionOperati
 import {ChatWorkspace} from '../../src/components/chat-workspace.js';
 import {createTerminalInput} from '../../src/terminal/input.js';
 import {MouseProvider} from '../../src/terminal/mouse.js';
+import {ApprovalController} from '../../src/chat/approval.js';
 const initializeGraph = vi.fn<InitTransport>();
 
 const registry = createThemeRegistry([{source: 'builtin', themes: [{source: 'builtin', theme: konkanTheme}]}]);
@@ -82,11 +83,11 @@ function renderInput(initialOperation: SessionOperation = 'idle') {
 	return {...ui, onSubmit, onCancel, onClear, onCompact, onStatus, onInit, onSelectModel, setOperation: (operation: SessionOperation) => setOperation(operation)};
 }
 
-function renderWorkspace(session: ChatSession, {debug = true}: {debug?: boolean} = {}) {
+function renderWorkspace(session: ChatSession, {debug = true, approvals}: {debug?: boolean; approvals?: ApprovalController} = {}) {
 	return renderUI(
 		<ThemeProvider registry={registry} initialThemeId="konkan" colorDepth={0}>
 			<KeyboardProvider>
-				<ChatWorkspace session={session} modelPreferences={preferences} branch="main" onSelectModel={async () => {}} />
+				<ChatWorkspace session={session} approvals={approvals} modelPreferences={preferences} branch="main" onSelectModel={async () => {}} />
 			</KeyboardProvider>
 		</ThemeProvider>,
 		{debug},
@@ -154,6 +155,26 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
+	it('shows a scrollable exact approval and gives its keys sole control', async () => {
+		const approvals = new ApprovalController();
+		const patchText = `*** Begin Patch\n*** Add File: long.txt\n${Array.from({length: 40}, (_, index) => `+line ${index}`).join('\n')}\n+END_MARKER\n*** End Patch`;
+		const pending = approvals.approvePatch({patchText, objective: 'Review a long patch', changes: [
+			{filePath: 'long.txt', action: 'add', beforeHash: null, afterHash: 'a'.repeat(64)},
+		]});
+		const session = new ChatSession(async function* () {yield {type: 'done', durationMs: 1};});
+		const ui = renderWorkspace(session, {approvals});
+		await vi.waitFor(() => expect(ui.frame()).toContain('Review patch before execution'));
+		expect(ui.frame()).toContain('before: (none)');
+		ui.stdin.write('\x1b[6~');
+		ui.stdin.write('\x1b[6~');
+		ui.stdin.write('\x1b[6~');
+		ui.stdin.write('\x1b[6~');
+		await vi.waitFor(() => expect(ui.frame()).toContain('END_MARKER'));
+		ui.stdin.write('a');
+		expect(await pending).toBe(true);
+		await vi.waitFor(() => expect(ui.frame()).not.toContain('Review patch before execution'));
+	});
+
   it('shows a fetched URL, truncation, and JEV fallback notices without dumping the page', async () => {
     const session = new ChatSession(async function* (): AsyncGenerator<ChatStreamEvent> {
       yield {type: 'start', messageId: 'web-ui'};
