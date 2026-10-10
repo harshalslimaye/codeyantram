@@ -1,5 +1,5 @@
 import express from 'express';
-import {compactChat, streamChat, createWebFetchService, createReadService, createGrepService, createGlobService, type createJevEvaluator, type WebTransport} from '@codeyantram/core';
+import {compactChat, streamChat, createWebFetchService, createReadService, createGrepService, createGlobService, createApplyPatchService, type PatchApprover, type createJevEvaluator, type WebTransport} from '@codeyantram/core';
 import {readConfig, readProviderCredentials} from '@codeyantram/shared';
 import {handleError} from './middlewares/index.js';
 import {createChatRouter} from './routers/chat.js';
@@ -17,6 +17,7 @@ export interface ServerAppOptions {
   compactChat?: typeof compactChat;
   createJevEvaluator?: typeof createJevEvaluator;
   webTransport?: WebTransport;
+  approvePatch?: PatchApprover;
 }
 
 export function createApp(options: ServerAppOptions = {}) {
@@ -35,7 +36,8 @@ export function createApp(options: ServerAppOptions = {}) {
         ...((options.workspaceRoot !== undefined && options.workspaceRoot !== '')
           ? {read: createReadService({workspaceRoot: options.workspaceRoot, jev}),
             grep: createGrepService({workspaceRoot: options.workspaceRoot, jev}),
-            glob: createGlobService({workspaceRoot: options.workspaceRoot, jev})} : {}),
+            glob: createGlobService({workspaceRoot: options.workspaceRoot, jev}),
+            ...(options.approvePatch ? {applyPatch: createApplyPatchService({workspaceRoot: options.workspaceRoot, approve: options.approvePatch})} : {})} : {}),
         webFetch: createWebFetchService({transport: options.webTransport,
           jev}),
       };

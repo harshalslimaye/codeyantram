@@ -65,6 +65,16 @@ are text-only. Duplicate IDs, mismatched results, and unresolved calls are rejec
 The host-selected root enables core's `explore`/`graph`/`find`/`inspect`/`trace` loop.
 `web_fetch` is available independently of the graph, including before `/init`. Clients cannot
 select graph roots or storage through requests. There is no tool HTTP endpoint.
+Workspace roots also enable read, grep, and glob. File mutations remain disabled
+unless the host supplies `createApp({workspaceRoot, approvePatch})`. That trusted
+callback must approve each exact patch; clients cannot enable it or select a root
+through JSON. Apply patch does not use JEV; it relies on deterministic validation
+and explicit host approval.
+Updates/deletions require source hashes from unfiltered read. Multi-file patches
+are not transactional: re-read every target after failure or interruption. See
+the [core patch contract](../core/README.md#workspace-patches)
+for supported syntax, limits, and filesystem guarantees. The default CLI/server
+does not supply an approval UI or callback and stays read-only.
 The request body limit is 4 MB.
 An optional `contextSummary` supplies compacted historical context; core replays
 it as a labeled user message before `messages`.

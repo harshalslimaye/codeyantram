@@ -3,7 +3,7 @@ import {performance} from 'node:perf_hooks';
 import type {ChatRequest, ChatStreamEvent} from '@codeyantram/shared';
 import {toChatErrorEvent} from './errors.js';
 import type {ProviderCredentials} from './models.js';
-import type {NavigationGraphService, WebFetchService, ReadService, GrepService, GlobService} from '../tools/index.js';
+import type {NavigationGraphService, WebFetchService, ReadService, GrepService, GlobService, ApplyPatchService} from '../tools/index.js';
 import {createChatStream} from './stream-options.js';
 import type {JevCapability} from '../evaluation/index.js';
 import {translateProviderEvents} from './provider-events.js';
@@ -17,6 +17,7 @@ export interface ChatStreamOptions {
   read?: ReadService;
   grep?: GrepService;
   glob?: GlobService;
+  applyPatch?: ApplyPatchService;
   jev?: JevCapability;
 }
 

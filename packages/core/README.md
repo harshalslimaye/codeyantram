@@ -351,7 +351,7 @@ to verify discovered files.
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
 to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting graph,
-web-fetch, read, grep, and glob capabilities keeps chat without tool definitions.
+web-fetch, read, grep, glob, and applyPatch capabilities keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 
@@ -428,6 +428,43 @@ an 80 KB serialized UTF-8 ceiling. A tool failure is a structured result the mod
 can inspect; hitting the step limit ends the turn with `tool_limit`, not `done`.
 Cancellation reaches graph queries and ends without a terminal event. Source
 and tool outputs are labeled untrusted data in navigation instructions.
+
+## Workspace patches
+
+`createApplyPatchService({workspaceRoot, approve})` adds bounded text
+mutations; `createApplyPatchTool(service, execute, objective?)` exposes
+`apply_patch`. Chat hosts supply `applyPatch`; the server only registers it when
+an explicit `ServerAppOptions.approvePatch` callback is supplied. The default
+server/CLI remains read-only. The host must implement its own trusted approval
+policy or UI; model arguments cannot grant permission.
+
+Arguments are `patchText` and required `expectedHashes`.
+Patches use `*** Begin Patch`, Add/Update/Delete File headers,
+`@@` exact-context hunks, and `*** End Patch`. Optional `@@ exact anchor` and
+`*** End of File` disambiguate context. There is no fuzzy matching, unified-diff
+support, or Move operation. Every updated/deleted path needs its exact SHA-256
+hash from `read` with `filter:false`; additions must not exist and need no hash.
+Parent directories must already exist. Updates preserve BOM, LF/CRLF, terminal
+newline presence, and permission bits; mixed line endings are rejected.
+
+Patches are limited to 64,000 characters, 16 distinct files, and 1 MiB of UTF-8
+text per file before/after changes. Traversal, symlink parents/targets, hard-linked
+files, and `.git`, `.agents`, `.codex`, and `.aws` metadata are rejected. All targets
+are preflighted before approval and rechecked after approval. In-process
+patch services serialize writes; additions use exclusive linking and updates use
+same-directory staged replacement. Multi-file changes are **not transactional**:
+partial failures report applied paths; after any error or cancellation re-read
+every target rather than replaying. Temp files are cleaned on normal failure, but
+a process crash can leave staging files. This is not an OS sandbox: hostile or
+concurrent external filesystem changes can still race checks and writes. A host
+requiring isolation must provide it; ACLs, ownership, and extended attributes are
+not preserved by replacement.
+
+Apply patch does not use JEV or send proposed changes to an evaluator. The approval
+callback receives an isolated copy of the exact patch, objective, and before/after
+hashes, and must return literal `true` to authorize it. Returns changed
+paths/actions/new hashes and warnings, never file contents. Approval and source
+validation are not proof of correctness or test success; run tests separately.
 
 Assistant history can interleave text, calls, and results. Replay converts them
 to SDK assistant/tool roles and preserves opaque provider options such as Gemini

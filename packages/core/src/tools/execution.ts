@@ -5,6 +5,7 @@ import {WebFetchError} from './web-fetch/errors.js';
 import {ReadError} from './read/errors.js';
 import {GrepError} from './grep/errors.js';
 import {GlobError} from './glob/errors.js';
+import {ApplyPatchError} from './apply-patch/errors.js';
 
 const MAX_TOOL_EXECUTIONS = 12;
 const MAX_TOOL_OUTPUT_BYTES = 80_000;
@@ -32,11 +33,15 @@ export function createToolExecutor(): ToolExecutor {
 }
 
 function mapToolFailure(name: string, failure: unknown): Extract<ToolResult, {status: 'error'}>['error'] {
-  if (failure instanceof WebFetchError || failure instanceof ReadError || failure instanceof GrepError || failure instanceof GlobError) return {code: failure.code, message: failure.message};
-  if (name === 'glob') return {code: 'execution_failed', message: 'Workspace file discovery could not complete safely.'};
-  if (name === 'grep') return {code: 'execution_failed', message: 'Workspace search could not complete safely.'};
-  if (name === 'read') return {code: 'execution_failed', message: 'The file could not be read safely.'};
-  if (name === 'web_fetch') return {code: 'execution_failed', message: 'Web fetch could not complete the request.'};
+  if (failure instanceof WebFetchError || failure instanceof ReadError || failure instanceof GrepError || failure instanceof GlobError || failure instanceof ApplyPatchError) return {code: failure.code, message: failure.message};
+  const message = new Map([
+    ['apply_patch', 'The patch could not complete safely. Re-read every target before retrying.'],
+    ['glob', 'Workspace file discovery could not complete safely.'],
+    ['grep', 'Workspace search could not complete safely.'],
+    ['read', 'The file could not be read safely.'],
+    ['web_fetch', 'Web fetch could not complete the request.'],
+  ]).get(name);
+  if (message !== undefined) return {code: 'execution_failed', message};
   return mapGraphError(failure);
 }
 
