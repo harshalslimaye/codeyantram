@@ -8,16 +8,19 @@ import {ProviderPicker} from './provider-picker.js';
 import {Help} from './help.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
-import {JevNotConfiguredError, toggleJevUsage, type EffortLevel, type ModelPreferences} from '@codeyantram/shared';
+import {JevNotConfiguredError, toggleJevUsage, type AgentMetadata, type EffortLevel, type ModelPreferences} from '@codeyantram/shared';
 import type {SessionOperation} from '../chat/session.js';
 import {AgentSessionController} from '../chat/agent-session.js';
 import {AgentPicker} from './agent-picker.js';
+import {FALLBACK_AGENT_METADATA} from '../chat/agent-catalog.js';
 
 const INPUT_RESERVED_COLUMNS = 6;
 
 type InputBarProps = {
 	modelPreferences: ModelPreferences;
 	agentSession?: AgentSessionController;
+	availableAgents?: readonly AgentMetadata[];
+	refreshAgents?: () => Promise<void>;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 	operation: SessionOperation;
 	onSubmit: (text: string) => void;
@@ -43,7 +46,7 @@ type DraftContext = {
 };
 
 export function InputBar(props: InputBarProps) {
-	const {modelPreferences, onSelectModel, operation, agentSession} = props;
+	const {modelPreferences, onSelectModel, operation, agentSession, availableAgents = FALLBACK_AGENT_METADATA, refreshAgents} = props;
 	const [localAgentSession] = useState(() => new AgentSessionController({patch: false, command: false}));
 	const activeAgentSession = agentSession ?? localAgentSession;
 	const {columns} = useWindowSize();
@@ -53,7 +56,7 @@ export function InputBar(props: InputBarProps) {
 	return (
 		<Box flexDirection="column" width="100%">
 			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} />}
-			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} onSelectModel={onSelectModel} agentSession={activeAgentSession} />
+			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} onSelectModel={onSelectModel} agentSession={activeAgentSession} availableAgents={availableAgents} refreshAgents={refreshAgents} />
 			<InputStatus {...controller} operation={operation} />
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
@@ -232,7 +235,7 @@ function InputStatus({isBusy, isSavingJev, operation, showHelp, notice, noticeTo
 	);
 }
 
-function InputPickers({isBusy, owner, modelPreferences, onSelectModel, agentSession}: Pick<InputBarProps, 'modelPreferences' | 'onSelectModel' | 'agentSession'> & Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'owner'>) {
+function InputPickers({isBusy, owner, modelPreferences, onSelectModel, agentSession, availableAgents, refreshAgents}: Pick<InputBarProps, 'modelPreferences' | 'onSelectModel' | 'agentSession' | 'availableAgents' | 'refreshAgents'> & Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'owner'>) {
 	if (isBusy) return null;
 	return <>
 			{owner === 'theme-picker' && <ThemePicker />}
@@ -240,6 +243,12 @@ function InputPickers({isBusy, owner, modelPreferences, onSelectModel, agentSess
 				<ModelPicker preferences={modelPreferences} onSelect={onSelectModel} />
 			)}
 			{(owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
-			{agentSession && (owner === 'agent-picker' || owner === 'yolo-confirmation') && <AgentPicker session={agentSession} />}
+			<AgentPickerSlot owner={owner} agentSession={agentSession} availableAgents={availableAgents} refreshAgents={refreshAgents} />
 	</>;
+}
+
+function AgentPickerSlot({owner, agentSession, availableAgents, refreshAgents}: Pick<InputBarProps, 'agentSession' | 'availableAgents' | 'refreshAgents'> &
+	Pick<ReturnType<typeof useInputBarController>, 'owner'>) {
+	if (!agentSession || (owner !== 'agent-picker' && owner !== 'yolo-confirmation')) return null;
+	return <AgentPicker session={agentSession} agents={availableAgents ?? FALLBACK_AGENT_METADATA} refresh={refreshAgents} />;
 }

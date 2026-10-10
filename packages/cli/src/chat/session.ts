@@ -124,7 +124,7 @@ export class ChatSession {
 		this.controller = controller;
 		let assistantId: string = randomUUID();
 		this.update({
-			messages: [...messages, {id: assistantId, role: 'assistant', parts: [], status: 'streaming'}],
+			messages: [...messages, {id: assistantId, role: 'assistant', parts: [], status: 'streaming', agentId: agentId ?? 'ask'}],
 			operation: 'chat', error: undefined, notice: undefined,
 		});
 

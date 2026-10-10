@@ -1,7 +1,7 @@
 import React, {useState, useSyncExternalStore} from 'react';
 import {Box, useWindowSize} from 'ink';
 import {StatusMessage} from '@inkjs/ui';
-import type {EffortLevel, ModelPreferences} from '@codeyantram/shared';
+import type {AgentMetadata, EffortLevel, ModelPreferences} from '@codeyantram/shared';
 import type {ChatSession} from '../chat/session.js';
 import {Conversation} from './conversation.js';
 import {InputBar} from './input-bar.js';
@@ -10,20 +10,21 @@ import {getContextStatus} from '../chat/context.js';
 import type {ApprovalController} from '../chat/approval.js';
 import {ApprovalView} from './approval-view.js';
 import {AgentSessionController} from '../chat/agent-session.js';
+import {FALLBACK_AGENT_METADATA} from '../chat/agent-catalog.js';
 
-export function ChatWorkspace({session, approvals, agentSession, modelPreferences, effort, branch, onSelectModel}: {
+export function ChatWorkspace({session, approvals, agentSession, availableAgents = FALLBACK_AGENT_METADATA, refreshAgents, modelPreferences, effort, branch, onSelectModel}: {
 	session: ChatSession;
 	approvals?: ApprovalController;
 	agentSession?: AgentSessionController;
+	availableAgents?: readonly AgentMetadata[];
+	refreshAgents?: () => Promise<void>;
 	modelPreferences: ModelPreferences;
 	effort?: EffortLevel;
 	branch: string;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 }) {
 	const {rows} = useWindowSize();
-	const [localAgentSession] = useState(() => new AgentSessionController({patch: false, command: false}));
-	const agents = agentSession ?? localAgentSession;
-	const selectedAgent = useSyncExternalStore(agents.subscribe, agents.getSnapshot);
+	const {agents, selectedAgent} = useAgentSelection(agentSession);
 	const {messages, statusEntries, operation, isStreaming, compaction, error, notice} = useSyncExternalStore(session.subscribe, session.getSnapshot);
 	const pending = useSyncExternalStore(approvals?.subscribe ?? emptySubscribe, approvals?.getSnapshot ?? noApproval);
 	const contextStatus = getContextStatus(modelPreferences.modelId, messages, compaction);
@@ -38,6 +39,8 @@ export function ChatWorkspace({session, approvals, agentSession, modelPreference
 				<InputBar
 					modelPreferences={modelPreferences}
 					agentSession={agents}
+					availableAgents={availableAgents}
+					refreshAgents={refreshAgents}
 					onSelectModel={onSelectModel}
 					operation={operation}
 					onSubmit={text => {void session.send(text, modelPreferences.modelId, effort,
@@ -56,6 +59,13 @@ export function ChatWorkspace({session, approvals, agentSession, modelPreference
 
 const emptySubscribe = () => () => {};
 const noApproval = () => null;
+
+function useAgentSelection(agentSession?: AgentSessionController) {
+	const [localAgentSession] = useState(() => new AgentSessionController({patch: false, command: false}));
+	const agents = agentSession ?? localAgentSession;
+	const selectedAgent = useSyncExternalStore(agents.subscribe, agents.getSnapshot);
+	return {agents, selectedAgent};
+}
 
 function ReviewOrConversation({approvals, pending, session, messages, statusEntries, isStreaming}: {
 	approvals?: ApprovalController;

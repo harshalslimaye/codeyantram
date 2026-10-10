@@ -1,6 +1,6 @@
 # Agents Implementation Plan
 
-Status: Phases 1–5 implemented. Phases 6–8 remain planned.
+Status: Phases 1–6 implemented. Phases 7–8 remain planned.
 
 Phase 1 result: `packages/shared/src/agents/` defines the validated authoring,
 resolved, and public metadata contracts; `packages/core/src/tools/catalog.ts`
@@ -38,8 +38,16 @@ Yolo. Yolo requires a separate activation screen explaining that Bash is not
 sandboxed, and the status bar marks it as active. The private server checks the
 host-owned selection before streaming, binds authorization and approvers to the
 turn snapshot, and can disable automatic patching and commands independently.
-Switching away resets activation; a new process starts in Ask. Phase 6 still
-adds the full metadata-driven picker and conversation display behavior.
+Switching away resets activation; a new process starts in Ask. The picker and
+conversation display were completed in Phase 6.
+
+Phase 6 result: the CLI picker loads validated public metadata from the
+private server when opened, showing source, approval behavior, availability,
+and effective tool count. The selected agent remains visible in the status
+bar; each assistant turn keeps a local agent label that is stripped from
+subsequent chat requests and compaction input. Agent selection is captured
+before sending a turn. `/clear` retains session selection, while a new process
+starts in Ask. Narrow picker labels are bounded to terminal width.
 
 ## Goal and first-version contract
 

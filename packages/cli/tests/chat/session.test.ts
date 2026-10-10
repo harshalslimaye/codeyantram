@@ -16,6 +16,23 @@ function successfulTransport() {
 }
 
 describe('chat session', () => {
+	it('records the agent for each turn without replaying old agent metadata', async () => {
+		const requests: Parameters<ChatTransport>[0][] = [];
+		const session = new ChatSession(async function* (request) {
+			requests.push(request);
+			yield {type: 'text-delta', text: 'Done'};
+			yield done;
+		});
+		await session.send('Edit this', 'gpt-6.1-sol', undefined, 'build');
+		await session.send('Explain it', 'gpt-6.1-sol');
+		expect(requests.map(request => request.agentId)).toEqual(['build', undefined]);
+		expect(session.getSnapshot().messages[1]).toMatchObject({role: 'assistant', agentId: 'build'});
+		expect(session.getSnapshot().messages[3]).toMatchObject({role: 'assistant', agentId: 'ask'});
+		expect(JSON.stringify(requests[1]?.messages)).not.toContain('agentId');
+		session.clear();
+		expect(session.getSnapshot().messages).toEqual([]);
+	});
+
 	it('ignores status requests during generation', async () => {
 		let finish!: () => void;
 		const waiting = new Promise<void>(resolve => {finish = resolve;});

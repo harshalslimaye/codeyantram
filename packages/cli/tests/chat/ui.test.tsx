@@ -156,10 +156,36 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
+	it('loads picker labels from the private server and marks unavailable agents', async () => {
+		const fetchResponse = vi.fn<typeof fetch>().mockImplementation(async (url, init) => {
+			expect(new URL(requestUrl(url)).pathname).toBe('/agents');
+			expect(new Headers(init?.headers).get('x-codeyantram-session')).toBe('test-session');
+			return Response.json([
+				{id: 'ask', name: 'Ask', description: 'Inspect source', source: 'builtin', approval: 'none', tools: ['read'], available: true},
+				{id: 'build', name: 'Build', description: 'Edit with review', source: 'builtin', approval: 'prompt', tools: ['read', 'apply_patch'], available: true},
+				{id: 'yolo', name: 'Yolo', description: 'Automatic edits', source: 'builtin', approval: 'automatic', tools: [], available: false},
+			]);
+		});
+		vi.stubGlobal('fetch', fetchResponse);
+		const ui = renderUI(<App registry={registry} initialThemeId="konkan" initialModelPreferences={preferences}
+			serverBaseUrl="http://localhost" serverSessionToken="test-session" workspaceRoot={process.cwd()} initializeGraph={initializeGraph} />);
+		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
+		ui.stdin.write('/agent');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Choose Ask, Build, or Yolo'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(fetchResponse).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(ui.frame()).toContain('Inspect source'));
+		expect(ui.frame()).toContain('builtin · none');
+		expect(ui.frame()).toContain('Edit with review');
+		ui.stdout.columns = 40;
+		ui.stdout.emit('resize');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Ask · builtin'));
+	});
+
 	it('requires explicit Yolo activation and shows the active agent', async () => {
 		const agents = new AgentSessionController({patch: true, command: true});
 		const requests: ChatRequest[] = [];
-		const session = new ChatSession(async function* (request) {requests.push(request); yield {type: 'done', durationMs: 1};});
+		const session = new ChatSession(async function* (request) {requests.push(request); yield {type: 'text-delta', text: 'Done'}; yield {type: 'done', durationMs: 1};});
 		const ui = renderWorkspace(session, {agentSession: agents});
 		await vi.waitFor(() => expect(ui.frame()).toContain('Ask'));
 		ui.stdin.write('/agent');
@@ -167,7 +193,9 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Choose an agent for the next turn'));
 		ui.stdin.write('\x1b[B');
+		await vi.waitFor(() => expect(ui.frame()).toContain('❯ Build'));
 		ui.stdin.write('\x1b[B');
+		await vi.waitFor(() => expect(ui.frame()).toContain('❯ Yolo'));
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Activate Yolo'));
 		expect(agents.getSnapshot()).toEqual({id: 'ask', yoloActive: false});
@@ -178,6 +206,12 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('Check this'));
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(requests[0]?.agentId).toBe('yolo'));
+		await vi.waitFor(() => expect(ui.frame()).toContain('Assistant · Yolo'));
+		ui.stdin.write('/clear');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Clear the conversation'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(session.getSnapshot().messages).toEqual([]));
+		expect(agents.getSnapshot()).toEqual({id: 'yolo', yoloActive: true});
 		agents.select('ask');
 		await vi.waitFor(() => expect(ui.frame()).not.toContain('YOLO ACTIVE'));
 		await vi.waitFor(() => expect(session.getSnapshot().operation).toBe('idle'));
@@ -186,6 +220,7 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(requests).toHaveLength(2));
 		expect(requests[1]?.agentId).toBeUndefined();
+		await vi.waitFor(() => expect(ui.frame()).toContain('Assistant · Ask'));
 	});
 
 	it('shows a scrollable exact approval and gives its keys sole control', async () => {

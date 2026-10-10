@@ -31,6 +31,22 @@ async function seed(session: ChatSession, texts = [longText, longText, longText,
 }
 
 describe('session compaction', () => {
+	it('keeps local agent labels while compacting and replaying switched turns', async () => {
+		const {session, chat} = setup();
+		await session.send(longText, model, 'high', 'build');
+		await session.send(longText, model, 'high', 'yolo');
+		await session.send(longText, model, 'high');
+		await session.send('Latest question', model, 'high');
+		expect(await session.compact(model)).toEqual({type: 'success'});
+		await session.send('Follow up', model, 'high', 'build');
+		const request = requireValue(chat.mock.calls.at(-1))[0];
+		expect(request.agentId).toBe('build');
+		expect(request.contextSummary).toBe(done.summary);
+		expect(JSON.stringify(request.messages)).not.toContain('agentId');
+		expect(session.getSnapshot().messages[1]).toMatchObject({agentId: 'build'});
+		expect(session.getSnapshot().messages[3]).toMatchObject({agentId: 'yolo'});
+	});
+
 	it('reports compaction as unavailable when no summarizer is configured', async () => {
 		const {chat} = setup();
 		const session = new ChatSession(chat);

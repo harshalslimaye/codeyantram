@@ -1,5 +1,5 @@
-import React, {useEffect, useState} from 'react';
-import {findSupportedChatModel, saveModelPreference, type EffortLevel, type ModelPreferences, type SupportedChatModelDefinition} from '@codeyantram/shared';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import {findSupportedChatModel, saveModelPreference, type AgentMetadata, type EffortLevel, type ModelPreferences, type SupportedChatModelDefinition} from '@codeyantram/shared';
 import {ChatWorkspace} from './components/chat-workspace.js';
 import {getGitBranch} from './lib/utils.js';
 import {ThemeProvider} from './theme/provider.js';
@@ -9,6 +9,7 @@ import {ChatSession, type InitTransport} from './chat/session.js';
 import {requestChat, requestCompact} from './chat/client.js';
 import type {ApprovalController} from './chat/approval.js';
 import type {AgentSessionController} from './chat/agent-session.js';
+import {FALLBACK_AGENT_METADATA, loadAgentMetadata} from './chat/agent-catalog.js';
 
 export function App({
 	registry,
@@ -32,11 +33,12 @@ export function App({
 	initializeGraph: InitTransport;
 }) {
 	const [modelPreferences, setModelPreferences] = useState(initialModelPreferences);
+	const privateFetch = useMemo<typeof fetch>(() => (input, init) => fetch(input, {...init,
+		headers: {...Object.fromEntries(new Headers(init?.headers)), ...(serverSessionToken !== undefined ? {'x-codeyantram-session': serverSessionToken} : {})}}), [serverSessionToken]);
+	const {availableAgents, refreshAgents} = useAgentCatalog(serverBaseUrl, privateFetch);
 	const selectedModel: SupportedChatModelDefinition | undefined = findSupportedChatModel(modelPreferences.modelId);
 	const effort = modelPreferences.effortByModel[modelPreferences.modelId] ?? selectedModel?.defaultEffortLevel;
 	const [session] = useState(() => {
-		const privateFetch: typeof fetch = (input, init) => fetch(input, {...init,
-			headers: {...Object.fromEntries(new Headers(init?.headers)), ...(serverSessionToken !== undefined ? {'x-codeyantram-session': serverSessionToken} : {})}});
 		const chatUrl = new URL('/chat', serverBaseUrl).href;
 		const compactUrl = new URL('/compact', serverBaseUrl).href;
 		return new ChatSession(
@@ -54,8 +56,17 @@ export function App({
 	return (
 		<ThemeProvider registry={registry} initialThemeId={initialThemeId}>
 			<KeyboardProvider>
-				<ChatWorkspace session={session} approvals={approvals} agentSession={agentSession} modelPreferences={modelPreferences} effort={effort} branch={branch} onSelectModel={selectModel} />
+				<ChatWorkspace session={session} approvals={approvals} agentSession={agentSession} availableAgents={availableAgents} refreshAgents={refreshAgents} modelPreferences={modelPreferences} effort={effort} branch={branch} onSelectModel={selectModel} />
 			</KeyboardProvider>
 		</ThemeProvider>
 	);
+}
+
+function useAgentCatalog(baseUrl: string, fetchResponse: typeof fetch) {
+	const [availableAgents, setAvailableAgents] = useState<readonly AgentMetadata[]>(FALLBACK_AGENT_METADATA);
+	const refreshAgents = useCallback(async () => {
+		const agents = await loadAgentMetadata(baseUrl, fetchResponse);
+		setAvailableAgents(agents);
+	}, [baseUrl, fetchResponse]);
+	return {availableAgents, refreshAgents};
 }

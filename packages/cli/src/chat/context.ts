@@ -6,6 +6,7 @@ import {
 	toRequestMessage,
 	type MessagePart,
 	type AssistantMessage,
+	type AgentId,
 	type ChatMessage,
 	type ChatRequest,
 	type CompactAssistantStatus,
@@ -20,6 +21,7 @@ const ESTIMATED_SUMMARY_OVERHEAD_TOKENS = 32;
 
 export type ConversationMessage = UserMessage | (AssistantMessage & {
 	status?: CompactAssistantStatus | 'streaming';
+	agentId?: AgentId;
 });
 
 /** The exclusive boundary counts every transcript entry, including empty placeholders. */

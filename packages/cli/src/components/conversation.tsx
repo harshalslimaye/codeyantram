@@ -1,7 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState, useMemo} from 'react';
 import {Box, Text, measureElement, useWindowSize, type DOMElement} from 'ink';
 import wrapAnsi from 'wrap-ansi';
-import type {ChatMessage, ToolInput, ToolResult} from '@codeyantram/shared';
+import type {ToolInput, ToolResult} from '@codeyantram/shared';
 import {useTheme, type InkThemePalette} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useMouseWheel} from '../terminal/mouse.js';
@@ -10,6 +10,7 @@ import {Welcome} from './welcome.js';
 import {SessionStatus} from './session-status.js';
 import {ScrollBlock} from './scroll-block.js';
 import type {StatusEntry} from '../chat/session.js';
+import type {ConversationMessage} from '../chat/context.js';
 
 const CONVERSATION_HORIZONTAL_MARGIN = 2;
 
@@ -44,7 +45,7 @@ function toolResultSummary(result: ToolResult): string {
 	return details.join(' · ');
 }
 
-export function Conversation({messages, statusEntries, isStreaming}: {messages: ChatMessage[]; statusEntries: StatusEntry[]; isStreaming: boolean}) {
+export function Conversation({messages, statusEntries, isStreaming}: {messages: ConversationMessage[]; statusEntries: StatusEntry[]; isStreaming: boolean}) {
 	const {palette} = useTheme();
 	const {isOwner} = useKeyboardOwner();
 	const {columns, rows} = useWindowSize();
@@ -75,8 +76,8 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 function createMessageRenderer(columns: number, palette: InkThemePalette) {
 	const width = Math.max(1, columns - CONVERSATION_HORIZONTAL_MARGIN);
 	const renderMarkdown = createMarkdownRenderer(width, palette);
-	const cache = new WeakMap<ChatMessage, string[]>();
-	return (message: ChatMessage, text: string) => {
+	const cache = new WeakMap<ConversationMessage, string[]>();
+	return (message: ConversationMessage, text: string) => {
 		const cached = cache.get(message);
 		if (cached) return cached;
 		const lines = message.role === 'assistant' ? renderMarkdown(text) : wrapAnsi(text, width, {hard: true}).split('\n');
@@ -85,7 +86,7 @@ function createMessageRenderer(columns: number, palette: InkThemePalette) {
 	};
 }
 
-function buildMessageLines(messages: ChatMessage[], isStreaming: boolean, renderMessage: ReturnType<typeof createMessageRenderer>): ConversationLine[][] {
+function buildMessageLines(messages: ConversationMessage[], isStreaming: boolean, renderMessage: ReturnType<typeof createMessageRenderer>): ConversationLine[][] {
 	return messages.map((message, index) => {
 		const pending = isStreaming && index === messages.length - 1 && message.role === 'assistant';
 		if (!message.parts.length && !pending) return [];
@@ -95,14 +96,21 @@ function buildMessageLines(messages: ChatMessage[], isStreaming: boolean, render
 			return `\n${part.result.toolName} · ${toolResultSummary(part.result)}\n`;
 		}).join('') || (pending ? 'Waiting for response…' : '');
 		return [
-			{kind: message.role, text: message.role === 'user' ? 'You' : 'Assistant'},
+			{kind: message.role, text: message.role === 'user' ? 'You' : `Assistant · ${agentLabel(message.agentId)}`},
 			...renderMessage(message, text).map(lineText => ({kind: 'text', text: lineText})),
 			{kind: 'text', text: ''},
 		];
 	});
 }
 
-function buildBlocks(context: {messages: ChatMessage[]; messageLines: ConversationLine[][]; statusEntries: StatusEntry[]; blockHeights: Record<string, number>}): ConversationBlock[] {
+function agentLabel(id: string | undefined): string {
+	if (id === undefined || id === 'ask') return 'Ask';
+	if (id === 'build') return 'Build';
+	if (id === 'yolo') return 'Yolo';
+	return id;
+}
+
+function buildBlocks(context: {messages: ConversationMessage[]; messageLines: ConversationLine[][]; statusEntries: StatusEntry[]; blockHeights: Record<string, number>}): ConversationBlock[] {
 	const {messages, messageLines, statusEntries, blockHeights} = context;
 		const welcomeHeight = blockHeights.welcome ?? 0;
 		const result: ConversationBlock[] = [{id: 'welcome', start: 0, height: welcomeHeight}];
@@ -124,7 +132,7 @@ function buildBlocks(context: {messages: ChatMessage[]; messageLines: Conversati
 		return result;
 }
 
-function useConversationContent(messages: ChatMessage[], statusEntries: StatusEntry[], options: {isStreaming: boolean; columns: number; palette: InkThemePalette}) {
+function useConversationContent(messages: ConversationMessage[], statusEntries: StatusEntry[], options: {isStreaming: boolean; columns: number; palette: InkThemePalette}) {
 	const {isStreaming, columns, palette} = options;
 	const [blockHeights, setBlockHeights] = useState<Record<string, number>>({});
 	const activeIds = useMemo(() => new Set(['welcome', ...statusEntries.map(entry => entry.id)]), [statusEntries]);

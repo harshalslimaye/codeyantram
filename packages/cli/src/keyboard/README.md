@@ -15,6 +15,8 @@ disabled until the request resolves.
 `/agent` opens the built-in agent picker. Choosing Yolo opens a separate
 confirmation that names the unsandboxed shell behavior. A activates it for the
 current process; D or Escape returns without activation.
+The picker refreshes its labels from the private server's `/agents` metadata
+when opened and bounds each option to the current terminal width.
 
 - `owner` is the React state used to render the active interaction.
 - `isOwner(candidate)` checks the current owner synchronously.

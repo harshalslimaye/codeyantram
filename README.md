@@ -76,6 +76,9 @@ asks you to review each exact patch or command. Yolo requires a separate
 activation and then runs permitted patches and commands without per-action
 prompts. Its Bash commands are not sandboxed. Switching away from Yolo resets
 its activation; every new CLI process starts in Ask.
+The picker shows each agent's source, approval behavior, availability, and
+effective tool count. The status bar shows the current agent, and assistant
+turns retain their agent label when you switch agents or compact history.
 Conversations stay in memory for the current CLI session.
 
 Use `/connect` and select **TypeSafe (JEV)** to save its evaluation API key.
