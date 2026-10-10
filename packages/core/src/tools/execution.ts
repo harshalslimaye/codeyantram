@@ -2,6 +2,7 @@ import {toolResultSchema, type ToolResult} from '@codeyantram/shared';
 import type {ToolExecutor} from './types.js';
 import {mapGraphError} from './codegraph/graph-errors.js';
 import {WebFetchError} from './web-fetch/errors.js';
+import {ReadError} from './read/errors.js';
 
 const MAX_TOOL_EXECUTIONS = 12;
 const MAX_TOOL_OUTPUT_BYTES = 80_000;
@@ -22,12 +23,17 @@ export function createToolExecutor(): ToolExecutor {
       return result;
     } catch (failure) {
       if (signal?.aborted === true) return error('cancelled', 'Tool execution cancelled.');
-      if (failure instanceof WebFetchError) return error(failure.code, failure.message);
-      if (name === 'web_fetch') return error('execution_failed', 'Web fetch could not complete the request.');
-      const mapped = mapGraphError(failure);
+      const mapped = mapToolFailure(name, failure);
       return error(mapped.code, mapped.message);
     }
   };
+}
+
+function mapToolFailure(name: string, failure: unknown): Extract<ToolResult, {status: 'error'}>['error'] {
+  if (failure instanceof WebFetchError || failure instanceof ReadError) return {code: failure.code, message: failure.message};
+  if (name === 'read') return {code: 'execution_failed', message: 'The file could not be read safely.'};
+  if (name === 'web_fetch') return {code: 'execution_failed', message: 'Web fetch could not complete the request.'};
+  return mapGraphError(failure);
 }
 
 export const createNavigationExecutor = createToolExecutor;

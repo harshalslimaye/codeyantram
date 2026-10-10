@@ -204,6 +204,10 @@ const config = {
   },
   "overrides": [
     {
+      files: ['packages/core/src/tools/read/filesystem.ts'],
+      rules: {'security/detect-non-literal-fs-filename': 'off'},
+    },
+    {
       // Tests use literal boundary cases, temporary paths, and internal units.
       // Async mocks preserve the interface even when a fixture needs no await.
       "files": ["packages/*/tests/**/*"],

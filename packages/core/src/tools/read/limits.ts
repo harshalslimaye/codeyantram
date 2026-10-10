@@ -1,0 +1,10 @@
+export const MAX_FILE_BYTES = 1_048_576;
+export const DEFAULT_READ_LINES = 200;
+export const MAX_READ_LINES = 1000;
+export const MAX_READ_CHARACTERS = 24_000;
+export const MAX_PAGE_BYTES = 48_000;
+export const MIN_FILTER_CHARACTERS = 6000;
+export const MAX_CHUNK_LINES = 40;
+export const MAX_CHUNK_CHARACTERS = 2400;
+export const MAX_EVALUATED_CHUNKS = 32;
+export const IRRELEVANT_PROBABILITY = 0.05;

@@ -216,11 +216,55 @@ selection. Content is capped at 24,000 characters and the complete output at
 Forged boundary markers are escaped; framing is not a prompt-injection guarantee.
 See [WEB_FETCH_EVALUATION.md](WEB_FETCH_EVALUATION.md) for validation and limitations.
 
+## Workspace read
+
+Supply `read: createReadService({workspaceRoot, jev?})` to `streamChat` to enable
+the `read` tool independently of graph indexing. The server supplies it when a
+host workspace root is configured, using the same host-resolved JEV opt-in as
+web-fetch and navigation. Core never selects a root from model arguments.
+`createReadTool(service, execute, objective?)` is also available to direct hosts;
+share `createToolExecutor()` with other tools to enforce the per-turn budget.
+
+Arguments are `filePath` (normalized workspace-relative path), optional 1-based
+`offset`, `limit` (1–1,000; default 200), `maxCharacters` (1–24,000; default
+24,000), relevance `query`, and `filter`. Read accepts regular UTF-8 text files
+up to 1 MiB; directories, binary content, malformed UTF-8, and symlink escapes
+are rejected. Canonical-path containment and descriptor identity checks precede
+reading; detected concurrent changes fail rather than returning mixed source.
+These checks are not an OS sandbox against a hostile process racing filesystem
+mutations. Errors do not expose absolute host paths.
+
+Output contains the relative path, a SHA-256 hash of the raw file snapshot,
+total line count, original line-numbered `ranges`, and `nextOffset` for the
+unfiltered page. CRLF line endings are normalized in ranges. Empty files and
+offsets beyond EOF return no ranges. Character and JSON-byte budgets bound output;
+`truncation` separately reports partial file coverage and shortened source lines.
+A shortened line cannot be recovered by advancing to `nextOffset`; use a larger
+`maxCharacters` where possible. Read does not support images or directory listing.
+
+Host-enabled JEV evaluates pages of at least 6,000 characters when `query` or
+the latest user objective is available. Only that objective, the relative path,
+and the requested page's source ranges are sent to TypeSafe, not conversation
+history or the rest of the file. This can send private repository content to an
+external provider; hosts must honor the user's JEV preference.
+Ranges use whole-line chunks of up to 40 lines, preferring 2,400 characters.
+At most 32 chunks are evaluated, using the shared five-second deadline and
+bounded batching. Missing judgments and unevaluated tails survive; leading
+context and neighbors of positive evidence are also retained. All-negative or
+failed evaluations return the original page. Filtering metadata reports counts,
+status, completeness, duration, and available usage; omissions produce warnings.
+Caller cancellation still cancels the tool.
+
+Use `filter:false` for exact source inspection or before editing. Filtering never
+renumbers lines or changes pagination, and is distinct from output truncation.
+Filtered ranges may omit required declarations and are not a complete parseable
+file. Source remains untrusted data even after JEV evaluation.
+
 ## Workspace navigation
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
-to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting both graph and
-web-fetch capabilities keeps chat without tool definitions.
+to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting graph,
+web-fetch, and read capabilities keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 
