@@ -47,7 +47,7 @@ function parseHexColor(color: string): [number, number, number] | undefined {
 }
 
 function xtermColor(index: number): [number, number, number] {
-	if (index < ANSI_BASIC_COLOR_COUNT) return [...ANSI_16_RGB[index]];
+	if (index < ANSI_BASIC_COLOR_COUNT) return [...ANSI_16_RGB[index]]; // oxlint-disable-line security/detect-object-injection -- Indices and role/reference keys come from validated theme colors and bounded ANSI tables.
 	if (index >= GRAYSCALE_START_INDEX) {
 		const gray = GRAYSCALE_BASE_CHANNEL + (index - GRAYSCALE_START_INDEX) * GRAYSCALE_STEP;
 		return [gray, gray, gray];
@@ -65,7 +65,7 @@ function nearestAnsiIndex(rgb: readonly number[], depth: typeof BASIC_COLOR_DEPT
 	let nearestDistance = Number.POSITIVE_INFINITY;
 
 	for (let index = 0; index < candidates; index++) {
-		const [red, green, blue] = depth === BASIC_COLOR_DEPTH ? ANSI_16_RGB[index] : xtermColor(index);
+		const [red, green, blue] = depth === BASIC_COLOR_DEPTH ? ANSI_16_RGB[index] : xtermColor(index); // oxlint-disable-line security/detect-object-injection -- Indices and role/reference keys come from validated theme colors and bounded ANSI tables.
 		const distance = (rgb[0] - red) ** COLOR_DISTANCE_EXPONENT + (rgb[1] - green) ** COLOR_DISTANCE_EXPONENT + (rgb[2] - blue) ** COLOR_DISTANCE_EXPONENT;
 		if (distance < nearestDistance) {
 			nearestIndex = index;
@@ -86,13 +86,13 @@ export function detectTerminalColorDepth(
 }
 
 function resolveVariant(color: ThemeColor, mode: 'dark' | 'light'): string | number | undefined {
-	if (typeof color === 'object' && color !== null) return color[mode];
+	if (typeof color === 'object' && color !== null) return color[mode]; // oxlint-disable-line security/detect-object-injection -- Indices and role/reference keys come from validated theme colors and bounded ANSI tables.
 	return color;
 }
 
 function resolveReference(color: string | number | undefined, theme: ThemeDefinition): string | number | undefined {
 	if (typeof color !== 'string' || color.startsWith('#') || color === 'none') return color;
-	return theme.defs?.[color];
+	return theme.defs?.[color]; // oxlint-disable-line security/detect-object-injection -- Indices and role/reference keys come from validated theme colors and bounded ANSI tables.
 }
 
 function toInkColor(color: string | number | undefined, depth: number): string | undefined {
@@ -115,6 +115,6 @@ export function resolveThemeColor(
 	colorDepth: number,
 	mode: 'dark' | 'light' = 'dark',
 ): string | undefined {
-	const selected = resolveVariant(theme.colors[role], mode);
+	const selected = resolveVariant(theme.colors[role], mode); // oxlint-disable-line security/detect-object-injection -- Indices and role/reference keys come from validated theme colors and bounded ANSI tables.
 	return toInkColor(resolveReference(selected, theme), colorDepth);
 }

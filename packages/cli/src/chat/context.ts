@@ -55,7 +55,7 @@ export function getContextStartIndex(messages: readonly ChatMessage[], compacted
 	if (!Number.isInteger(index) || index < 0 || index > messages.length) {
 		throw new Error('The compacted context boundary is outside the transcript.');
 	}
-	if (index > 0 && index < messages.length && messages[index].role !== 'user') {
+	if (index > 0 && index < messages.length && messages[index].role !== 'user') { // oxlint-disable-line security/detect-object-injection -- The index is bounded by the conversation length.
 		throw new Error('The compacted context boundary splits a conversation turn.');
 	}
 	return index;

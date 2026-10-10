@@ -8,8 +8,8 @@ export function recordCompactionUsage(previous: CompactionUsage | undefined, usa
 	const tokens = {...previous?.tokens};
 	let reported = false;
 	for (const field of usageFields) {
-		if (usage?.[field] !== undefined) {
-			tokens[field] = (tokens[field] ?? 0) + usage[field];
+		if (usage?.[field] !== undefined) { // oxlint-disable-line security/detect-object-injection -- Token fields come from the fixed usageFields allowlist.
+			tokens[field] = (tokens[field] ?? 0) + usage[field]; // oxlint-disable-line security/detect-object-injection -- Token fields come from the fixed usageFields allowlist.
 			reported = true;
 		}
 	}
@@ -21,8 +21,8 @@ export function recordCompactionUsage(previous: CompactionUsage | undefined, usa
 }
 
 export function usageNotice(usage?: TokenUsage): string {
-	const fields = usageFields.filter(field => usage?.[field] !== undefined);
-	return fields.length ? ` Available compaction usage: ${fields.map(field => `${usageLabels[field]} ${usage?.[field]} tokens`).join(', ')}.`
+	const fields = usageFields.filter(field => usage?.[field] !== undefined); // oxlint-disable-line security/detect-object-injection -- Token fields come from the fixed usageFields allowlist.
+	return fields.length ? ` Available compaction usage: ${fields.map(field => `${usageLabels[field]} ${usage?.[field]} tokens`).join(', ')}.` // oxlint-disable-line security/detect-object-injection -- Token fields come from the fixed usageFields allowlist.
 		: ' Compaction usage unavailable.';
 }
 

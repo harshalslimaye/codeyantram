@@ -110,20 +110,27 @@ export function patchCodeGraph(root = fileURLToPath(new URL('../', import.meta.u
       if (/** @type {NodeJS.ErrnoException} */ (error).code === 'MODULE_NOT_FOUND') continue;
       throw error;
     }
-    const metadata = /** @type {{version: string}} */ (JSON.parse(readFileSync(packageFile, 'utf8')));
-    if (metadata.version !== VERSION) throw new Error(`CodeGraph ${platform} bundle must be ${VERSION}; found ${metadata.version}.`);
-    for (const [relative, extend] of /** @type {[string, (source: string) => string][]} */ ([['index.js', extendCodeGraphSource], ['extraction/index.js', extendCodeGraphExtractionSource]])) {
-      const filename = path.join(path.dirname(packageFile), 'lib', 'dist', relative);
-      const source = readFileSync(filename, 'utf8');
-      updates.push({filename, source, extended: extend(source)});
-    }
+    updates.push(...bundleUpdates(packageFile, platform));
   }
   if (!updates.length) throw new Error('No CodeGraph platform bundle is installed. Install optional dependencies.');
   // Validate every installed bundle before modifying any of them. Reruns heal
   // an interrupted install; unknown source fails instead of patching blindly.
   for (const {filename, source, extended} of updates) {
-    if (source !== extended) writeFileSync(filename, extended);
+    if (source !== extended) writeFileSync(filename, extended); // oxlint-disable-line security/detect-non-literal-fs-filename -- Paths resolve installed dependency bundles and fixed patch targets; all versions and source shapes are checked before writing.
   }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) patchCodeGraph();
+
+/** @param {string} packageFile @param {string} platform */
+function bundleUpdates(packageFile, platform) {
+  const updates = [];
+    const metadata = /** @type {{version: string}} */ (JSON.parse(readFileSync(packageFile, 'utf8'))); // oxlint-disable-line security/detect-non-literal-fs-filename -- Paths resolve installed dependency bundles and fixed patch targets; all versions and source shapes are checked before writing.
+    if (metadata.version !== VERSION) throw new Error(`CodeGraph ${platform} bundle must be ${VERSION}; found ${metadata.version}.`);
+    for (const [relative, extend] of /** @type {[string, (source: string) => string][]} */ ([['index.js', extendCodeGraphSource], ['extraction/index.js', extendCodeGraphExtractionSource]])) {
+      const filename = path.join(path.dirname(packageFile), 'lib', 'dist', relative);
+      const source = readFileSync(filename, 'utf8'); // oxlint-disable-line security/detect-non-literal-fs-filename -- Paths resolve installed dependency bundles and fixed patch targets; all versions and source shapes are checked before writing.
+      updates.push({filename, source, extended: extend(source)});
+    }
+  return updates;
+}

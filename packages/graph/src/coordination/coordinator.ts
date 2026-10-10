@@ -74,7 +74,7 @@ export class GraphCoordinator {
 
   edit<T>(write: (context: GraphEditContext) => T | Promise<T>, options: {signal?: AbortSignal} = {}): Promise<GraphEditResult<T>> {
     return this.queue.enqueue('editing', () => performGraphEdit(
-      write, options, this.changes, this.reconciler, this.cleanupTimeoutMs,
+      write, {...options, cleanupTimeoutMs: this.cleanupTimeoutMs}, this.changes, this.reconciler,
     ), options.signal);
   }
 

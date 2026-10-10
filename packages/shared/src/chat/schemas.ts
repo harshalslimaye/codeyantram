@@ -71,18 +71,7 @@ export const chatRequestSchema = z.object({
   const ids = new Set<string>();
   for (const [index, message] of request.messages.entries()) {
     if (message.role !== 'assistant') continue;
-    const pending = new Map<string, string>();
-    for (const part of message.parts) {
-      if (part.type === 'tool-call') {
-        if (ids.has(part.call.toolCallId)) ctx.addIssue({code: 'custom', message: 'Duplicate tool call ID.', path: ['messages', index, 'parts']});
-        ids.add(part.call.toolCallId);
-        pending.set(part.call.toolCallId, part.call.toolName);
-      } else if (part.type === 'tool-result') {
-        if (pending.get(part.result.toolCallId) !== part.result.toolName) ctx.addIssue({code: 'custom', message: 'Tool result must match a preceding call.', path: ['messages', index, 'parts']});
-        pending.delete(part.result.toolCallId);
-      }
-    }
-    if (pending.size) ctx.addIssue({code: 'custom', message: 'Tool calls require results before replay.', path: ['messages', index, 'parts']});
+    validateToolSequence(message, index, ids, ctx);
   }
   const model = findSupportedChatModel(request.model);
   if (!model) {
@@ -138,3 +127,18 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     message: z.string(),
   }),
 ]);
+
+function validateToolSequence(message: Extract<RequestMessage, {role: 'assistant'}>, index: number, ids: Set<string>, ctx: z.RefinementCtx) {
+  const pending = new Map<string, string>();
+  for (const part of message.parts) {
+    if (part.type === 'tool-call') {
+      if (ids.has(part.call.toolCallId)) ctx.addIssue({code: 'custom', message: 'Duplicate tool call ID.', path: ['messages', index, 'parts']});
+      ids.add(part.call.toolCallId);
+      pending.set(part.call.toolCallId, part.call.toolName);
+    } else if (part.type === 'tool-result') {
+      if (pending.get(part.result.toolCallId) !== part.result.toolName) ctx.addIssue({code: 'custom', message: 'Tool result must match a preceding call.', path: ['messages', index, 'parts']});
+      pending.delete(part.result.toolCallId);
+    }
+  }
+  if (pending.size) ctx.addIssue({code: 'custom', message: 'Tool calls require results before replay.', path: ['messages', index, 'parts']});
+}

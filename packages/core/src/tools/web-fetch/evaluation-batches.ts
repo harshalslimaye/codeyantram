@@ -18,7 +18,7 @@ function recordAnswers(batch: ContentChunk[], result: Awaited<ReturnType<JevEval
 function recordUsage(result: TokenUsage | undefined, usage: TokenUsage) {
   for (const [key, value] of Object.entries(result ?? {})) {
     const name = key as keyof TokenUsage;
-    if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) usage[name] = (usage[name] ?? 0) + value;
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) usage[name] = (usage[name] ?? 0) + value; // oxlint-disable-line security/detect-object-injection -- Usage keys come from the evaluator token-usage record; values are validated before summing.
   }
 }
 

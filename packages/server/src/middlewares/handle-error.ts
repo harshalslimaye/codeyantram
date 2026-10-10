@@ -11,12 +11,7 @@ export const handleError: ErrorRequestHandler = (error: unknown, _request, respo
     response.destroy();
     return;
   }
-  let errorType: unknown;
-  let errorStatus: unknown;
-  if (typeof error === 'object' && error !== null) {
-    if ('type' in error) errorType = error.type;
-    if ('status' in error) errorStatus = error.status;
-  }
+  const {errorType, errorStatus} = errorMetadata(error);
 
   let status = HTTP_INTERNAL_SERVER_ERROR;
   let code: 'invalid_request' | 'internal_error' = 'internal_error';
@@ -51,3 +46,14 @@ export const handleError: ErrorRequestHandler = (error: unknown, _request, respo
     message,
   } satisfies ChatStreamEvent);
 };
+
+function errorMetadata(error: unknown) {
+  let errorType: unknown;
+  let errorStatus: unknown;
+  if (typeof error === 'object' && error !== null) {
+    if ('type' in error) errorType = error.type;
+    if ('status' in error) errorStatus = error.status;
+  }
+
+  return {errorType, errorStatus};
+}

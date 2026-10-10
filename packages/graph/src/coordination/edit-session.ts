@@ -5,10 +5,9 @@ import {GraphCoordinatorError} from './errors.js';
 /** Captures partial writes and reconciles them with an independent cleanup deadline. */
 export async function performGraphEdit<T>(
   write: (context: GraphEditContext) => T | Promise<T>,
-  options: {signal?: AbortSignal},
+  options: {signal?: AbortSignal; cleanupTimeoutMs: number},
   changes: ChangeJournal,
   reconciler: ReconcileWorkspace,
-  cleanupTimeoutMs: number,
 ): Promise<GraphEditResult<T>> {
   const changed = new Set<string>();
   let active = true;
@@ -28,7 +27,7 @@ export async function performGraphEdit<T>(
   // deadline but keep the slot until the SDK settles; never race/close it.
   const cleanup = new AbortController();
   const timeout = new GraphCoordinatorError('cleanup_timeout', 'Graph synchronization after the edit timed out. Retry synchronization; do not replay the edit.');
-  const timer = setTimeout(() => cleanup.abort(timeout), cleanupTimeoutMs);
+  const timer = setTimeout(() => cleanup.abort(timeout), options.cleanupTimeoutMs);
   timer.unref();
   try {
     const {freshness} = await reconciler.run({signal: cleanup.signal});

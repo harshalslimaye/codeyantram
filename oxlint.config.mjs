@@ -131,7 +131,9 @@ const config = {
         "allow": [
           `${workspaceRoot}packages/*/src/**`,
           `${workspaceRoot}packages/*/evaluations/**`,
-          `${workspaceRoot}scripts/**`
+          `${workspaceRoot}scripts/**`,
+          'vitest/config',
+          '@colbymchenry/codegraph/package.json'
         ]
       }
     ],
@@ -225,115 +227,21 @@ const config = {
         "unicorn/no-useless-undefined": ["error", {"checkArguments": false}]
       }
     },
+    ...['core', 'cli', 'server', 'shared', 'graph'].map(workspace => ({
+      files: [`packages/${workspace}/**/*`],
+      rules: {
+        'import-js/no-extraneous-dependencies': ['error', {
+          devDependencies: ['**/tests/**', '**/evaluations/**', 'scripts/**', '*.config.*'],
+          packageDir: [`./packages/${workspace}`, '.'],
+        }],
+      },
+    })),
     {
-      "files": [
-        "packages/core/**/*"
-      ],
-      "rules": {
-        "import-js/no-extraneous-dependencies": [
-          "error",
-          {
-            "devDependencies": [
-              "**/tests/**",
-              "**/evaluations/**",
-              "scripts/**",
-              "*.config.*"
-            ],
-            "packageDir": [
-              "./packages/core",
-              "."
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": [
-        "packages/cli/**/*"
-      ],
-      "rules": {
-        "import-js/no-extraneous-dependencies": [
-          "error",
-          {
-            "devDependencies": [
-              "**/tests/**",
-              "**/evaluations/**",
-              "scripts/**",
-              "*.config.*"
-            ],
-            "packageDir": [
-              "./packages/cli",
-              "."
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": [
-        "packages/server/**/*"
-      ],
-      "rules": {
-        "import-js/no-extraneous-dependencies": [
-          "error",
-          {
-            "devDependencies": [
-              "**/tests/**",
-              "**/evaluations/**",
-              "scripts/**",
-              "*.config.*"
-            ],
-            "packageDir": [
-              "./packages/server",
-              "."
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": [
-        "packages/shared/**/*"
-      ],
-      "rules": {
-        "import-js/no-extraneous-dependencies": [
-          "error",
-          {
-            "devDependencies": [
-              "**/tests/**",
-              "**/evaluations/**",
-              "scripts/**",
-              "*.config.*"
-            ],
-            "packageDir": [
-              "./packages/shared",
-              "."
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": [
-        "packages/graph/**/*"
-      ],
-      "rules": {
-        "import-js/no-extraneous-dependencies": [
-          "error",
-          {
-            "devDependencies": [
-              "**/tests/**",
-              "**/evaluations/**",
-              "scripts/**",
-              "*.config.*"
-            ],
-            "packageDir": [
-              "./packages/graph",
-              "."
-            ]
-          }
-        ]
-      }
+      files: ['scripts/patch-codegraph.mjs'],
+      rules: {
+        // The root postinstall script patches the graph workspace dependency.
+        'import-js/no-extraneous-dependencies': ['error', {packageDir: ['.', './packages/graph']}],
+      },
     }
   ]
 };

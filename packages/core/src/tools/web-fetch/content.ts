@@ -23,6 +23,29 @@ export function convertContent(document: TransportDocument, requested: WebFormat
     return {content: document.text, format: /text\/(?:x-)?markdown/i.test(document.contentType) ? 'markdown' : 'text'};
   }
   if (requested === 'html') return {content: document.text, format: 'html'};
+  const {html, text} = parseHtml(document.text, document.finalUrl);
+  if (requested === 'text') return {content: text.join('').replace(/^\n+|\n+$/g, ''), format: 'text'};
+  const turndown = new TurndownService({headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-', preformattedCode: true});
+  turndown.use([tables, strikethrough]);
+  // Never keep fallback HTML from a table that the GFM plugin cannot represent.
+  turndown.addRule('plainUnsupportedTable', {
+    filter: node => node.nodeName === 'TABLE' && !node.querySelector('th'),
+    replacement: content => `\n\n${content}\n\n`,
+  });
+  return {content: turndown.turndown(html.join('')), format: 'markdown'};
+}
+
+function safeAttributes(attrs: Record<string, string>, base: string): Record<string, string> {
+  const safe: Record<string, string> = {};
+  for (const key of ['href', 'src']) if (attrs[key]) { // oxlint-disable-line security/detect-object-injection -- Attribute keys come from fixed allowlists; URLs are restricted to public web protocols.
+    const resolved = absoluteLink(attrs[key], base); // oxlint-disable-line security/detect-object-injection -- Attribute keys come from fixed allowlists; URLs are restricted to public web protocols.
+    if (resolved !== undefined && resolved !== '') safe[key] = resolved; // oxlint-disable-line security/detect-object-injection -- Attribute keys come from fixed allowlists; URLs are restricted to public web protocols.
+  }
+  for (const key of ['alt', 'title', 'class', 'colspan', 'rowspan', 'align', 'start']) if (attrs[key]) safe[key] = attrs[key]; // oxlint-disable-line security/detect-object-injection -- Attribute keys come from fixed allowlists; URLs are restricted to public web protocols.
+  return safe;
+}
+
+function parseHtml(source: string, base: string) {
   let elements = 0;
   let skipped = 0;
   let pre = 0;
@@ -41,12 +64,7 @@ export function convertContent(document: TransportDocument, requested: WebFormat
       if (name === 'pre') pre++;
       if (blocks.has(name)) text.push('\n');
       if (name === 'li') text.push('- ');
-      const safe: Record<string, string> = {};
-      for (const key of ['href', 'src']) if (attrs[key]) {
-        const resolved = absoluteLink(attrs[key], document.finalUrl);
-        if (resolved !== undefined && resolved !== '') safe[key] = resolved;
-      }
-      for (const key of ['alt', 'title', 'class', 'colspan', 'rowspan', 'align', 'start']) if (attrs[key]) safe[key] = attrs[key];
+      const safe = safeAttributes(attrs, base);
       html.push(`<${name}${Object.entries(safe).map(([key, value]) => ` ${key}="${escape(value)}"`).join('')}>`);
     },
     ontext(value) {
@@ -65,14 +83,6 @@ export function convertContent(document: TransportDocument, requested: WebFormat
       if (entry?.skip === true) skipped--;
     },
   }, {decodeEntities: true});
-  parser.end(document.text);
-  if (requested === 'text') return {content: text.join('').replace(/^\n+|\n+$/g, ''), format: 'text'};
-  const turndown = new TurndownService({headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-', preformattedCode: true});
-  turndown.use([tables, strikethrough]);
-  // Never keep fallback HTML from a table that the GFM plugin cannot represent.
-  turndown.addRule('plainUnsupportedTable', {
-    filter: node => node.nodeName === 'TABLE' && !node.querySelector('th'),
-    replacement: content => `\n\n${content}\n\n`,
-  });
-  return {content: turndown.turndown(html.join('')), format: 'markdown'};
+  parser.end(source);
+  return {html, text};
 }

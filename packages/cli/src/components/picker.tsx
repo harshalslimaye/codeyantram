@@ -1,4 +1,4 @@
-import React, {useCallback, useRef} from 'react';
+import React, {useCallback, useRef, useLayoutEffect} from 'react';
 import {Box, Text, useInput} from 'ink';
 import {Select} from '@inkjs/ui';
 import {useTheme} from '../theme/provider.js';
@@ -26,7 +26,9 @@ export function Picker<Value extends string>({
 	const {palette} = useTheme();
 	const {owner, isOwner} = useKeyboardOwner();
 	const interaction = useRef({pickerOwner, isOwner, isDisabled, options, onSelect, onCancel});
-	interaction.current = {pickerOwner, isOwner, isDisabled, options, onSelect, onCancel};
+	useLayoutEffect(() => {
+		interaction.current = {pickerOwner, isOwner, isDisabled, options, onSelect, onCancel};
+	}, [pickerOwner, isOwner, isDisabled, options, onSelect, onCancel]);
 
 	// Select calls onChange in an effect; a stable callback prevents repeat selections.
 	const handleChange = useCallback((value: string) => {

@@ -1,4 +1,4 @@
-import type {Edge} from '@colbymchenry/codegraph';
+import type {Edge, Node as CodeGraphNode} from '@colbymchenry/codegraph';
 import type {SymbolReference} from '@codeyantram/shared';
 import type {GraphTraceResult, GraphTraceOptions} from '../contracts/navigation.js';
 import type {TraceBackend} from '../sdk/ports.js';
@@ -29,28 +29,11 @@ export class TraceQuery {
     const result: GraphTraceResult = {target, direction: options.direction, depth, symbols: [], relationships: [],
       truncated: nodes.length > limit, coverage: NAVIGATION_COVERAGE + ' Trace follows resolved calls and instantiations only; dynamic or unresolved calls may be absent.'};
     const hashes = new Map([[target.filePath, target.reference.contentHash]]);
-    for (const node of nodes.slice(0, limit)) {
-      try {result.symbols.push(await this.symbols.verified(node, hashes));}
-      catch (error) {
-        if (!(error instanceof GraphNavigationError) || error.code !== 'source_too_large') throw error;
-        result.truncated = true;
-      }
-    }
-    const ids = new Set([target.id, ...result.symbols.map(symbol => symbol.id)]);
-    for (const edge of subgraph.edges) {
-      if (!ids.has(edge.source) || !ids.has(edge.target)) continue;
-      if (result.relationships.length >= MAX_RELATIONSHIPS) {result.truncated = true; break;}
-      if (edge.metadata && JSON.stringify(edge.metadata).length > MAX_EDGE_METADATA_CHARACTERS) result.truncated = true;
-      result.relationships.push(this.relationship(edge));
-    }
+    await this.collectSymbols(nodes.slice(0, limit), result, hashes);
+    this.collectRelationships(subgraph.edges, result);
     await this.sources.verifyFiles(hashes);
     result.truncated ||= target.metadataTruncated || result.symbols.some(symbol => symbol.metadataTruncated);
-    while (!fits(result, maxCharacters)) {
-      result.truncated = true;
-      if (result.relationships.length) result.relationships.pop();
-      else if (result.symbols.length) result.symbols.pop();
-      else break;
-    }
+    trimTrace(result, maxCharacters);
     requireFits(result, maxCharacters);
     return result;
   }
@@ -60,5 +43,34 @@ export class TraceQuery {
     return {source: edge.source, target: edge.target, kind: edge.kind,
       ...(edge.line === undefined ? {} : {line: edge.line}), ...(edge.column === undefined ? {} : {column: edge.column}),
       ...(metadata ? {metadata} : {})};
+  }
+  private async collectSymbols(nodes: CodeGraphNode[], result: GraphTraceResult, hashes: Map<string, string>) {
+    for (const node of nodes) {
+      try {result.symbols.push(await this.symbols.verified(node, hashes));}
+      catch (error) {
+        if (!(error instanceof GraphNavigationError) || error.code !== 'source_too_large') throw error;
+        result.truncated = true;
+      }
+    }
+  }
+
+  private collectRelationships(edges: Edge[], result: GraphTraceResult) {
+    const ids = new Set([result.target.id, ...result.symbols.map(symbol => symbol.id)]);
+    for (const edge of edges) {
+      if (!ids.has(edge.source) || !ids.has(edge.target)) continue;
+      if (result.relationships.length >= MAX_RELATIONSHIPS) {result.truncated = true; break;}
+      if (edge.metadata && JSON.stringify(edge.metadata).length > MAX_EDGE_METADATA_CHARACTERS) result.truncated = true;
+      result.relationships.push(this.relationship(edge));
+    }
+  }
+
+}
+
+function trimTrace(result: GraphTraceResult, maxCharacters: number) {
+  while (!fits(result, maxCharacters)) {
+    result.truncated = true;
+    if (result.relationships.length) result.relationships.pop();
+    else if (result.symbols.length) result.symbols.pop();
+    else break;
   }
 }

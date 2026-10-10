@@ -18,7 +18,7 @@ export function formatOutput(document: TransportDocument, format: WebFormat, ori
   };
   const setContent = (characters: number) => {
     let returnedCharacters = characters;
-    if (/[\uD800-\uDBFF]/.test(source[returnedCharacters - 1] ?? '') && /[\uDC00-\uDFFF]/.test(source[returnedCharacters] ?? '')) returnedCharacters--;
+    if (/[\uD800-\uDBFF]/.test(source[returnedCharacters - 1] ?? '') && /[\uDC00-\uDFFF]/.test(source[returnedCharacters] ?? '')) returnedCharacters--; // oxlint-disable-line security/detect-object-injection -- The index is a bounded character offset in the selected text.
     output.truncation.returnedCharacters = returnedCharacters;
     output.truncation.truncated = returnedCharacters < source.length;
     output.content = `${BEGIN}\n${source.slice(0, returnedCharacters)}\n${END}${output.truncation.truncated ? '\n[Output truncated by the host; additional source content exists.]' : ''}`;

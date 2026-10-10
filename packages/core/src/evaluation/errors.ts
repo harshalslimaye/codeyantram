@@ -20,14 +20,17 @@ export function toEvaluationError(error: unknown): EvaluationError {
   if (InvalidResponseDataError.isInstance(error) || JSONParseError.isInstance(error) || TypeValidationError.isInstance(error)) {
     return new EvaluationError('invalid_response', 'JEV returned an invalid evaluation response.');
   }
-  if (APICallError.isInstance(error)) {
-    if (error.statusCode === HTTP_UNAUTHORIZED || error.statusCode === HTTP_FORBIDDEN) {
-      return new EvaluationError('authentication_failed', 'JEV authentication failed. Update the TypeSafe API key through /connect.');
-    }
-    if (error.statusCode === HTTP_TOO_MANY_REQUESTS) return new EvaluationError('rate_limited', 'JEV is rate limited. Try again later.');
-    if (TypeValidationError.isInstance(error.cause) || JSONParseError.isInstance(error.cause)) {
-      return new EvaluationError('invalid_response', 'JEV returned an invalid evaluation response.');
-    }
+  if (APICallError.isInstance(error)) return apiCallError(error);
+  return new EvaluationError('provider_error', 'JEV could not complete the evaluation.');
+}
+
+function apiCallError(error: APICallError): EvaluationError {
+  if (error.statusCode === HTTP_UNAUTHORIZED || error.statusCode === HTTP_FORBIDDEN) {
+    return new EvaluationError('authentication_failed', 'JEV authentication failed. Update the TypeSafe API key through /connect.');
+  }
+  if (error.statusCode === HTTP_TOO_MANY_REQUESTS) return new EvaluationError('rate_limited', 'JEV is rate limited. Try again later.');
+  if (TypeValidationError.isInstance(error.cause) || JSONParseError.isInstance(error.cause)) {
+    return new EvaluationError('invalid_response', 'JEV returned an invalid evaluation response.');
   }
   return new EvaluationError('provider_error', 'JEV could not complete the evaluation.');
 }

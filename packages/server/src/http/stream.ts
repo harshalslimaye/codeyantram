@@ -32,33 +32,41 @@ export async function serveEventStream<TRequest extends {model: string}>(
   try {
     const streamOptions = options.readOptions ? await options.readOptions(options.request.model, controller.signal)
       : {credentials: await options.readCredentials(options.request.model)};
-    if (controller.signal.aborted || response.destroyed) return;
+    if (streamClosed(response, controller.signal)) return;
 
     openEventStream(response);
     heartbeat = startHeartbeat(response);
     for await (const event of options.generate(options.request, {
       ...streamOptions, abortSignal: controller.signal,
     })) {
-      if (controller.signal.aborted || response.destroyed) break;
+      if (streamClosed(response, controller.signal)) break;
       await writeStreamEvent(response, event, controller.signal);
       if (event.type === 'done' || event.type === 'error') break;
     }
   } catch {
-    if (!controller.signal.aborted && !response.destroyed) {
-      const event = {
-        type: 'error', code: 'internal_error', message: options.errorMessage,
-      } satisfies ChatStreamEvent;
-      if (response.headersSent) {
-        await writeStreamEvent(response, event, controller.signal).catch(() => {});
-      } else {
-        response.status(HTTP_INTERNAL_SERVER_ERROR).json(event);
-      }
-    }
+    await reportStreamError(response, controller.signal, options.errorMessage);
   } finally {
     controller.abort();
     clearInterval(heartbeat);
     response.off('close', abort);
     response.off('error', abort);
     if (!response.destroyed && !response.writableEnded) response.end();
+  }
+}
+
+function streamClosed(response: Response, signal: AbortSignal): boolean {
+  return signal.aborted || response.destroyed;
+}
+
+async function reportStreamError(response: Response, signal: AbortSignal, errorMessage: string) {
+  if (!signal.aborted && !response.destroyed) {
+    const event = {
+      type: 'error', code: 'internal_error', message: errorMessage,
+    } satisfies ChatStreamEvent;
+    if (response.headersSent) {
+      await writeStreamEvent(response, event, signal).catch(() => {});
+    } else {
+      response.status(HTTP_INTERNAL_SERVER_ERROR).json(event);
+    }
   }
 }

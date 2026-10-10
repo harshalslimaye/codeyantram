@@ -11,7 +11,7 @@ async function loadThemeDirectory(
 ): Promise<RegisteredTheme[]> {
 	let files;
 	try {
-		files = await readdir(directory, {withFileTypes: true});
+		files = await readdir(directory, {withFileTypes: true}); // oxlint-disable-line security/detect-non-literal-fs-filename -- Paths come from the user-theme directory and JSON files enumerated inside it.
 	} catch {
 		return [];
 	}
@@ -25,7 +25,7 @@ async function loadThemeDirectory(
 		const filePath = path.join(directory, file.name);
 		let parsed: unknown;
 		try {
-			parsed = JSON.parse(await readFile(filePath, 'utf8'));
+			parsed = JSON.parse(await readFile(filePath, 'utf8')); // oxlint-disable-line security/detect-non-literal-fs-filename -- Paths come from the user-theme directory and JSON files enumerated inside it.
 		} catch {
 			continue;
 		}

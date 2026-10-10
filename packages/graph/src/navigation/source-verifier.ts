@@ -18,13 +18,10 @@ export class SourceVerifier implements SourceFingerprints {
     const record = this.backend.getFile(filePath);
     if (!record) throw new GraphNavigationError('stale_reference', 'The indexed file changed. Run find or explore again.');
     try {
-      const absolute = await realpath(path.resolve(this.storage.workspaceRoot, filePath));
-      const relative = path.relative(this.storage.workspaceRoot, absolute);
-      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-        throw new GraphNavigationError('invalid_input', 'The indexed source must remain inside the workspace.');
-      }
-      if ((await stat(absolute)).size > MAX_SOURCE_BYTES) throw new GraphNavigationError('source_too_large', 'Navigation source exceeds the 1 MB file limit.');
-      const contents = await readFile(absolute);
+      const absolute = await realpath(path.resolve(this.storage.workspaceRoot, filePath)); // oxlint-disable-line security/detect-non-literal-fs-filename -- The indexed path is schema-validated; realpath containment and size checks precede the source read.
+      verifyContainment(this.storage.workspaceRoot, absolute);
+      if ((await stat(absolute)).size > MAX_SOURCE_BYTES) throw new GraphNavigationError('source_too_large', 'Navigation source exceeds the 1 MB file limit.'); // oxlint-disable-line security/detect-non-literal-fs-filename -- The indexed path is schema-validated; realpath containment and size checks precede the source read.
+      const contents = await readFile(absolute); // oxlint-disable-line security/detect-non-literal-fs-filename -- The indexed path is schema-validated; realpath containment and size checks precede the source read.
       if (contents.length > MAX_SOURCE_BYTES) throw new GraphNavigationError('source_too_large', 'Navigation source exceeds the 1 MB file limit.');
       const hash = createHash('sha256').update(contents).digest('hex');
       if (hash !== record.contentHash) throw new GraphNavigationError('stale_reference', 'Source differs from the index. Run find or explore again.');
@@ -41,5 +38,12 @@ export class SourceVerifier implements SourceFingerprints {
     for (const [file, hash] of hashes) if (await this.fingerprint(file) !== hash) {
       throw new GraphNavigationError('stale_reference', 'Source changed during navigation. Run find or explore again.');
     }
+  }
+}
+
+function verifyContainment(workspaceRoot: string, absolute: string) {
+  const relative = path.relative(workspaceRoot, absolute);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new GraphNavigationError('invalid_input', 'The indexed source must remain inside the workspace.');
   }
 }

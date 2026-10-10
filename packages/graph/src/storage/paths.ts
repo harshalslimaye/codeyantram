@@ -7,8 +7,8 @@ import type {GraphStoragePaths} from '../contracts/storage.js';
 /** Resolves storage without creating directories or opening a database. */
 export async function resolveGraphStoragePaths(workspaceRoot: string): Promise<GraphStoragePaths> {
   if (!workspaceRoot.trim()) throw new Error('A graph workspace root is required.');
-  const canonicalRoot = await realpath(path.resolve(workspaceRoot));
-  if (!(await stat(canonicalRoot)).isDirectory()) {
+  const canonicalRoot = await realpath(path.resolve(workspaceRoot)); // oxlint-disable-line security/detect-non-literal-fs-filename -- The user-selected workspace is canonicalized and checked as a directory.
+  if (!(await stat(canonicalRoot)).isDirectory()) { // oxlint-disable-line security/detect-non-literal-fs-filename -- The user-selected workspace is canonicalized and checked as a directory.
     throw new Error('The graph workspace root must be a directory.');
   }
 

@@ -10,6 +10,24 @@ export function ApiKeyInput({provider, providerName, onSaved}: {
 	providerName: string;
 	onSaved: () => void;
 }) {
+	const {isSaving, owner, palette, saveKey} = useApiKeyInput(provider, onSaved);
+
+	return (
+		<>
+			<Box flexDirection="column" borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
+				<Text color={palette.muted}>Enter API key for {providerName} · Enter save · Esc back</Text>
+				<PasswordInput
+					placeholder="API key"
+					isDisabled={isSaving || owner !== 'api-key-input'}
+					onSubmit={apiKey => { void saveKey(apiKey); }}
+				/>
+			</Box>
+			{isSaving && <Spinner label="Saving API key…" />}
+		</>
+	);
+}
+
+function useApiKeyInput(provider: ConnectableProvider, onSaved: () => void) {
 	const [isSaving, setIsSaving] = useState(false);
 	const saving = useRef(false);
 	const {owner, isOwner, pop} = useKeyboardOwner();
@@ -43,17 +61,5 @@ export function ApiKeyInput({provider, providerName, onSaved}: {
 		}
 	}, {isActive: owner === 'api-key-input'});
 
-	return (
-		<>
-			<Box flexDirection="column" borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
-				<Text color={palette.muted}>Enter API key for {providerName} · Enter save · Esc back</Text>
-				<PasswordInput
-					placeholder="API key"
-					isDisabled={isSaving || owner !== 'api-key-input'}
-					onSubmit={apiKey => { void saveKey(apiKey); }}
-				/>
-			</Box>
-			{isSaving && <Spinner label="Saving API key…" />}
-		</>
-	);
+	return {isSaving, owner, palette, saveKey};
 }

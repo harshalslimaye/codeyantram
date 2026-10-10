@@ -39,13 +39,13 @@ export async function resolveProjectRoot({
   invocationDirectory = process.env.INIT_CWD,
   cwd = process.cwd(),
 }: {project?: string; invocationDirectory?: string; cwd?: string} = {}): Promise<string> {
-  const base = (invocationDirectory !== undefined && invocationDirectory.trim() !== '') ? invocationDirectory : cwd;
+  const base = invocationBase(invocationDirectory, cwd);
   const candidate = path.resolve(base, project ?? '.');
   let canonicalRoot: string;
   let isDirectory: boolean;
   try {
-    canonicalRoot = await realpath(candidate);
-    isDirectory = (await stat(canonicalRoot)).isDirectory();
+    canonicalRoot = await realpath(candidate); // oxlint-disable-line security/detect-non-literal-fs-filename -- The path is the explicitly selected project directory, canonicalized before use.
+    isDirectory = (await stat(canonicalRoot)).isDirectory(); // oxlint-disable-line security/detect-non-literal-fs-filename -- The path is the explicitly selected project directory, canonicalized before use.
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT' || code === 'ENOTDIR') {
@@ -55,4 +55,8 @@ export async function resolveProjectRoot({
   }
   if (!isDirectory) throw new Error(`Project path must be a directory: ${candidate}`);
   return canonicalRoot;
+}
+
+function invocationBase(invocationDirectory: string | undefined, cwd: string): string {
+  return (invocationDirectory !== undefined && invocationDirectory.trim() !== '') ? invocationDirectory : cwd;
 }

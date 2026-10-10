@@ -5,7 +5,7 @@ import {asObject} from '../../utils/objects.js';
 import {findSupportedChatModel, SUPPORTED_PROVIDERS, type ConnectableProvider, type ProviderCredentials, type SupportedProvider} from '../config/index.js';
 
 function readApiKey(providers: Record<string, unknown>, provider: SupportedProvider): string | undefined {
-	const {apiKey} = asObject(providers[provider]);
+	const {apiKey} = asObject(providers[provider]); // oxlint-disable-line security/detect-object-injection -- Provider keys come from the fixed supported provider set.
 	return typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : undefined;
 }
 
@@ -25,7 +25,7 @@ export async function saveProviderApiKey(provider: ConnectableProvider, apiKey: 
 		...config,
 		providers: {
 			...providers,
-			[provider]: {...asObject(providers[provider]), apiKey: key},
+			[provider]: {...asObject(providers[provider]), apiKey: key}, // oxlint-disable-line security/detect-object-injection -- Provider keys come from the fixed supported provider set.
 		},
 	});
 }

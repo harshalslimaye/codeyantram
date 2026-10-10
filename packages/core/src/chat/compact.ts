@@ -49,50 +49,59 @@ export async function* compactChat(
     yield {type: 'start'};
     if (signal.aborted) return;
 
-    const parsed = compactRequestSchema.safeParse(request);
-    if (!parsed.success) {
-      throw new ChatError('invalid_request', parsed.error.issues[0]?.message ?? 'Invalid compaction request.');
-    }
-    const definition = findSupportedChatModel(parsed.data.model)!;
-    const resolved = resolveChatModel({
-      modelId: definition.id,
-      effort: modelSupportsEffort(definition, 'low') ? 'low' : undefined,
-      credentials: options.credentials,
-      fetch: options.fetch,
-    });
-    // JSON keeps roles, partial-response status, and source boundaries explicit.
-    // Historical messages are data in one user prompt, never live assistant turns.
-    const source = {
-      ...(parsed.data.previousSummary === undefined ? {} : {previousSummary: parsed.data.previousSummary}),
-      messages: parsed.data.messages.map(message => ({
-        ...message,
-        ...(message.role === 'assistant' ? {status: message.status ?? 'complete'} : {}),
-      })),
-    };
-    const result = await generateText({
-      ...resolved,
-      instructions: SUMMARIZATION_PROMPT,
-      prompt: JSON.stringify(source),
-      maxOutputTokens: MAX_SUMMARIZATION_OUTPUT_TOKENS,
-      abortSignal: signal,
-      maxRetries: 0,
-    });
+    const result = await generateSummary(request, options, signal);
     // Providers and injected transports can return after cancellation.
     if (signal.aborted) return;
-    const summary = contextSummarySchema.safeParse(result.text);
-    if (result.finishReason !== 'stop' || !summary.success) {
-      throw new ChatError('compaction_failed', 'The provider did not return a complete, usable conversation summary.');
-    }
-    const usage = toTokenUsage(result.usage);
-    yield {
-      type: 'done',
-      summary: summary.data,
-      durationMs: performance.now() - startedAt,
-      ...(usage === undefined ? {} : {usage}),
-    };
+    yield summaryEvent(result, startedAt);
   } catch (error) {
     if (!signal.aborted) yield toChatErrorEvent(error);
   } finally {
     controller.abort();
   }
+}
+
+function generateSummary(request: CompactRequest, options: CompactChatOptions, signal: AbortSignal) {
+  const parsed = compactRequestSchema.safeParse(request);
+  if (!parsed.success) {
+    throw new ChatError('invalid_request', parsed.error.issues[0]?.message ?? 'Invalid compaction request.');
+  }
+  const definition = findSupportedChatModel(parsed.data.model);
+  if (!definition) throw new ChatError('invalid_request', 'Invalid compaction model.');
+  const resolved = resolveChatModel({
+    modelId: definition.id,
+    effort: modelSupportsEffort(definition, 'low') ? 'low' : undefined,
+    credentials: options.credentials,
+    fetch: options.fetch,
+  });
+  // JSON keeps roles, partial-response status, and source boundaries explicit.
+  // Historical messages are data in one user prompt, never live assistant turns.
+  const source = {
+    ...(parsed.data.previousSummary === undefined ? {} : {previousSummary: parsed.data.previousSummary}),
+    messages: parsed.data.messages.map(message => ({
+      ...message,
+      ...(message.role === 'assistant' ? {status: message.status ?? 'complete'} : {}),
+    })),
+  };
+  return generateText({
+    ...resolved,
+    instructions: SUMMARIZATION_PROMPT,
+    prompt: JSON.stringify(source),
+    maxOutputTokens: MAX_SUMMARIZATION_OUTPUT_TOKENS,
+    abortSignal: signal,
+    maxRetries: 0,
+  });
+}
+
+function summaryEvent(result: Awaited<ReturnType<typeof generateSummary>>, startedAt: number): CompactStreamEvent {
+  const summary = contextSummarySchema.safeParse(result.text);
+  if (result.finishReason !== 'stop' || !summary.success) {
+    throw new ChatError('compaction_failed', 'The provider did not return a complete, usable conversation summary.');
+  }
+  const usage = toTokenUsage(result.usage);
+  return {
+    type: 'done',
+    summary: summary.data,
+    durationMs: performance.now() - startedAt,
+    ...(usage === undefined ? {} : {usage}),
+  };
 }

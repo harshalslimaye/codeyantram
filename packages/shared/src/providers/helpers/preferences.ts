@@ -15,17 +15,7 @@ export interface ModelPreferences {
 
 export function resolveModelPreferences(config: Record<string, unknown>): ModelPreferences {
 	const model = typeof config.model === 'string' ? findSupportedChatModel(config.model) : undefined;
-	const effortByModel: Record<string, EffortLevel> = {};
-	const savedEfforts = config.effortByModel;
-	if (typeof savedEfforts === 'object' && savedEfforts !== null && !Array.isArray(savedEfforts)) {
-		for (const [id, value] of Object.entries(savedEfforts)) {
-			const savedModel = findSupportedChatModel(id);
-			const effort = EFFORT_LEVELS.find(level => level === value);
-			if (savedModel && effort && modelSupportsEffort(savedModel, effort)) {
-				effortByModel[id] = effort;
-			}
-		}
-	}
+	const effortByModel = resolveSavedEfforts(config.effortByModel);
 	return {modelId: model?.id ?? DEFAULT_CHAT_MODEL_ID, effortByModel};
 }
 
@@ -45,7 +35,21 @@ export async function saveModelPreference(id: string, effort?: EffortLevel): Pro
 	}
 	const config = await readConfig();
 	const {effortByModel} = resolveModelPreferences(config);
-	if (effort !== undefined) effortByModel[id] = effort;
+	if (effort !== undefined) effortByModel[id] = effort; // oxlint-disable-line security/detect-object-injection -- Model IDs are validated against the supported model registry before writing preferences.
 	await writeConfig({...config, model: id, effortByModel});
 	return {modelId: model.id, effortByModel};
+}
+
+function resolveSavedEfforts(savedEfforts: unknown): Record<string, EffortLevel> {
+	const effortByModel: Record<string, EffortLevel> = {};
+	if (typeof savedEfforts === 'object' && savedEfforts !== null && !Array.isArray(savedEfforts)) {
+		for (const [id, value] of Object.entries(savedEfforts)) {
+			const savedModel = findSupportedChatModel(id);
+			const effort = EFFORT_LEVELS.find(level => level === value);
+			if (savedModel && effort && modelSupportsEffort(savedModel, effort)) {
+				effortByModel[id] = effort; // oxlint-disable-line security/detect-object-injection -- Model IDs are validated against the supported model registry before writing preferences.
+			}
+		}
+	}
+	return effortByModel;
 }

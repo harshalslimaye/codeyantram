@@ -62,38 +62,9 @@ export function validateTheme(value: unknown): ThemeValidationResult {
 		errors.push('"name" must be a non-empty string.');
 	}
 
-	const definitions: Record<string, ThemeColorValue> = {};
-	if (value.defs !== undefined) {
-		if (!isRecord(value.defs)) {
-			errors.push('"defs" must be an object of reusable color values.');
-		} else {
-			for (const [name, color] of Object.entries(value.defs)) {
-				if (!DEFINITION_NAME_PATTERN.test(name)) {
-					errors.push(`Invalid definition name "${name}".`);
-				} else if (!isColorValue(color)) {
-					errors.push(`"defs.${name}" must be a 6-digit hex color, an ANSI index from 0 to 255, or "none".`);
-				} else {
-					definitions[name] = color;
-				}
-			}
-		}
-	}
+	const definitions = validateDefinitions(value.defs, errors);
 
-	if (!isRecord(value.colors)) {
-		errors.push('"colors" must be an object containing every theme role.');
-	} else {
-		const allowedRoles = new Set<string>(THEME_ROLES);
-		for (const key of Object.keys(value.colors)) {
-			if (!allowedRoles.has(key)) errors.push(`Unknown color role "${key}".`);
-		}
-		for (const role of THEME_ROLES) {
-			if (!Object.hasOwn(value.colors, role)) {
-				errors.push(`Missing required color role "${role}".`);
-			} else if (!isThemeColor(value.colors[role], definitions)) {
-				errors.push(`"colors.${role}" must be a hex color, ANSI index, "none", a defined color name, or a dark/light pair of those values.`);
-			}
-		}
-	}
+	validateColors(value.colors, definitions, errors);
 
 	if (errors.length > 0) return {success: false, errors};
 
@@ -106,4 +77,38 @@ export function validateTheme(value: unknown): ThemeValidationResult {
 
 export function isThemeRole(value: string): value is ThemeRole {
 	return (THEME_ROLES as readonly string[]).includes(value);
+}
+
+function validateDefinitions(value: unknown, errors: string[]): Record<string, ThemeColorValue> {
+	const definitions: Record<string, ThemeColorValue> = {};
+	if (value === undefined) return definitions;
+	if (!isRecord(value)) {
+		errors.push('"defs" must be an object of reusable color values.');
+		return definitions;
+	}
+	for (const [name, color] of Object.entries(value)) {
+		if (!DEFINITION_NAME_PATTERN.test(name)) errors.push(`Invalid definition name "${name}".`);
+		else if (!isColorValue(color)) errors.push(`"defs.${name}" must be a 6-digit hex color, an ANSI index from 0 to 255, or "none".`);
+		else definitions[name] = color; // oxlint-disable-line security/detect-object-injection -- Names are validated against the definition-name schema.
+	}
+	return definitions;
+}
+
+function validateColors(value: unknown, definitions: Record<string, ThemeColorValue>, errors: string[]) {
+	if (!isRecord(value)) {
+		errors.push('"colors" must be an object containing every theme role.');
+	} else {
+		const allowedRoles = new Set<string>(THEME_ROLES);
+		for (const key of Object.keys(value)) {
+			if (!allowedRoles.has(key)) errors.push(`Unknown color role "${key}".`);
+		}
+		for (const role of THEME_ROLES) {
+			if (!Object.hasOwn(value, role)) {
+				errors.push(`Missing required color role "${role}".`);
+			} else if (!isThemeColor(value[role], definitions)) { // oxlint-disable-line security/detect-object-injection -- Definition names and role keys are validated against the theme schema before use.
+				errors.push(`"colors.${role}" must be a hex color, ANSI index, "none", a defined color name, or a dark/light pair of those values.`);
+			}
+		}
+	}
+
 }

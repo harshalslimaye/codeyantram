@@ -34,35 +34,35 @@ export class ExploreQuery {
     const formatted = await this.backend.buildContext(query, {
       format: 'json', includeCode: false, maxNodes, searchLimit: Math.min(maxNodes, MAX_SEARCH_AND_SNIPPET_COUNT), traversalDepth: 1,
     });
-    // The SDK's JSON format is a string with arrays, not its raw TaskContext
-    // (whose subgraph contains a Map). Keep that format detail at the boundary.
-    if (typeof formatted !== 'string') throw new Error('Unexpected CodeGraph context format.');
-    const context = JSON.parse(formatted) as {
-      summary: string; nodes: CodeGraphNode[];
-      edges: {source: string; target: string; kind: string; line?: number; column?: number}[];
-    };
-    if (typeof context.summary !== 'string' || !Array.isArray(context.nodes) || !Array.isArray(context.edges)) {
-      throw new Error('Unexpected CodeGraph context structure.');
-    }
+    const context = parseContext(formatted);
     const result: GraphExploreContext = {
       query, summary: context.summary.slice(0, MAX_QUERY_AND_SUMMARY_CHARACTERS), symbols: [], relationships: [], snippets: [], relatedFiles: [],
       truncated: context.nodes.length >= maxNodes,
       coverage: 'Indexed scope only: gitignore, project configuration, and supported languages apply. Empty results do not prove absence.',
     };
     const fingerprints = new Map<string, string>();
-    const fingerprint = async (filePath: string) => {
-      try {return await this.sources.fingerprint(filePath);}
-      catch (error) {
-        if (error instanceof GraphNavigationError) {
-          if (error.code === 'source_too_large') return null;
-          throw new GraphSourceChangedError();
-        }
-        throw error;
+    for (const node of context.nodes.slice(0, maxNodes)) await this.addNode(node, {result, fingerprints});
+    for (const [file, hash] of fingerprints) if (await this.fingerprint(file) !== hash) throw new GraphSourceChangedError();
+    addRelationships(context.edges, result);
+    result.relatedFiles = [...new Set(result.symbols.map(symbol => symbol.filePath))];
+    trimContext(result, maxCharacters);
+    return result;
+  }
+  private async fingerprint(filePath: string) {
+    try {return await this.sources.fingerprint(filePath);}
+    catch (error) {
+      if (error instanceof GraphNavigationError) {
+        if (error.code === 'source_too_large') return null;
+        throw new GraphSourceChangedError();
       }
-    };
-    for (const node of context.nodes.slice(0, maxNodes)) {
-      const hash = fingerprints.get(node.filePath) ?? await fingerprint(node.filePath);
-      if (hash === null || hash === '') {result.truncated = true; continue;}
+      throw error;
+    }
+  }
+
+  private async addNode(node: CodeGraphNode, context: {result: GraphExploreContext; fingerprints: Map<string, string>}) {
+    const {result, fingerprints} = context;
+      const hash = fingerprints.get(node.filePath) ?? await this.fingerprint(node.filePath);
+      if (hash === null || hash === '') {result.truncated = true; return;}
       fingerprints.set(node.filePath, hash);
       const symbol = toSymbol(node);
       // Avoid returning unbounded docstrings/signatures alongside bounded code.
@@ -71,32 +71,52 @@ export class ExploreQuery {
       const metadataTruncated = Boolean(node.docstring) || (node.signature?.length ?? 0) > MAX_SIGNATURE_CHARACTERS;
       result.symbols.push({...symbol, reference: this.references.reference(node, hash), metadataTruncated});
       if (metadataTruncated) result.truncated = true;
-      if (result.snippets.length < MAX_SEARCH_AND_SNIPPET_COUNT) {
-        const source = await this.backend.getCode(node.id);
-        if (source !== null) {
-          result.snippets.push({symbolId: node.id, filePath: node.filePath, startLine: node.startLine,
-            endLine: node.endLine, contentHash: hash, text: source.slice(0, MAX_SNIPPET_CHARACTERS), truncated: source.length > MAX_SNIPPET_CHARACTERS});
-          if (source.length > MAX_SNIPPET_CHARACTERS) result.truncated = true;
-        }
-      } else {result.truncated = true;}
-    }
-    for (const [file, hash] of fingerprints) if (await fingerprint(file) !== hash) throw new GraphSourceChangedError();
-    const ids = new Set(result.symbols.map(symbol => symbol.id));
-    for (const edge of context.edges) {
-      if (!ids.has(edge.source) || !ids.has(edge.target)) continue;
-      if (result.relationships.length >= MAX_RELATIONSHIPS) {result.truncated = true; break;}
-      result.relationships.push({source: edge.source, target: edge.target, kind: edge.kind,
-        metadata: {...(edge.line === undefined ? {} : {line: edge.line}), ...(edge.column === undefined ? {} : {column: edge.column})}});
-    }
-    result.relatedFiles = [...new Set(result.symbols.map(symbol => symbol.filePath))];
-    while (JSON.stringify(result).length > maxCharacters) {
-      result.truncated = true;
-      if (result.snippets.length) result.snippets.pop();
-      else if (result.relationships.length) result.relationships.pop();
-      else if (result.symbols.length) {
-        result.symbols.pop(); result.relatedFiles = [...new Set(result.symbols.map(symbol => symbol.filePath))];
-      } else {result.summary = ''; break;}
-    }
-    return result;
+      await this.addSnippet(node, hash, result);
+  }
+
+  private async addSnippet(node: CodeGraphNode, hash: string, result: GraphExploreContext) {
+    if (result.snippets.length < MAX_SEARCH_AND_SNIPPET_COUNT) {
+      const source = await this.backend.getCode(node.id);
+      if (source !== null) {
+        result.snippets.push({symbolId: node.id, filePath: node.filePath, startLine: node.startLine,
+          endLine: node.endLine, contentHash: hash, text: source.slice(0, MAX_SNIPPET_CHARACTERS), truncated: source.length > MAX_SNIPPET_CHARACTERS});
+        if (source.length > MAX_SNIPPET_CHARACTERS) result.truncated = true;
+      }
+    } else {result.truncated = true;}
+  }
+
+}
+
+type ExploreContext = {summary: string; nodes: CodeGraphNode[]; edges: {source: string; target: string; kind: string; line?: number; column?: number}[]};
+
+function parseContext(formatted: unknown): ExploreContext {
+  // The SDK's JSON format is a string with arrays, not its raw TaskContext
+  // (whose subgraph contains a Map). Keep that format detail at the boundary.
+  if (typeof formatted !== 'string') throw new TypeError('Unexpected CodeGraph context format.');
+  const context = JSON.parse(formatted) as ExploreContext;
+  if (typeof context.summary !== 'string' || !Array.isArray(context.nodes) || !Array.isArray(context.edges)) {
+    throw new TypeError('Unexpected CodeGraph context structure.');
+  }
+  return context;
+}
+
+function addRelationships(edges: ExploreContext['edges'], result: GraphExploreContext) {
+  const ids = new Set(result.symbols.map(symbol => symbol.id));
+  for (const edge of edges) {
+    if (!ids.has(edge.source) || !ids.has(edge.target)) continue;
+    if (result.relationships.length >= MAX_RELATIONSHIPS) {result.truncated = true; break;}
+    result.relationships.push({source: edge.source, target: edge.target, kind: edge.kind,
+      metadata: {...(edge.line === undefined ? {} : {line: edge.line}), ...(edge.column === undefined ? {} : {column: edge.column})}});
+  }
+}
+
+function trimContext(result: GraphExploreContext, maxCharacters: number) {
+  while (JSON.stringify(result).length > maxCharacters) {
+    result.truncated = true;
+    if (result.snippets.length) result.snippets.pop();
+    else if (result.relationships.length) result.relationships.pop();
+    else if (result.symbols.length) {
+      result.symbols.pop(); result.relatedFiles = [...new Set(result.symbols.map(symbol => symbol.filePath))];
+    } else {result.summary = ''; break;}
   }
 }

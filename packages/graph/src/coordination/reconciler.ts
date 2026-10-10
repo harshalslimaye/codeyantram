@@ -32,42 +32,64 @@ export class GraphReconciler implements ReconcileWorkspace {
       for (let pass = 0; pass < MAX_RECONCILIATION_PASSES; pass++) {
         options.signal?.throwIfAborted();
         const generation = this.changes.version;
-        const status = this.graph.getStatus();
-        if (status.indexState !== 'complete' || status.needsReindex) {
-          this.operations.setOperation('initializing');
-          options.onOperation?.('index');
-          index = await this.graph.index(options);
-          options.signal?.throwIfAborted();
-          if (!index.success) throw new GraphCoordinatorError('index_failed',
-            `Graph indexing did not complete (state: ${index.state ?? 'uninitialized'}, ${index.filesErrored} failed files). Run init again to retry.`, index);
-        } else {
-          this.operations.setOperation('synchronizing');
-          options.onOperation?.('sync');
-          sync = await this.graph.sync(options);
-          options.signal?.throwIfAborted();
-          if (!sync.success) throw new GraphCoordinatorError('sync_failed',
-            `Graph sync did not complete (${sync.failedFilePaths.length} failed files). Run init again to retry.`, sync);
-        }
-        this.index = this.graph.getStatus();
-        if (this.index.indexState !== 'complete' || this.index.needsReindex) {
-          throw new GraphCoordinatorError('sync_failed', 'The graph has no current, complete baseline. Run init again to retry.');
-        }
-        // Conservative local observation revision: even a no-op sync could
-        // have observed another process's writes. Do not treat it as a DB version.
-        this.observation = {epoch: this.epoch, revision: ++this.revision, reconciledAt: Date.now()};
-        this.changes.acknowledge(generation);
+        const reports = await this.reconcilePass(options);
+        if (reports.index) index = reports.index;
+        if (reports.sync) sync = reports.sync;
+        this.recordObservation(generation);
         if (this.changes.dirty) continue;
         this.failure = null;
-        return {status: {...this.index}, freshness: {...this.observation}, index, sync};
+        return {...this.currentObservation(), index, sync};
       }
       throw new GraphCoordinatorError('changes_during_sync', 'The workspace kept changing during graph synchronization. Retry the query.');
     } catch (error) {
       // Failed/cancelled sync can have written part of the index. Preserve dirty
       // state and require another reconciliation before any navigation.
       this.changes.requireFullScan();
-      this.failure = error instanceof GraphCoordinatorError ? error
-        : new GraphCoordinatorError('sync_failed', error instanceof Error ? error.message : 'Graph synchronization failed.', undefined, {cause: error});
-      throw (options.signal?.aborted === true) ? error : this.failure;
+      throw this.reconciliationFailure(error, options);
     }
+  }
+
+  private async reconcilePass(options: GraphReconcileOptions): Promise<{index?: GraphIndexReport; sync?: GraphSyncReport}> {
+    let index: GraphIndexReport | undefined;
+    let sync: GraphSyncReport | undefined;
+    const status = this.graph.getStatus();
+    if (status.indexState !== 'complete' || status.needsReindex) {
+      this.operations.setOperation('initializing');
+      options.onOperation?.('index');
+      index = await this.graph.index(options);
+      options.signal?.throwIfAborted();
+      if (!index.success) throw new GraphCoordinatorError('index_failed',
+        `Graph indexing did not complete (state: ${index.state ?? 'uninitialized'}, ${index.filesErrored} failed files). Run init again to retry.`, index);
+    } else {
+      this.operations.setOperation('synchronizing');
+      options.onOperation?.('sync');
+      sync = await this.graph.sync(options);
+      options.signal?.throwIfAborted();
+      if (!sync.success) throw new GraphCoordinatorError('sync_failed',
+        `Graph sync did not complete (${sync.failedFilePaths.length} failed files). Run init again to retry.`, sync);
+    }
+    return {index, sync};
+  }
+
+  private recordObservation(generation: number) {
+    this.index = this.graph.getStatus();
+    if (this.index.indexState !== 'complete' || this.index.needsReindex) {
+      throw new GraphCoordinatorError('sync_failed', 'The graph has no current, complete baseline. Run init again to retry.');
+    }
+    // Conservative local observation revision: even a no-op sync could
+    // have observed another process's writes. Do not treat it as a DB version.
+    this.observation = {epoch: this.epoch, revision: ++this.revision, reconciledAt: Date.now()};
+    this.changes.acknowledge(generation);
+  }
+
+  private currentObservation(): Pick<GraphInitialization, 'status' | 'freshness'> {
+    if (!this.index || !this.observation) throw new GraphCoordinatorError('sync_failed', 'The graph has no current, complete baseline. Run init again to retry.');
+    return {status: {...this.index}, freshness: {...this.observation}};
+  }
+
+  private reconciliationFailure(error: unknown, options: GraphReconcileOptions): unknown {
+    this.failure = error instanceof GraphCoordinatorError ? error
+      : new GraphCoordinatorError('sync_failed', error instanceof Error ? error.message : 'Graph synchronization failed.', undefined, {cause: error});
+    return (options.signal?.aborted === true) ? error : this.failure;
   }
 }

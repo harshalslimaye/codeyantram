@@ -31,6 +31,10 @@ async function main() {
 		return;
 	}
 
+	await startInteractiveChat(workspaceRoot);
+}
+
+async function startInteractiveChat(workspaceRoot: string) {
 	const [registry, themeId, modelPreferences] = await Promise.all([
 		loadThemes(),
 		readThemePreference(),

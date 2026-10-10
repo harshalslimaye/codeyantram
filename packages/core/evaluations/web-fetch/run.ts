@@ -24,29 +24,41 @@ class RunError extends Error {}
 
 function estimatedCost(usage: TokenUsage | undefined, rates: Rates | undefined): number | null {
   if (!usage || !rates || usage.inputTokens === undefined || usage.outputTokens === undefined) return null;
-  if (Object.values(rates).some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)
-    || typeof rates.input !== 'number' || typeof rates.output !== 'number') throw new RunError('Pricing must contain nonnegative input/output USD rates per million tokens.');
+  validateRates(rates);
   const read = usage.cacheReadTokens ?? 0; const write = usage.cacheWriteTokens ?? 0;
-  if (read && rates.cachedInput === undefined || write && rates.cacheWrite === undefined) return null;
+  if (!hasCacheRates(read, write, rates)) return null;
   return (Math.max(0, usage.inputTokens - read - write) * rates.input + usage.outputTokens * rates.output
     + read * (rates.cachedInput ?? 0) + write * (rates.cacheWrite ?? 0)) / TOKENS_PER_MILLION;
 }
 
 async function main() {
-  if (args.some(arg => arg !== '--live' && !arg.startsWith('--model=') && !arg.startsWith('--pricing='))) throw new RunError('Use --live, optional --model=ID, and optional --pricing=FILE.');
-  if ((modelId !== undefined && modelId !== '') && (!live || !findSupportedChatModel(modelId))) throw new RunError('--model requires --live and a supported model ID.');
-  const pricing: Pricing = (pricingPath !== undefined && pricingPath !== '') ? JSON.parse(await readFile(pricingPath, 'utf8')) as Pricing : {};
-  const config = live ? await readConfig() : {};
-  let evaluator: JevEvaluator | undefined;
-  if (live) {
-    const settings = resolveJevConfiguration(config);
-    if (!settings.enabled || !settings.configured) throw new RunError('Live evaluation requires a configured TypeSafe key and explicit /jev enablement.');
-    evaluator = createJevEvaluator({apiKey: (config.providers as {typesafe: {apiKey: string}}).typesafe.apiKey});
-  }
-  const credentials = (modelId !== undefined && modelId !== '') ? await readProviderCredentials(modelId, async () => config) : {};
-  const credential = (modelId !== undefined && modelId !== '') ? credentials[findSupportedChatModel(modelId)!.provider] : undefined;
-  if ((modelId !== undefined && modelId !== '') && (credential === undefined || credential === '')) throw new RunError('The selected coding provider must be configured before running answer comparisons.');
-  const answer = async (objective: string, content: string, literals: string[]) => {
+  validateArguments();
+  const {pricing, evaluator, credentials} = await evaluationSettings();
+  const answer = createAnswer(credentials, pricing);
+  const results = [];
+  for (const fixture of fetchFixtures) results.push(await evaluateFixture(fixture, {evaluator, pricing, answer}));
+  // oxlint-disable-next-line no-console -- This evaluation command emits its JSON report on stdout.
+  console.log(JSON.stringify({mode: live ? 'live-jev' : 'fixture-oracle', date: new Date().toISOString(), modelId: modelId ?? null,
+    note: live ? 'Review generated answers for correctness; literal coverage is not an answer-quality judgment. Costs require supplied rates and reported usage.'
+      : 'Synthetic selection regression only. No model calls, measured token savings, answer-quality conclusions, or live threshold validation.', results}, null, JSON_INDENT_SPACES)); // oxlint-disable-line no-console -- This evaluation command emits its JSON report on stdout.
+}
+
+main().catch((error: unknown) => {
+  console.error(error instanceof RunError ? error.message : 'Evaluation failed. Check configuration, pricing input, and provider availability.'); // oxlint-disable-line no-console -- CLI failures are intentionally reported on stderr.
+  process.exitCode = 1;
+});
+
+function validateRates(rates: Rates) {
+  if (Object.values(rates).some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+    || typeof rates.input !== 'number' || typeof rates.output !== 'number') throw new RunError('Pricing must contain nonnegative input/output USD rates per million tokens.');
+}
+
+function hasCacheRates(read: number, write: number, rates: Rates): boolean {
+  return !(read && rates.cachedInput === undefined || write && rates.cacheWrite === undefined);
+}
+
+function createAnswer(credentials: Awaited<ReturnType<typeof readProviderCredentials>>, pricing: Pricing) {
+  return async (objective: string, content: string, literals: string[]) => {
     if (modelId === undefined || modelId === '') return null;
     const started = performance.now();
     let text = ''; let usage: TokenUsage | undefined;
@@ -63,8 +75,10 @@ async function main() {
       answerLiteralCoverage: literals.filter(literal => text.toLowerCase().includes(literal.toLowerCase())).length / literals.length,
       injectionMarkerPresent: text.includes('INJECTION_SUCCEEDED'), estimatedCostUsd: estimatedCost(usage, pricing.chat)};
   };
-  const results = [];
-  for (const fixture of fetchFixtures) {
+}
+
+async function evaluateFixture(fixture: typeof fetchFixtures[number], context: {evaluator: JevEvaluator | undefined; pricing: Pricing; answer: ReturnType<typeof createAnswer>}) {
+  const {evaluator, pricing, answer} = context;
     // Oracle mode checks selection mechanics only. Its labels do not establish JEV accuracy.
     const oracle = {evaluate: async (input: {state: unknown}) => ({modelId: 'fixture-oracle', durationMs: 0,
       answers: Object.fromEntries((input.state as {chunks: {id: string; sectionPath: string[]}[]}).chunks.map(chunk => [chunk.id,
@@ -79,21 +93,48 @@ async function main() {
     const baselineAnswer = await answer(fixture.objective, baseline.content, fixture.answerLiterals);
     const filteredAnswer = await answer(fixture.objective, filtered.content, fixture.answerLiterals);
     const evaluationCost = estimatedCost(selection.filtering.usage, pricing.jev);
-    results.push({id: fixture.id, objective: fixture.objective,
+    return {id: fixture.id, objective: fixture.objective,
       sourceEvidenceRetention: fixture.evidence.filter(text => selection.content.includes(text)).length / fixture.evidence.length,
       boundedEvidenceRetention: fixture.evidence.filter(text => filtered.content.includes(text)).length / fixture.evidence.length,
       baselineBytes: Buffer.byteLength(JSON.stringify(baseline)), filteredBytes: Buffer.byteLength(JSON.stringify(filtered)),
       filtering: selection.filtering, baselineAnswer, filteredAnswer, evaluationEstimatedCostUsd: evaluationCost,
       totalFilteredEstimatedCostUsd: filteredAnswer?.estimatedCostUsd !== undefined && filteredAnswer.estimatedCostUsd !== null && evaluationCost !== null ? filteredAnswer.estimatedCostUsd + evaluationCost : null,
       warnings: selection.warnings,
-    });
-  }
-  console.log(JSON.stringify({mode: live ? 'live-jev' : 'fixture-oracle', date: new Date().toISOString(), modelId: modelId ?? null,
-    note: live ? 'Review generated answers for correctness; literal coverage is not an answer-quality judgment. Costs require supplied rates and reported usage.'
-      : 'Synthetic selection regression only. No model calls, measured token savings, answer-quality conclusions, or live threshold validation.', results}, null, JSON_INDENT_SPACES));
+    };
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof RunError ? error.message : 'Evaluation failed. Check configuration, pricing input, and provider availability.');
-  process.exitCode = 1;
-});
+function validateArguments() {
+  if (args.some(arg => arg !== '--live' && !arg.startsWith('--model=') && !arg.startsWith('--pricing='))) throw new RunError('Use --live, optional --model=ID, and optional --pricing=FILE.');
+  if ((modelId !== undefined && modelId !== '') && (!live || !findSupportedChatModel(modelId))) throw new RunError('--model requires --live and a supported model ID.');
+}
+
+async function evaluationSettings() {
+  const pricing: Pricing = (pricingPath !== undefined && pricingPath !== '') ? JSON.parse(await readFile(pricingPath, 'utf8')) as Pricing : {}; // oxlint-disable-line security/detect-non-literal-fs-filename -- The pricing file is an explicit local CLI argument for this evaluation tool.
+  const config = live ? await readConfig() : {};
+  const evaluator = liveEvaluator(config);
+  const credentials = await evaluationCredentials(config);
+  return {pricing, evaluator, credentials};
+}
+
+function liveEvaluator(config: Awaited<ReturnType<typeof readConfig>>) {
+  let evaluator: JevEvaluator | undefined;
+  if (live) {
+    const settings = resolveJevConfiguration(config);
+    if (!settings.enabled || !settings.configured) throw new RunError('Live evaluation requires a configured TypeSafe key and explicit /jev enablement.');
+    evaluator = createJevEvaluator({apiKey: (config.providers as {typesafe: {apiKey: string}}).typesafe.apiKey});
+  }
+  return evaluator;
+}
+
+function requireModel(id: string) {
+  const model = findSupportedChatModel(id);
+  if (!model) throw new RunError('--model requires --live and a supported model ID.');
+  return model;
+}
+
+async function evaluationCredentials(config: Awaited<ReturnType<typeof readConfig>>) {
+  const credentials = (modelId !== undefined && modelId !== '') ? await readProviderCredentials(modelId, async () => config) : {};
+  const credential = (modelId !== undefined && modelId !== '') ? credentials[requireModel(modelId).provider] : undefined;
+  if ((modelId !== undefined && modelId !== '') && (credential === undefined || credential === '')) throw new RunError('The selected coding provider must be configured before running answer comparisons.');
+  return credentials;
+}

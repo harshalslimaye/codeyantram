@@ -19,10 +19,7 @@ export function decodeText(bytes: Uint8Array, contentType: string): string {
   let decoder: TextDecoder | undefined;
   if (declared !== undefined && declared !== '') { try { decoder = new TextDecoder(declared); } catch { /* Fall back to BOM or UTF-8. */ } }
   if (!decoder) {
-    let encoding = 'utf-8';
-    if (bytes[0] === BOM_BYTE_FF && bytes[1] === BOM_BYTE_FE) encoding = 'utf-16le';
-    else if (bytes[0] === BOM_BYTE_FE && bytes[1] === BOM_BYTE_FF) encoding = 'utf-16be';
-    decoder = new TextDecoder(encoding);
+    decoder = new TextDecoder(bomEncoding(bytes));
   }
   const text = decoder.decode(bytes);
   // oxlint-disable-next-line no-control-regex -- Count binary control characters before accepting decoded text.
@@ -31,4 +28,11 @@ export function decodeText(bytes: Uint8Array, contentType: string): string {
     throw new WebFetchError('unsupported_content', 'The response contains binary data rather than supported text.');
   }
   return text;
+}
+
+function bomEncoding(bytes: Uint8Array): string {
+  let encoding = 'utf-8';
+  if (bytes[0] === BOM_BYTE_FF && bytes[1] === BOM_BYTE_FE) encoding = 'utf-16le';
+  else if (bytes[0] === BOM_BYTE_FE && bytes[1] === BOM_BYTE_FF) encoding = 'utf-16be';
+  return encoding;
 }

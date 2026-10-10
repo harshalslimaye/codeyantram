@@ -1,4 +1,4 @@
-import React, {createContext, useContext, useMemo, type ReactNode} from 'react';
+import React, {createContext, useContext, useMemo, useCallback, type ReactNode} from 'react';
 import {defaultTheme, extendTheme, ThemeProvider as InkUIThemeProvider} from '@inkjs/ui';
 import {detectTerminalColorDepth, resolveThemeColor} from './utils/colors.js';
 import {saveThemePreference} from './utils/index.js';
@@ -41,7 +41,37 @@ export function ThemeProvider({
 		THEME_ROLES.map(role => [role, resolveThemeColor(selected.theme, role, colorDepth, mode)]),
 	) as InkThemePalette, [selected.theme, colorDepth, mode]);
 	const themes = useMemo(() => registry.list(), [registry]);
-	const uiTheme = useMemo(() => extendTheme(defaultTheme, {
+	const uiTheme = useMemo(() => buildUiTheme(palette), [palette]);
+
+	const selectTheme = async (id: string) => {
+		const entry = registry.get(id);
+		if (!entry) throw new Error(`Theme "${id}" is not available.`);
+		await saveThemePreference(id);
+		setSelectedId(id);
+		setNotice(`Using ${entry.theme.name}; saved to user config.`);
+		setNoticeTone('success');
+	};
+
+	const updateNotice = useCallback((message?: string, tone: ThemeNoticeTone = 'success') => {
+		setNotice(message);
+		setNoticeTone(tone);
+	}, []);
+
+	return (
+		<ThemeContext.Provider value={{palette, themes, selectedId, notice, noticeTone, selectTheme, setNotice: updateNotice}}>
+			<InkUIThemeProvider theme={uiTheme}>{children}</InkUIThemeProvider>
+		</ThemeContext.Provider>
+	);
+}
+
+export function useTheme(): ThemeContextValue {
+	const theme = useContext(ThemeContext);
+	if (!theme) throw new Error('useTheme must be used inside ThemeProvider.');
+	return theme;
+}
+
+function buildUiTheme(palette: InkThemePalette) {
+	return extendTheme(defaultTheme, {
 		components: {
 			ProgressBar: {
 				styles: {
@@ -85,31 +115,5 @@ export function ThemeProvider({
 				},
 			},
 		},
-	}), [palette]);
-
-	const selectTheme = async (id: string) => {
-		const entry = registry.get(id);
-		if (!entry) throw new Error(`Theme "${id}" is not available.`);
-		await saveThemePreference(id);
-		setSelectedId(id);
-		setNotice(`Using ${entry.theme.name}; saved to user config.`);
-		setNoticeTone('success');
-	};
-
-	const updateNotice = (message?: string, tone: ThemeNoticeTone = 'success') => {
-		setNotice(message);
-		setNoticeTone(tone);
-	};
-
-	return (
-		<ThemeContext.Provider value={{palette, themes, selectedId, notice, noticeTone, selectTheme, setNotice: updateNotice}}>
-			<InkUIThemeProvider theme={uiTheme}>{children}</InkUIThemeProvider>
-		</ThemeContext.Provider>
-	);
-}
-
-export function useTheme(): ThemeContextValue {
-	const theme = useContext(ThemeContext);
-	if (!theme) throw new Error('useTheme must be used inside ThemeProvider.');
-	return theme;
+	});
 }

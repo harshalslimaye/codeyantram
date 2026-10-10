@@ -19,18 +19,41 @@ export function ModelPicker({preferences, onSelect}: {
 	preferences: ModelPreferences;
 	onSelect: (id: string, effort?: EffortLevel) => Promise<void>;
 }) {
+	const {pendingModel, isSaving, attempt, saving, owner, pop, options, saveModel, selectModel} = useModelSelection(preferences, onSelect);
+
+	return (
+		<>
+			<Picker
+				owner="model-picker"
+				title="Choose a model · ↑/↓ navigate · Enter select · Esc close"
+				options={options}
+				isDisabled={isSaving}
+				resetKey={attempt}
+				onSelect={selectModel}
+				onCancel={() => { if (!saving.current) pop('model-picker'); }}
+			/>
+			{owner === 'effort-picker' && pendingModel && (
+				<EffortPicker
+					key={attempt}
+					model={pendingModel}
+					preferredEffort={preferences.effortByModel[pendingModel.id] ?? pendingModel.defaultEffortLevel}
+					isSaving={isSaving}
+					onSelect={effort => { void saveModel(pendingModel, effort); }}
+				/>
+			)}
+			{isSaving && <Spinner label="Saving model…" />}
+		</>
+	);
+}
+
+function useModelSelection(preferences: ModelPreferences, onSelect: (id: string, effort?: EffortLevel) => Promise<void>) {
 	const [pendingModel, setPendingModel] = useState<SupportedChatModelDefinition>();
 	const [isSaving, setIsSaving] = useState(false);
 	const [attempt, setAttempt] = useState(0);
 	const saving = useRef(false);
 	const {setNotice} = useTheme();
 	const {owner, isOwner, push, pop} = useKeyboardOwner();
-	const options = useMemo(() => [...SUPPORTED_CHAT_MODELS]
-		.sort((left, right) => Number(right.id === preferences.modelId) - Number(left.id === preferences.modelId))
-		.map(model => ({
-			value: model.id,
-			label: `${model.provider.padEnd(VISIBLE_MODEL_COUNT)} ${model.id}${model.id === preferences.modelId ? ' · active' : ''}`,
-		})), [preferences.modelId]);
+	const options = useMemo(() => modelOptions(preferences.modelId), [preferences.modelId]);
 
 	async function saveModel(model: SupportedChatModelDefinition, effort?: EffortLevel) {
 		if (saving.current || (!isOwner('model-picker') && !isOwner('effort-picker'))) return;
@@ -60,27 +83,14 @@ export function ModelPicker({preferences, onSelect}: {
 		else void saveModel(model);
 	}
 
-	return (
-		<>
-			<Picker
-				owner="model-picker"
-				title="Choose a model · ↑/↓ navigate · Enter select · Esc close"
-				options={options}
-				isDisabled={isSaving}
-				resetKey={attempt}
-				onSelect={selectModel}
-				onCancel={() => { if (!saving.current) pop('model-picker'); }}
-			/>
-			{owner === 'effort-picker' && pendingModel && (
-				<EffortPicker
-					key={attempt}
-					model={pendingModel}
-					preferredEffort={preferences.effortByModel[pendingModel.id] ?? pendingModel.defaultEffortLevel}
-					isSaving={isSaving}
-					onSelect={effort => { void saveModel(pendingModel, effort); }}
-				/>
-			)}
-			{isSaving && <Spinner label="Saving model…" />}
-		</>
-	);
+	return {pendingModel, isSaving, attempt, saving, owner, pop, options, saveModel, selectModel};
+}
+
+function modelOptions(modelId: ModelPreferences['modelId']) {
+	return [...SUPPORTED_CHAT_MODELS]
+		.sort((left, right) => Number(right.id === modelId) - Number(left.id === modelId))
+		.map(model => ({
+			value: model.id,
+			label: `${model.provider.padEnd(VISIBLE_MODEL_COUNT)} ${model.id}${model.id === modelId ? ' · active' : ''}`,
+		}));
 }

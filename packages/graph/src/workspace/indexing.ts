@@ -16,9 +16,10 @@ export class GraphIndexing implements GraphIndex {
   }
 
   async index(options: GraphIndexOptions = {}): Promise<GraphIndexReport> {
+    const onProgress = options.onProgress;
     const report = await this.backend.indexAll({
       signal: options.signal,
-      onProgress: options.onProgress && ((progress: IndexProgress) => options.onProgress!({...progress})),
+      onProgress: onProgress && ((progress: IndexProgress) => onProgress({...progress})),
     });
     const state = this.backend.getIndexState();
     return {

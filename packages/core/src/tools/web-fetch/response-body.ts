@@ -11,11 +11,7 @@ export async function readBody(body: Readable, headers: Record<string, string>, 
       throw new WebFetchError('source_too_large', 'The response exceeds the 5 MiB wire limit.');
     }
     const encoding = (headers['content-encoding'] ?? 'identity').trim().toLowerCase();
-    let decoder: Transform | undefined;
-    if (encoding === 'gzip') decoder = createGunzip();
-    else if (encoding === 'deflate') decoder = createInflate();
-    else if (encoding === 'br') decoder = createBrotliDecompress();
-    if (!decoder && encoding !== 'identity') throw new WebFetchError('unsupported_content', 'Unsupported response compression.');
+    const decoder = compressionDecoder(encoding);
     let wireBytes = 0;
     const wireLimit = new Transform({transform(chunk: Buffer, _encoding, callback) {
       wireBytes += chunk.length;
@@ -31,4 +27,13 @@ export async function readBody(body: Readable, headers: Record<string, string>, 
     await pipeline(decoder ? [body, wireLimit, decoder, sink] : [body, wireLimit, sink], {signal});
     return Buffer.concat(chunks, decodedBytes);
   } finally { body.destroy(); }
+}
+
+function compressionDecoder(encoding: string): Transform | undefined {
+  let decoder: Transform | undefined;
+  if (encoding === 'gzip') decoder = createGunzip();
+  else if (encoding === 'deflate') decoder = createInflate();
+  else if (encoding === 'br') decoder = createBrotliDecompress();
+  if (!decoder && encoding !== 'identity') throw new WebFetchError('unsupported_content', 'Unsupported response compression.');
+  return decoder;
 }

@@ -40,7 +40,8 @@ export class WorkspaceGraphService {
 
   private getLease(): Promise<GraphCoordinatorLease> {
     if (this.workspaceRoot === undefined || this.workspaceRoot === '') return Promise.reject(new Error('A workspace root is required for graph operations.'));
-    return this.opening ??= Promise.resolve().then(() => this.acquire(this.workspaceRoot!)).then(lease => {
+    const workspaceRoot = this.workspaceRoot;
+    return this.opening ??= Promise.resolve().then(() => this.acquire(workspaceRoot)).then(lease => {
       this.lease = lease;
       return lease;
     }, (error: unknown) => {

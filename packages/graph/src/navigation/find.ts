@@ -19,17 +19,21 @@ export class FindQuery {
     const candidates = this.backend.searchNodes(query, {limit: limit + 1});
     const result: GraphFindResult = {query, matches: [], truncated: candidates.length > limit, coverage: NAVIGATION_COVERAGE};
     const hashes = new Map<string, string>();
-    for (const candidate of candidates.slice(0, limit)) {
-      try {result.matches.push({symbol: await this.symbols.verified(candidate.node, hashes), score: candidate.score});}
-      catch (error) {
-        if (!(error instanceof GraphNavigationError) || error.code !== 'source_too_large') throw error;
-        result.truncated = true;
-      }
-    }
+    await this.collectMatches(candidates.slice(0, limit), result, hashes);
     await this.sources.verifyFiles(hashes);
     result.truncated ||= result.matches.some(match => match.symbol.metadataTruncated);
     while (!fits(result, maxCharacters) && result.matches.length) {result.matches.pop(); result.truncated = true;}
     requireFits(result, maxCharacters);
     return result;
   }
+  private async collectMatches(candidates: ReturnType<FindBackend['searchNodes']>, result: GraphFindResult, hashes: Map<string, string>) {
+    for (const candidate of candidates) {
+      try {result.matches.push({symbol: await this.symbols.verified(candidate.node, hashes), score: candidate.score});}
+      catch (error) {
+        if (!(error instanceof GraphNavigationError) || error.code !== 'source_too_large') throw error;
+        result.truncated = true;
+      }
+    }
+  }
+
 }

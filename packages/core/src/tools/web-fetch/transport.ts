@@ -46,7 +46,7 @@ export const openConnection: OpenConnection = (url, addresses, format, signal) =
     },
   }, response => {
     const headers: Record<string, string> = {};
-    for (const [key, value] of Object.entries(response.headers)) if (value !== undefined) headers[key] = Array.isArray(value) ? value.join(', ') : value;
+    for (const [key, value] of Object.entries(response.headers)) if (value !== undefined) headers[key] = Array.isArray(value) ? value.join(', ') : value; // oxlint-disable-line security/detect-object-injection -- HTTP header names are copied from Node response headers into a local record.
     resolve({status: response.statusCode ?? 0, headers, body: response});
   });
   request.on('error', reject);

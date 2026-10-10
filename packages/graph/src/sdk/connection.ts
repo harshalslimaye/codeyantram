@@ -19,7 +19,7 @@ function loadSDK(): EmbeddedSDK {
   // default export. Keep this detail inside the adapter and load it on demand.
   const sdk = createRequire(import.meta.url)('@colbymchenry/codegraph') as EmbeddedSDK;
   if (typeof sdk.CodeGraph.connect !== 'function') {
-    throw new Error('CodeGraph external storage is unavailable. Run npm install to apply the Codeyantram storage extension.');
+    throw new TypeError('CodeGraph external storage is unavailable. Run npm install to apply the Codeyantram storage extension.');
   }
   return sdk;
 }
@@ -30,7 +30,7 @@ export async function connectWorkspace(workspaceRoot: string): Promise<{
 }> {
   const storage = await resolveGraphStoragePaths(workspaceRoot);
   const sdk = loadSDK();
-  await mkdir(storage.directory, {recursive: true, mode: 0o700});
+  await mkdir(storage.directory, {recursive: true, mode: 0o700}); // oxlint-disable-line security/detect-non-literal-fs-filename -- Paths come from the canonical workspace storage resolver.
   // Schema creation/opening must not race another process's initialization or
   // indexing. The SDK uses this same global lock for indexAll and sync.
   const lock = new sdk.FileLock(storage.lockPath);
@@ -38,7 +38,7 @@ export async function connectWorkspace(workspaceRoot: string): Promise<{
   try {
     let created = false;
     try {
-      if (!(await stat(storage.databasePath)).isFile()) throw new Error('The graph database path must be a file.');
+      if (!(await stat(storage.databasePath)).isFile()) throw new Error('The graph database path must be a file.'); // oxlint-disable-line security/detect-non-literal-fs-filename -- Paths come from the canonical workspace storage resolver.
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       created = true;
