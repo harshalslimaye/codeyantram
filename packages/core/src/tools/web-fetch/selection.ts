@@ -17,7 +17,7 @@ export async function selectContent(content: string, sourceUrl: string, format: 
   options.signal?.throwIfAborted();
   const skip = (reason: string, warning?: string): Selection => ({content,
     filtering: {status: 'skipped', reason, totalChunks: 0, evaluatedChunks: 0, retainedChunks: 0, incomplete: false},
-    warnings: warning ? [warning] : [],
+    warnings: (warning !== undefined && warning !== '') ? [warning] : [],
   });
   if (options.filter === false) return skip('disabled_for_request');
   if (!options.jev || options.jev.status === 'disabled') return skip('disabled');
@@ -26,7 +26,7 @@ export async function selectContent(content: string, sourceUrl: string, format: 
     : 'JEV filtering skipped: evaluation could not be initialized. Normal content returned.');
   if (format === 'html') return skip('raw_html');
   const objective = options.objective?.trim().slice(0, MAX_OBJECTIVE_CHARACTERS);
-  if (!objective) return skip('no_objective');
+  if (objective === undefined || objective === '') return skip('no_objective');
   if (content.length < MIN_FILTER_CHARACTERS) return skip('small_document');
   let chunks: ContentChunk[];
   try { chunks = chunkContent(content, sourceUrl); }
@@ -73,7 +73,7 @@ export async function selectContent(content: string, sourceUrl: string, format: 
     const probability = judgments.get(chunk.position);
     if (probability === undefined || probability >= IRRELEVANT_PROBABILITY) {
       retained.add(chunk.position);
-      chunk.headingPositions.forEach(position => retained.add(position));
+      for (const position of chunk.headingPositions) retained.add(position);
       // Keep adjacent context for positively identified evidence; uncertainty still retains itself and headings.
       if (probability !== undefined && probability >= CONTEXT_PROBABILITY_THRESHOLD) {
         for (const offset of [-1, 1]) if (chunks[chunk.position + offset]?.sectionPath.join('\0') === chunk.sectionPath.join('\0')) retained.add(chunk.position + offset);
@@ -84,7 +84,7 @@ export async function selectContent(content: string, sourceUrl: string, format: 
   const keptBlocks = new Set(chunks.filter(chunk => retained.has(chunk.position) && chunk.codeBlock !== undefined).map(chunk => chunk.codeBlock));
   for (const chunk of chunks) if (chunk.codeBlock !== undefined && keptBlocks.has(chunk.codeBlock)) {
     retained.add(chunk.position);
-    chunk.headingPositions.forEach(position => retained.add(position));
+    for (const position of chunk.headingPositions) retained.add(position);
   }
   // An all-negative response is recoverable without requiring another fetch.
   if (!retained.size) return {content, warnings: ['JEV selected no evidence; normal content returned.'], filtering: {

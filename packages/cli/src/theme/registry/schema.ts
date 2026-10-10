@@ -1,5 +1,7 @@
 import {THEME_ROLES, type ThemeColor, type ThemeColorValue, type ThemeDefinition, type ThemeRole} from './types.js';
 
+const THEME_VARIANT_COUNT = 2;
+
 const MAX_ANSI_COLOR = 255;
 
 const HEX_COLOR_PATTERN = /^#[\da-fA-F]{6}$/;
@@ -31,7 +33,7 @@ function isThemeColor(value: unknown, definitions: Record<string, ThemeColorValu
 	if (!isRecord(value)) return false;
 
 	const keys = Object.keys(value);
-	return keys.length === 2
+	return keys.length === THEME_VARIANT_COUNT
 		&& keys.includes('dark')
 		&& keys.includes('light')
 		&& [value.dark, value.light].every(

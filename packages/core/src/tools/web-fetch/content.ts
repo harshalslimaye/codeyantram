@@ -44,7 +44,7 @@ export function convertContent(document: TransportDocument, requested: WebFormat
       const safe: Record<string, string> = {};
       for (const key of ['href', 'src']) if (attrs[key]) {
         const resolved = absoluteLink(attrs[key], document.finalUrl);
-        if (resolved) safe[key] = resolved;
+        if (resolved !== undefined && resolved !== '') safe[key] = resolved;
       }
       for (const key of ['alt', 'title', 'class', 'colspan', 'rowspan', 'align', 'start']) if (attrs[key]) safe[key] = attrs[key];
       html.push(`<${name}${Object.entries(safe).map(([key, value]) => ` ${key}="${escape(value)}"`).join('')}>`);
@@ -62,7 +62,7 @@ export function convertContent(document: TransportDocument, requested: WebFormat
         if (name === 'td' || name === 'th') text.push('\t');
         if (name === 'pre') pre--;
       }
-      if (entry?.skip) skipped--;
+      if (entry?.skip === true) skipped--;
     },
   }, {decodeEntities: true});
   parser.end(document.text);

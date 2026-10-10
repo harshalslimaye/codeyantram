@@ -14,7 +14,7 @@ interface StreamContract<TEvent> {
 function parseFrame<TEvent>(frame: string, contract: StreamContract<TEvent>): TEvent | undefined {
 	const data = frame.split(/\r?\n/)
 		.filter(line => line.startsWith('data:'))
-		.map(line => line.slice(5).replace(/^ /, ''))
+		.map(line => line.slice('data:'.length).replace(/^ /, ''))
 		.join('\n');
 	if (!data) return undefined;
 

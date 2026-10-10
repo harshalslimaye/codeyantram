@@ -67,7 +67,7 @@ export class GraphReconciler implements ReconcileWorkspace {
       this.changes.requireFullScan();
       this.failure = error instanceof GraphCoordinatorError ? error
         : new GraphCoordinatorError('sync_failed', error instanceof Error ? error.message : 'Graph synchronization failed.', undefined, {cause: error});
-      throw options.signal?.aborted ? error : this.failure;
+      throw (options.signal?.aborted === true) ? error : this.failure;
     }
   }
 }

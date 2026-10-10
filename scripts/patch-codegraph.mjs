@@ -4,6 +4,9 @@ import {createRequire} from 'node:module';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+const EXPECTED_SINGLE_REPLACEMENT_PARTS = 2;
+const EXPECTED_DOUBLE_REPLACEMENT_PARTS = 3;
+
 // 1.6.2 has no public factory separating the source root from database storage.
 // Extend the facade and fix scans of unstaged Git deletions, preserving resolution
 // and locking. Check the release and each complete original file before changes.
@@ -36,7 +39,7 @@ const factory = `    // Codeyantram extension: keep source and database paths in
 
 /** @param {string} source @param {string} before @param {string} after */
 function replaceOnce(source, before, after) {
-  if (source.split(before).length !== 2) throw new Error('Unexpected CodeGraph 1.6.2 source; review the storage extension.');
+  if (source.split(before).length !== EXPECTED_SINGLE_REPLACEMENT_PARTS) throw new Error('Unexpected CodeGraph 1.6.2 source; review the storage extension.');
   return source.replace(before, after);
 }
 
@@ -82,14 +85,14 @@ export function extendCodeGraphExtractionSource(source) {
   let original = source;
   if (patched) {
     original = replaceOnce(original, missingFileHelper, '');
-    if (original.split(missingFileGuard).length !== 3) throw new Error('Unexpected CodeGraph 1.6.2 extraction source; review the working-tree fix.');
+    if (original.split(missingFileGuard).length !== EXPECTED_DOUBLE_REPLACEMENT_PARTS) throw new Error('Unexpected CodeGraph 1.6.2 extraction source; review the working-tree fix.');
     original = original.replaceAll(missingFileGuard, '');
   }
   if (createHash('sha256').update(original).digest('hex') !== EXTRACTION_SHA256) {
     throw new Error('Unexpected CodeGraph 1.6.2 extraction source; review the working-tree fix.');
   }
   if (patched) return source;
-  if (original.split(scanLoop).length !== 3) throw new Error('Unexpected CodeGraph 1.6.2 scan loops; review the working-tree fix.');
+  if (original.split(scanLoop).length !== EXPECTED_DOUBLE_REPLACEMENT_PARTS) throw new Error('Unexpected CodeGraph 1.6.2 scan loops; review the working-tree fix.');
   return replaceOnce(original.replaceAll(scanLoop, scanLoop + missingFileGuard),
     'function scanDirectory(rootDir, onProgress) {', missingFileHelper + 'function scanDirectory(rootDir, onProgress) {');
 }

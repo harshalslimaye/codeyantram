@@ -24,7 +24,7 @@ export function ProviderPicker() {
 	useEffect(() => {
 		let active = true;
 		void Promise.all([readConfiguredProviders(), readJevConfiguration()])
-			.then(([providers, jev]) => { if (active) setConfiguredProviders([...providers, ...(jev.configured ? ['typesafe' as const] : [])]); })
+			.then(([providers, jev]) => { if (active) setConfiguredProviders([...providers, ...(jev.configured ? ['typesafe' as const] : [])]); return; })
 			.catch(() => { if (active) setNotice('Could not read provider configuration.', 'error'); })
 			.finally(() => { if (active) setIsLoading(false); });
 		return () => { active = false; };

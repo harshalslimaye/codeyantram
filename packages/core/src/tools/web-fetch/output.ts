@@ -2,6 +2,8 @@ import {MAX_CONTENT_CHARACTERS, MAX_OUTPUT_BYTES} from './limits.js';
 import type {Selection} from './selection.js';
 import type {TransportDocument, WebFetchOutput, WebFormat} from './types.js';
 
+const BISECTION_DIVISOR = 2;
+
 const BEGIN = '[BEGIN_UNTRUSTED_WEB_CONTENT]';
 const END = '[END_UNTRUSTED_WEB_CONTENT]';
 const neutralize = (text: string) => text.replace(/\[(BEGIN|END)_UNTRUSTED_WEB_CONTENT\]/g, '[ESCAPED_$1_UNTRUSTED_WEB_CONTENT]');
@@ -25,7 +27,7 @@ export function formatOutput(document: TransportDocument, format: WebFormat, ori
   if (Buffer.byteLength(JSON.stringify(output), 'utf8') > MAX_OUTPUT_BYTES) {
     let low = 0; let high = output.truncation.returnedCharacters;
     while (low < high) {
-      const mid = Math.ceil((low + high) / 2);
+      const mid = Math.ceil((low + high) / BISECTION_DIVISOR);
       setContent(mid);
       if (Buffer.byteLength(JSON.stringify(output), 'utf8') <= MAX_OUTPUT_BYTES) low = mid;
       else high = mid - 1;

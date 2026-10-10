@@ -3,6 +3,8 @@ import {mkdir, readFile, rename, unlink, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {getUserConfigPath} from './paths.js';
 
+const JSON_INDENT_SPACES = 2;
+
 export async function readConfig(): Promise<Record<string, unknown>> {
 	const filePath = getUserConfigPath();
 	let contents: string;
@@ -26,7 +28,7 @@ export async function writeConfig(value: Record<string, unknown>): Promise<void>
 	await mkdir(directory, {recursive: true});
 	const temporaryPath = path.join(directory, `.config-${randomUUID()}.tmp`);
 	try {
-		await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {flag: 'wx', mode: 0o600});
+		await writeFile(temporaryPath, `${JSON.stringify(value, null, JSON_INDENT_SPACES)}\n`, {flag: 'wx', mode: 0o600});
 		await rename(temporaryPath, filePath);
 	} catch (error) {
 		try {

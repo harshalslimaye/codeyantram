@@ -12,6 +12,9 @@ export const DEFAULT_JEV_MODEL_ID = 'jev-latest';
 export const DEFAULT_JEV_TIMEOUT_MS = 5_000;
 export const MAX_JEV_TIMEOUT_MS = 30_000;
 
+// Read cancellation dynamically; the signal can change while evaluation awaits.
+const isAborted = (signal?: AbortSignal): boolean => signal?.aborted === true;
+
 /** Create only after the host has checked the user's JEV opt-in preference. */
 export function createJevEvaluator(options: JevEvaluatorOptions): JevEvaluator {
   const apiKey = options.apiKey?.trim();
@@ -33,13 +36,13 @@ export function createJevEvaluator(options: JevEvaluatorOptions): JevEvaluator {
   }}).evaluationModel(modelId);
 
   return {async evaluate<const Questions extends EvaluationQuestions>(input: EvaluationInput<Questions>): Promise<EvaluationResult<Questions>> {
-    if (input.abortSignal?.aborted) throw new EvaluationError('cancelled', 'JEV evaluation cancelled.');
+    if (isAborted(input.abortSignal)) throw new EvaluationError('cancelled', 'JEV evaluation cancelled.');
     const parsed = parseEvaluationInput(input);
     const startedAt = performance.now();
     const controller = new AbortController();
     const signal = input.abortSignal ? AbortSignal.any([input.abortSignal, controller.signal]) : controller.signal;
     let timedOut = false;
-    const abortError = () => input.abortSignal?.aborted
+    const abortError = () => isAborted(input.abortSignal)
       ? new EvaluationError('cancelled', 'JEV evaluation cancelled.')
       : new EvaluationError('timeout', 'JEV evaluation timed out.');
     let onAbort!: () => void;
@@ -69,7 +72,7 @@ export function createJevEvaluator(options: JevEvaluatorOptions): JevEvaluator {
         ...(confidence?.success && Object.keys(confidence.data).length ? {confidence: confidence.data} : {}),
       };
     } catch (error) {
-      if (input.abortSignal?.aborted) throw new EvaluationError('cancelled', 'JEV evaluation cancelled.');
+      if (isAborted(input.abortSignal)) throw new EvaluationError('cancelled', 'JEV evaluation cancelled.');
       if (timedOut) throw new EvaluationError('timeout', 'JEV evaluation timed out.');
       throw toEvaluationError(error);
     } finally {

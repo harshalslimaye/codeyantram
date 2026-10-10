@@ -53,16 +53,16 @@ export function createTerminalInput(source: NodeJS.ReadStream, stdout: NodeJS.Wr
 				pending = pending.slice(1);
 				continue;
 			}
-			const sequence = /^\x1b\[[0-?]*[ -/]*[@-~]/.exec(pending)?.[0];
-			if (!sequence) {
-				if (/^\x1b\[[0-?]*[ -/]*$/.test(pending)) break;
+			const sequence = /^\x1b\[[0-?]*[ -/]*[@-~]/.exec(pending)?.[0]; // oxlint-disable-line no-control-regex -- Parse the terminal escape sequence prefix.
+			if (sequence === undefined || sequence === '') {
+				if (/^\x1b\[[0-?]*[ -/]*$/.test(pending)) break; // oxlint-disable-line no-control-regex -- Retain incomplete terminal escape sequences.
 				keyboard += pending[0];
 				pending = pending.slice(1);
 				continue;
 			}
 			pending = pending.slice(sequence.length);
 			if (sequence === '\x1b[200~') pasted = true;
-			const mouse = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(sequence);
+			const mouse = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(sequence); // oxlint-disable-line no-control-regex -- Decode escape-prefixed terminal mouse reports.
 			if (mouse && !pasted) {
 				const button = Number(mouse[1]);
 				// Ignore clicks, releases, motion, and horizontal wheel reports.

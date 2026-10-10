@@ -11,6 +11,8 @@ import {SessionStatus} from './session-status.js';
 import {ScrollBlock} from './scroll-block.js';
 import type {StatusEntry} from '../chat/session.js';
 
+const CONVERSATION_HORIZONTAL_MARGIN = 2;
+
 const MAX_TOOL_SUMMARY_CHARACTERS = 160;
 const MAX_WARNING_CHARACTERS = 240;
 const RESERVED_TERMINAL_ROWS = 5;
@@ -22,18 +24,18 @@ type ConversationBlock = {id: string; start: number; height: number; lines?: Con
 
 function toolInputSummary(input: ToolInput): string {
 	const reference = input.reference;
-	const filePath = reference && typeof reference === 'object' && !Array.isArray(reference) ? reference.filePath : input.filePath;
+	const filePath = reference !== null && typeof reference === 'object' && !Array.isArray(reference) ? reference.filePath : input.filePath;
 	const target = typeof input.url === 'string' ? input.url : typeof input.query === 'string' ? input.query : typeof filePath === 'string' ? filePath : JSON.stringify(input);
 	return [target, typeof input.direction === 'string' ? input.direction : ''].filter(Boolean).join(' · ').slice(0, MAX_TOOL_SUMMARY_CHARACTERS);
 }
 
 function toolResultSummary(result: ToolResult): string {
 	if (result.status === 'error') return result.error.message;
-	if (result.toolName !== 'web_fetch' || !result.output || typeof result.output !== 'object' || Array.isArray(result.output)) return 'completed';
+	if (result.toolName !== 'web_fetch' || result.output === null || typeof result.output !== 'object' || Array.isArray(result.output)) return 'completed';
 	const details = ['completed'];
 	const {warnings, truncation, filtering} = result.output;
-	if (filtering && typeof filtering === 'object' && !Array.isArray(filtering) && filtering.status === 'completed') details.push('JEV filtered');
-	if (truncation && typeof truncation === 'object' && !Array.isArray(truncation) && truncation.truncated === true) details.push('output truncated');
+	if (filtering !== null && typeof filtering === 'object' && !Array.isArray(filtering) && filtering.status === 'completed') details.push('JEV filtered');
+	if (truncation !== null && typeof truncation === 'object' && !Array.isArray(truncation) && truncation.truncated === true) details.push('output truncated');
 	if (Array.isArray(warnings)) details.push(...warnings.filter((warning): warning is string => typeof warning === 'string').map(warning => warning.slice(0, MAX_WARNING_CHARACTERS)));
 	return details.join(' · ');
 }
@@ -52,7 +54,7 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 	// when more text arrives while the user is looking at earlier lines.
 	const [end, setEnd] = useState<number | null>(null);
 	const renderMessage = useMemo(() => {
-		const width = Math.max(1, columns - 2);
+		const width = Math.max(1, columns - CONVERSATION_HORIZONTAL_MARGIN);
 		const renderMarkdown = createMarkdownRenderer(width, palette);
 		const cache = new WeakMap<ChatMessage, string[]>();
 		return (message: ChatMessage, text: string) => {
@@ -131,7 +133,7 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 					</Text>
 				)) : (
 				<ScrollBlock key={block.id} id={block.id} start={block.start} height={block.height} visibleStart={visibleStart} visibleEnd={visibleEnd} onMeasure={measureBlock}>
-					{block.status ? <SessionStatus status={block.status.status} /> : <Welcome width={Math.max(1, columns - 2)} />}
+					{block.status ? <SessionStatus status={block.status.status} /> : <Welcome width={Math.max(1, columns - CONVERSATION_HORIZONTAL_MARGIN)} />}
 				</ScrollBlock>
 			))}
 		</Box>

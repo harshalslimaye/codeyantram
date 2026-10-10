@@ -22,7 +22,7 @@ export function getCommandOptions(query: string = '') {
     const keyword = query.toLowerCase().trim();
     return keyword === ''
         ? COMMANDS.map(getCommand)
-        : COMMANDS.filter(item => item.command.slice(1).toLowerCase().startsWith(keyword)).map(getCommand);
+        : COMMANDS.filter(item => item.command.slice('/'.length).toLowerCase().startsWith(keyword)).map(getCommand);
 }
 
 function getCommand(item: Command): { value: string, label: string } {

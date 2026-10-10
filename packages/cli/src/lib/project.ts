@@ -39,7 +39,7 @@ export async function resolveProjectRoot({
   invocationDirectory = process.env.INIT_CWD,
   cwd = process.cwd(),
 }: {project?: string; invocationDirectory?: string; cwd?: string} = {}): Promise<string> {
-  const base = invocationDirectory?.trim() ? invocationDirectory : cwd;
+  const base = (invocationDirectory !== undefined && invocationDirectory.trim() !== '') ? invocationDirectory : cwd;
   const candidate = path.resolve(base, project ?? '.');
   let canonicalRoot: string;
   let isDirectory: boolean;

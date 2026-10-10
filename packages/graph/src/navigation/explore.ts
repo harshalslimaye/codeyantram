@@ -62,12 +62,12 @@ export class ExploreQuery {
     };
     for (const node of context.nodes.slice(0, maxNodes)) {
       const hash = fingerprints.get(node.filePath) ?? await fingerprint(node.filePath);
-      if (!hash) {result.truncated = true; continue;}
+      if (hash === null || hash === '') {result.truncated = true; continue;}
       fingerprints.set(node.filePath, hash);
       const symbol = toSymbol(node);
       // Avoid returning unbounded docstrings/signatures alongside bounded code.
       delete symbol.docstring;
-      if (symbol.signature) symbol.signature = symbol.signature.slice(0, MAX_SIGNATURE_CHARACTERS);
+      if (symbol.signature !== undefined && symbol.signature !== '') symbol.signature = symbol.signature.slice(0, MAX_SIGNATURE_CHARACTERS);
       const metadataTruncated = Boolean(node.docstring) || (node.signature?.length ?? 0) > MAX_SIGNATURE_CHARACTERS;
       result.symbols.push({...symbol, reference: this.references.reference(node, hash), metadataTruncated});
       if (metadataTruncated) result.truncated = true;

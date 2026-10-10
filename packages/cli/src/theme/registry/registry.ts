@@ -33,7 +33,7 @@ export function createThemeRegistry(layers: ThemeLayer[]): ThemeRegistry {
 		list: () => [...themes.values()].sort((left, right) => left.theme.name.localeCompare(right.theme.name)),
 		get: id => themes.get(id),
 		resolve: (id, fallbackId = 'konkan') => {
-			const selected = id ? themes.get(id) : undefined;
+			const selected = (id !== undefined && id !== '') ? themes.get(id) : undefined;
 			if (selected) return {selected, requestedId: id, usedFallback: false};
 
 			const fallback = themes.get(fallbackId);

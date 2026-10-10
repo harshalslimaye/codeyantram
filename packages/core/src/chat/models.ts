@@ -28,7 +28,7 @@ export function resolveChatModel(options: ResolveChatModelOptions): ResolvedChat
   }
 
   const apiKey = options.credentials[definition.provider]?.trim();
-  if (!apiKey) {
+  if (apiKey === undefined || apiKey === '') {
     throw new ChatError('missing_credentials', `No API key is configured for ${definition.provider}.`);
   }
   return providerModelResolvers[definition.provider]({

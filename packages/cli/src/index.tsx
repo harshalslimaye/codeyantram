@@ -7,11 +7,13 @@ import {createTerminalInput} from './terminal/input.js';
 import {MouseProvider} from './terminal/mouse.js';
 import {CLI_USAGE, parseCliOptions, resolveProjectRoot, type CliOptions} from './lib/project.js';
 
+const PROCESS_ARGUMENTS_PREFIX_LENGTH = 2;
+
 async function main() {
 	let workspaceRoot: string;
 	let options: CliOptions;
 	try {
-		options = parseCliOptions(process.argv.slice(2));
+		options = parseCliOptions(process.argv.slice(PROCESS_ARGUMENTS_PREFIX_LENGTH));
 		if (options.help) {
 			process.stdout.write(CLI_USAGE);
 			return;

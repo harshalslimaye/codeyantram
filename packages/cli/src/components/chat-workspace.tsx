@@ -25,8 +25,8 @@ export function ChatWorkspace({session, modelPreferences, effort, branch, onSele
 		<Box flexDirection="column" height={rows}>
 			<Conversation messages={messages} statusEntries={statusEntries} isStreaming={isStreaming} />
 			<Box flexDirection="column" flexShrink={0}>
-				{error && <StatusMessage variant="error">{error}</StatusMessage>}
-				{notice && <StatusMessage variant="info">{notice}</StatusMessage>}
+				{(error !== undefined && error !== '') && <StatusMessage variant="error">{error}</StatusMessage>}
+				{(notice !== undefined && notice !== '') && <StatusMessage variant="info">{notice}</StatusMessage>}
 				<InputBar
 					modelPreferences={modelPreferences}
 					onSelectModel={onSelectModel}

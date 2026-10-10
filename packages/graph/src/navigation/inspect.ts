@@ -7,6 +7,8 @@ import {NAVIGATION_COVERAGE} from './coverage.js';
 import {GraphNavigationError} from './errors.js';
 import {toNavigationSymbol} from './symbols.js';
 
+const BISECTION_DIVISOR = 2;
+
 const DEFAULT_RESULT_LIMIT = 20;
 const MAX_RESULT_LIMIT = 50;
 
@@ -26,7 +28,7 @@ export class InspectQuery {
           contentHash: symbol.reference.contentHash, truncated: source.length > maxCharacters},
         truncated: symbol.metadataTruncated || source.length > maxCharacters, coverage: NAVIGATION_COVERAGE};
       while (!fits(result, maxCharacters) && result.source.text.length) {
-        result.source.text = result.source.text.slice(0, Math.floor(result.source.text.length / 2));
+        result.source.text = result.source.text.slice(0, Math.floor(result.source.text.length / BISECTION_DIVISOR));
         result.source.truncated = result.truncated = true;
       }
       requireFits(result, maxCharacters);

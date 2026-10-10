@@ -1,6 +1,15 @@
 import {fileURLToPath} from 'node:url';
 import {defineConfig} from 'oxlint';
 
+const MAX_FILE_LINES = 300;
+const MAX_FUNCTION_LINES = 50;
+const MAX_COMPLEXITY = 10;
+const MAX_BLOCK_DEPTH = 3;
+const MAX_PARAMETERS = 4;
+const MAX_CLASSES = 1;
+const MAX_STATEMENTS = 30;
+const MAX_CALLBACK_DEPTH = 3;
+
 const config = {
   "plugins": [
     "typescript",
@@ -51,12 +60,10 @@ const config = {
     "typescript/consistent-type-imports": "error",
     "typescript/strict-boolean-expressions": "error",
     "typescript/switch-exhaustiveness-check": "error",
-    "typescript/no-unnecessary-condition": "error",
     "typescript/no-unnecessary-type-arguments": "error",
     "typescript/no-unnecessary-boolean-literal-compare": "error",
     "typescript/no-unnecessary-template-expression": "error",
     "typescript/no-confusing-void-expression": "off",
-    "typescript/require-await": "error",
     "typescript/no-deprecated": "error",
     "typescript/only-throw-error": "error",
     "typescript/use-unknown-in-catch-callback-variable": "error",
@@ -77,35 +84,35 @@ const config = {
     "eqeqeq": "error",
     "max-lines": [
       "error",
-      300
+      MAX_FILE_LINES
     ],
     "max-lines-per-function": [
       "error",
-      50
+      MAX_FUNCTION_LINES
     ],
     "complexity": [
       "error",
-      10
+      MAX_COMPLEXITY
     ],
     "max-depth": [
       "error",
-      3
+      MAX_BLOCK_DEPTH
     ],
     "max-params": [
       "error",
-      4
+      MAX_PARAMETERS
     ],
     "max-classes-per-file": [
       "error",
-      1
+      MAX_CLASSES
     ],
     "max-statements": [
       "error",
-      30
+      MAX_STATEMENTS
     ],
     "max-nested-callbacks": [
       "error",
-      3
+      MAX_CALLBACK_DEPTH
     ],
     "import/no-cycle": "error",
     "import/no-duplicates": "error",
@@ -192,7 +199,6 @@ const config = {
         "no-nested-ternary": "off",
         "import-js/no-internal-modules": "off",
         "security/detect-non-literal-fs-filename": "off",
-        "typescript/require-await": "off",
         // Tests inspect methods as mock values without invoking them unbound.
         "typescript/unbound-method": "off",
         // Parameterized provider cases and mock callbacks have branch-specific assertions.

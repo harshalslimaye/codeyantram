@@ -1,5 +1,13 @@
 import type {ThemeColor, ThemeDefinition, ThemeRole} from '../registry/types.js';
 
+const HEX_GREEN_START = 3;
+const HEX_BLUE_START = 5;
+const HEX_COLOR_END = 7;
+const ANSI_BASIC_COLOR_COUNT = 16;
+const GRAYSCALE_BASE_CHANNEL = 8;
+const BASIC_COLOR_DEPTH = 4;
+const INDEXED_COLOR_DEPTH = 8;
+
 const ANSI_NORMAL_CHANNEL = 205;
 const ANSI_BLUE_CHANNEL = 238;
 const ANSI_LIGHT_GRAY_CHANNEL = 229;
@@ -32,30 +40,30 @@ const ANSI_16_RGB = [
 function parseHexColor(color: string): [number, number, number] | undefined {
 	if (!/^#[\da-fA-F]{6}$/.test(color)) return undefined;
 	return [
-		Number.parseInt(color.slice(1, 3), 16),
-		Number.parseInt(color.slice(3, 5), 16),
-		Number.parseInt(color.slice(5, 7), 16),
+		Number.parseInt(color.slice(1, HEX_GREEN_START), 16),
+		Number.parseInt(color.slice(HEX_GREEN_START, HEX_BLUE_START), 16),
+		Number.parseInt(color.slice(HEX_BLUE_START, HEX_COLOR_END), 16),
 	];
 }
 
 function xtermColor(index: number): [number, number, number] {
-	if (index < 16) return [...ANSI_16_RGB[index]];
+	if (index < ANSI_BASIC_COLOR_COUNT) return [...ANSI_16_RGB[index]];
 	if (index >= GRAYSCALE_START_INDEX) {
-		const gray = 8 + (index - GRAYSCALE_START_INDEX) * GRAYSCALE_STEP;
+		const gray = GRAYSCALE_BASE_CHANNEL + (index - GRAYSCALE_START_INDEX) * GRAYSCALE_STEP;
 		return [gray, gray, gray];
 	}
-	const value = index - 16;
+	const value = index - ANSI_BASIC_COLOR_COUNT;
 	const levels = [0, CUBE_LEVEL_ONE, CUBE_LEVEL_TWO, CUBE_LEVEL_THREE, CUBE_LEVEL_FOUR, MAX_RGB_CHANNEL];
 	return [levels[Math.floor(value / CUBE_RED_STRIDE)], levels[Math.floor(value / CUBE_CHANNEL_LEVELS) % CUBE_CHANNEL_LEVELS], levels[value % CUBE_CHANNEL_LEVELS]];
 }
 
-function nearestAnsiIndex(rgb: readonly number[], depth: 4 | 8): number {
-	const candidates = depth === 4 ? 16 : ANSI_EXTENDED_COLOR_COUNT;
+function nearestAnsiIndex(rgb: readonly number[], depth: typeof BASIC_COLOR_DEPTH | typeof INDEXED_COLOR_DEPTH): number {
+	const candidates = depth === BASIC_COLOR_DEPTH ? ANSI_BASIC_COLOR_COUNT : ANSI_EXTENDED_COLOR_COUNT;
 	let nearestIndex = 0;
 	let nearestDistance = Number.POSITIVE_INFINITY;
 
 	for (let index = 0; index < candidates; index++) {
-		const [red, green, blue] = depth === 4 ? ANSI_16_RGB[index] : xtermColor(index);
+		const [red, green, blue] = depth === BASIC_COLOR_DEPTH ? ANSI_16_RGB[index] : xtermColor(index);
 		const distance = (rgb[0] - red) ** 2 + (rgb[1] - green) ** 2 + (rgb[2] - blue) ** 2;
 		if (distance < nearestDistance) {
 			nearestIndex = index;
@@ -71,7 +79,7 @@ export function detectTerminalColorDepth(
 	env: NodeJS.ProcessEnv = process.env,
 ): number {
 	if (env.NO_COLOR !== undefined && env.NO_COLOR !== '') return 1;
-	if (!output.isTTY || !output.getColorDepth) return 1;
+	if ((output.isTTY !== true) || !output.getColorDepth) return 1;
 	return output.getColorDepth(env);
 }
 
@@ -86,16 +94,16 @@ function resolveReference(color: string | number | undefined, theme: ThemeDefini
 }
 
 function toInkColor(color: string | number | undefined, depth: number): string | undefined {
-	if (color === undefined || color === 'none' || depth < 4) return undefined;
+	if (color === undefined || color === 'none' || depth < BASIC_COLOR_DEPTH) return undefined;
 	if (typeof color === 'number') {
-		const index = depth >= 8 || color < 16 ? color : nearestAnsiIndex(xtermColor(color), 4);
+		const index = depth >= INDEXED_COLOR_DEPTH || color < ANSI_BASIC_COLOR_COUNT ? color : nearestAnsiIndex(xtermColor(color), BASIC_COLOR_DEPTH);
 		return `ansi256(${index})`;
 	}
 
 	const rgb = parseHexColor(color);
 	if (!rgb) return undefined;
 	if (depth >= TRUE_COLOR_DEPTH) return color;
-	const index = nearestAnsiIndex(rgb, depth >= 8 ? 8 : 4);
+	const index = nearestAnsiIndex(rgb, depth >= INDEXED_COLOR_DEPTH ? INDEXED_COLOR_DEPTH : BASIC_COLOR_DEPTH);
 	return `ansi256(${index})`;
 }
 

@@ -34,7 +34,7 @@ export class GraphIndexing implements GraphIndex {
     const report = await this.backend.sync(options);
     const failedFilePaths = report.failedFilePaths ?? [];
     return {
-      success: !options.signal?.aborted && failedFilePaths.length === 0,
+      success: (options.signal?.aborted !== true) && failedFilePaths.length === 0,
       filesChecked: report.filesChecked, filesAdded: report.filesAdded, filesModified: report.filesModified,
       filesRemoved: report.filesRemoved, nodesUpdated: report.nodesUpdated, durationMs: report.durationMs,
       changedFilePaths: [...report.changedFilePaths ?? []], failedFilePaths: [...failedFilePaths],

@@ -4,6 +4,9 @@ import {markedTerminal} from 'marked-terminal';
 import wrapAnsi from 'wrap-ansi';
 import type {InkThemePalette} from '../theme/provider.js';
 
+const INDEXED_COLOR_LEVEL = 2;
+const TABLE_CELL_PADDING = 2;
+
 const TRUE_COLOR_LEVEL = 3;
 const MIN_TABLE_CELL_WIDTH = 5;
 
@@ -11,9 +14,9 @@ const MIN_TABLE_CELL_WIDTH = 5;
 export function createMarkdownRenderer(columns: number, palette: InkThemePalette): (source: string) => string[] {
 	const width = Math.max(1, columns);
 	const colors = Object.values(palette).filter((color): color is string => color !== undefined);
-	const chalk = new Chalk({level: colors.some(color => color.startsWith('#')) ? TRUE_COLOR_LEVEL : colors.length ? 2 : 0});
+	const chalk = new Chalk({level: colors.some(color => color.startsWith('#')) ? TRUE_COLOR_LEVEL : colors.length ? INDEXED_COLOR_LEVEL : 0});
 	const style = (color: string | undefined): ChalkInstance => {
-		if (!color) return chalk;
+		if (color === undefined || color === '') return chalk;
 		const indexed = /^ansi256\((\d+)\)$/.exec(color);
 		return indexed ? chalk.ansi256(Number(indexed[1])) : chalk.hex(color);
 	};
@@ -52,7 +55,7 @@ export function createMarkdownRenderer(columns: number, palette: InkThemePalette
 			table(token) {
 				const count = token.header.length;
 				const available = width - count - 1;
-				const cellWidth = Math.floor(available / count) - 2;
+				const cellWidth = Math.floor(available / count) - TABLE_CELL_PADDING;
 				const longWord = [...token.header, ...token.rows.flat()].some(cell =>
 					cell.text.split(/\s+/).some(word => wrapAnsi(word, Math.max(1, cellWidth), {hard: true}).includes('\n')),
 				);

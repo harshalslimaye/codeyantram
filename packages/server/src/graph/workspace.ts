@@ -33,7 +33,7 @@ export class WorkspaceGraphService {
   }
 
   private getLease(): Promise<GraphCoordinatorLease> {
-    if (!this.workspaceRoot) return Promise.reject(new Error('A workspace root is required for graph operations.'));
+    if (this.workspaceRoot === undefined || this.workspaceRoot === '') return Promise.reject(new Error('A workspace root is required for graph operations.'));
     return this.opening ??= Promise.resolve().then(() => this.acquire(this.workspaceRoot!)).then(lease => {
       this.lease = lease;
       return lease;
@@ -74,8 +74,8 @@ export class WorkspaceGraphService {
     if (!this.closing) {
       // Set the admission barrier before abort listeners can submit more work.
       this.closing = Promise.resolve().then(async () => {
-        await Promise.allSettled([...this.pending]);
-        try {await this.lease?.release();} finally {this.closed = true;}
+        await Promise.allSettled(this.pending);
+        try {await this.lease?.release(); return;} finally {this.closed = true;}
       });
       this.shutdown.abort();
     }

@@ -13,7 +13,7 @@ export async function startChatServer(options: ServerAppOptions = {}) {
 		server.listen(0, '127.0.0.1');
 		await once(server, 'listening');
 		address = server.address();
-		if (!address || typeof address === 'string') throw new Error('The chat server did not open a TCP port.');
+		if (address === null || typeof address === 'string') throw new Error('The chat server did not open a TCP port.');
 	} catch (error) {
 		try {await close();} catch (cleanup) {
 			throw new AggregateError([error, cleanup], 'Could not start or clean up the chat server.');

@@ -7,6 +7,8 @@ import {budget, fits, integer, requireFits} from './budget.js';
 import {NAVIGATION_COVERAGE} from './coverage.js';
 import {GraphNavigationError} from './errors.js';
 
+const TRAVERSAL_EXTRA_NODES = 2;
+
 const MAX_TRACE_DEPTH = 3;
 const DEFAULT_RESULT_LIMIT = 20;
 const MAX_RESULT_LIMIT = 50;
@@ -22,7 +24,7 @@ export class TraceQuery {
     const depth = integer(options.depth ?? 1, 1, MAX_TRACE_DEPTH), limit = integer(options.limit ?? DEFAULT_RESULT_LIMIT, 1, MAX_RESULT_LIMIT), maxCharacters = budget(options.maxCharacters);
     const target = await this.symbols.resolve(reference);
     const subgraph = this.backend.traverse(target.id, {direction: options.direction === 'callers' ? 'incoming' : 'outgoing',
-      maxDepth: depth, limit: limit + 2, includeStart: true, edgeKinds: ['calls', 'instantiates']});
+      maxDepth: depth, limit: limit + TRAVERSAL_EXTRA_NODES, includeStart: true, edgeKinds: ['calls', 'instantiates']});
     const nodes = [...subgraph.nodes.values()].filter(node => node.id !== target.id);
     const result: GraphTraceResult = {target, direction: options.direction, depth, symbols: [], relationships: [],
       truncated: nodes.length > limit, coverage: NAVIGATION_COVERAGE + ' Trace follows resolved calls and instantiations only; dynamic or unresolved calls may be absent.'};

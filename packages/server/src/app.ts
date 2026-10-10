@@ -36,7 +36,7 @@ export function createApp(options: ServerAppOptions = {}) {
     },
     // Tests can supply a fake stream to avoid calling AI providers.
     streamChat: (request, streamOptions) => (options.streamChat ?? streamChat)(request, {
-      ...streamOptions, ...(options.workspaceRoot ? {workspaceGraph} : {}),
+      ...streamOptions, ...((options.workspaceRoot !== undefined && options.workspaceRoot !== '') ? {workspaceGraph} : {}),
     }),
   });
   const compactRouter = createCompactRouter({

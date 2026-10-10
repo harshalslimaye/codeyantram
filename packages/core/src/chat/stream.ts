@@ -81,7 +81,7 @@ export async function* streamChat(
       if (part.type === 'text-delta') {
         yield {type: 'text-delta', text: part.text};
       } else if (part.type === 'tool-call') {
-        if ('invalid' in part && part.invalid && 'error' in part) invalidCalls.set(part.toolCallId, part.error);
+        if ('invalid' in part && (part.invalid === true) && 'error' in part) invalidCalls.set(part.toolCallId, part.error);
         const input = typeof part.input === 'object' && part.input !== null && !Array.isArray(part.input) ? part.input : {};
         yield {type: 'tool-call', call: toolCallSchema.parse({toolCallId: part.toolCallId, toolName: part.toolName, input,
           ...(part.providerMetadata ? {providerOptions: JSON.parse(JSON.stringify(part.providerMetadata)) as unknown} : {})})};

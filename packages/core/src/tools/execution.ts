@@ -21,7 +21,7 @@ export function createToolExecutor(): ToolExecutor {
       if (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_TOOL_OUTPUT_BYTES) return error('execution_failed', 'Tool output exceeded the host limit. Request less context.');
       return result;
     } catch (failure) {
-      if (signal?.aborted) return error('cancelled', 'Tool execution cancelled.');
+      if (signal?.aborted === true) return error('cancelled', 'Tool execution cancelled.');
       if (failure instanceof WebFetchError) return error(failure.code, failure.message);
       if (name === 'web_fetch') return error('execution_failed', 'Web fetch could not complete the request.');
       const mapped = mapGraphError(failure);

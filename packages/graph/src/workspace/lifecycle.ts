@@ -29,7 +29,7 @@ export class WorkspaceLifecycle {
 
   close(): Promise<void> {
     return this.closing ??= (async () => {
-      await Promise.allSettled([...this.pending]);
+      await Promise.allSettled(this.pending);
       this.backend.close();
     })();
   }

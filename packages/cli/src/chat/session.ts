@@ -285,7 +285,7 @@ export class ChatSession {
 			});
 			if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Invalid compaction request.');
 			const sizeError = getCompactionSizeError(parsed.data);
-			if (sizeError) throw new Error(sizeError);
+			if (sizeError !== undefined && sizeError !== '') throw new Error(sizeError);
 			const before = buildChatContext(transcript, previous);
 			const replaced = buildChatContext(transcript.slice(0, plan.coveredMessageCount), previous);
 			controller = new AbortController();

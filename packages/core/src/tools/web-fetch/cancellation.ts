@@ -5,7 +5,7 @@ export function deadline(milliseconds: number, parent?: AbortSignal) {
   const timer = setTimeout(() => controller.abort(new WebFetchError('timeout', 'Web fetch timed out.')), milliseconds);
   const cancel = () => controller.abort(new WebFetchError('cancelled', 'Web fetch cancelled.'));
   parent?.addEventListener('abort', cancel, {once: true});
-  if (parent?.aborted) cancel();
+  if (parent?.aborted === true) cancel();
   return {signal: controller.signal, dispose() {clearTimeout(timer); parent?.removeEventListener('abort', cancel);}};
 }
 

@@ -29,7 +29,7 @@ export const openConnection: OpenConnection = (url, addresses, format, signal) =
   const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
     method: 'GET', agent: false, signal,
     lookup: (_hostname, options, callback) => {
-      if (options.all) callback(null, addresses);
+      if (options.all === true) callback(null, addresses);
       else callback(null, addresses[0].address, addresses[0].family);
     },
     headers: {
@@ -60,7 +60,7 @@ export function createWebTransport(dependencies: {resolve?: ResolveHost; open?: 
         const addresses = await validateDestination(url, signal, dependencies.resolve);
         const pending = (dependencies.open ?? openConnection)(url, addresses, format, signal);
         // Also release late responses from an injected connection that ignored cancellation.
-        void pending.then(response => { if (signal.aborted) response.body.destroy(); }, () => {});
+        void pending.then(response => { if (signal.aborted) response.body.destroy(); return; }, () => {});
         const response = await abortable(pending, signal);
         try {
           if ([HTTP_MOVED_PERMANENTLY, HTTP_FOUND, HTTP_SEE_OTHER, HTTP_TEMPORARY_REDIRECT, HTTP_PERMANENT_REDIRECT].includes(response.status)) {

@@ -34,7 +34,7 @@ export class OperationQueue {
         this.setOperation('idle');
       }
     });
-    this.tail = result.then(() => {}, () => {});
+    this.tail = result.then(() => {return;}, () => {});
     return result;
   }
 
@@ -42,7 +42,7 @@ export class OperationQueue {
     if (!this.closing) {
       this.current = 'closing';
       this.closing = this.tail.then(async () => {
-        try {await closeBackend();} finally {this.current = 'closed';}
+        try {await closeBackend(); return;} finally {this.current = 'closed';}
       });
     }
     return this.closing;

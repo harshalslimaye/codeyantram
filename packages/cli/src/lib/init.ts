@@ -49,7 +49,7 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
   };
   const diagnostics = (report: GraphIndexReport) => {
     for (const error of report.errors.slice(0, MAX_INDEX_DIAGNOSTICS)) {
-      stderr.write(`${error.severity}: ${error.filePath ? `${error.filePath}: ` : ''}${error.message}\n`);
+      stderr.write(`${error.severity}: ${(error.filePath !== undefined && error.filePath !== '') ? `${error.filePath}: ` : ''}${error.message}\n`);
     }
     if (report.errors.length > MAX_INDEX_DIAGNOSTICS) stderr.write(`${report.errors.length - MAX_INDEX_DIAGNOSTICS} additional indexing diagnostics omitted.\n`);
   };
@@ -100,7 +100,7 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
     stderr.write('Graph initialization cancelled. Run init again to complete it.\n');
     return interruptedExitCode ?? SIGINT_EXIT_CODE;
   }
-  if (!exitCode && completed && readyStatus) {
+  if (!exitCode && (completed !== undefined && completed !== '') && readyStatus) {
     stdout.write(completed);
     output.onReady?.(readyStatus);
   }
@@ -124,7 +124,7 @@ export async function initializeGraphForUI(
     signal.throwIfAborted();
     if (error instanceof GraphCoordinatorError && error.report) {
       const details = 'errors' in error.report
-        ? error.report.errors.slice(0, MAX_INDEX_DIAGNOSTICS).map(item => `${item.filePath ? `${item.filePath}: ` : ''}${item.message}`)
+        ? error.report.errors.slice(0, MAX_INDEX_DIAGNOSTICS).map(item => `${(item.filePath !== undefined && item.filePath !== '') ? `${item.filePath}: ` : ''}${item.message}`)
         : error.report.failedFilePaths.slice(0, MAX_INDEX_DIAGNOSTICS).map(file => `Failed to index: ${file}`);
       throw new Error([error.message, ...details].join('\n'), {cause: error});
     }
