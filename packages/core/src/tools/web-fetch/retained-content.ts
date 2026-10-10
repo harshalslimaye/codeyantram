@@ -1,4 +1,5 @@
 import type {ContentChunk} from './chunks.js';
+import {retainUncertainEvidence} from '../../evaluation/index.js';
 import {IRRELEVANT_PROBABILITY} from './limits.js';
 
 const CONTEXT_PROBABILITY_THRESHOLD = 0.5;
@@ -18,7 +19,7 @@ export function retainedPositions(chunks: ContentChunk[], judgments: Map<number,
   const retained = new Set<number>();
   for (const chunk of chunks) {
     const probability = judgments.get(chunk.position);
-    if (probability === undefined || probability >= IRRELEVANT_PROBABILITY) {
+    if (retainUncertainEvidence(probability, IRRELEVANT_PROBABILITY)) {
       retained.add(chunk.position);
       retainHeadings(chunk, retained);
       // Keep adjacent context for positively identified evidence; uncertainty still retains itself and headings.

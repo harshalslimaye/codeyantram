@@ -1,6 +1,6 @@
 import {toolResultSchema, type ToolResult} from '@codeyantram/shared';
 import type {ToolExecutor} from './types.js';
-import {mapGraphError} from './graph-errors.js';
+import {mapGraphError} from './codegraph/graph-errors.js';
 import {WebFetchError} from './web-fetch/errors.js';
 
 const MAX_TOOL_EXECUTIONS = 12;

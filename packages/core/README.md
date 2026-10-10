@@ -132,6 +132,15 @@ and reports the resolved model ID. Results include duration, available token
 usage, rounding precision, and any Choice/Score confidence. Missing usage stays
 absent. Raw provider responses and credentials are not returned.
 
+Shared relevance infrastructure lives in `src/evaluation`: `evaluateCandidates`
+evaluates stable-ID candidates with caller-supplied state and questions, bounded
+batching/concurrency, an overall deadline, validated Boolean probabilities, and
+aggregated usage. Failed or missing judgments remain absent so callers can retain
+uncertain evidence; caller cancellation propagates rather than returning a fallback.
+Capability checks, objective normalization, status reporting, and cancellation
+helpers are shared as well. Web-fetch keeps document chunking, relevance prompts,
+structural retention, thresholds, and output assembly in its own tool folder.
+
 Each batch accepts 1–64 questions and at most 1 MiB of serialized UTF-8 state
 and questions. Choice questions support 1–255 options, and Score questions
 support 2–10 levels. Input is validated and copied before sending. Core requires
@@ -216,7 +225,7 @@ web-fetch capabilities keeps chat without tool definitions.
 create a fresh set for each turn to reset the execution budget.
 
 Each tool owns its schema, description, and handler in a separate file:
-`src/tools/explore.ts`, `graph.ts`, `find.ts`, `inspect.ts`, and `trace.ts`. `src/tools/index.ts` assembles
+`src/tools/codegraph/explore.ts`, `graph.ts`, `find.ts`, `inspect.ts`, and `trace.ts`. `src/tools/codegraph/index.ts` assembles
 the tools with a shared per-turn executor from `execution.ts`; host-service
 and executor interfaces live in `types.ts`.
 

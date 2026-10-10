@@ -86,6 +86,7 @@ describe('optional relevance selection', () => {
     const result = await selectContent(content, sourceUrl, 'markdown', {jev, objective: 'task'});
     expect(result.content).toBe(content);
     expect(result.filtering.status).toBe('partial');
+    expect(result.warnings).toContain('JEV evaluation was incomplete; unevaluated content was retained.');
     const failed = capability(async () => {throw new Error('private credentials');});
     const fallback = await selectContent(content, sourceUrl, 'markdown', {jev: failed.jev, objective: 'task'});
     expect(fallback.content).toBe(content);
@@ -104,6 +105,7 @@ describe('optional relevance selection', () => {
     expect(total).toBe(MAX_EVALUATED_CHUNKS);
     expect(peak).toBe(2);
     expect(result.content).toContain('UNEVALUATED TAIL');
+    expect(result.warnings).toEqual([]);
     expect(result.filtering).toMatchObject({status: 'partial', incomplete: true});
   });
   it('returns normal content if every chunk is rejected', async () => {

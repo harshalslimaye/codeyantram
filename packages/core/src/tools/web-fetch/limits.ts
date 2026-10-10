@@ -11,8 +11,10 @@ export const MAX_CHUNK_CHARACTERS = 2400;
 export const MAX_CHUNKS = 4096;
 export const MIN_FILTER_CHARACTERS = 6000;
 export const MAX_EVALUATED_CHUNKS = 32;
-export const EVALUATION_BATCH_SIZE = 8;
-export const EVALUATION_CONCURRENCY = 2;
-export const FILTER_TIMEOUT_MS = 5000;
+export {
+  DEFAULT_EVALUATION_BATCH_SIZE as EVALUATION_BATCH_SIZE,
+  DEFAULT_EVALUATION_CONCURRENCY as EVALUATION_CONCURRENCY,
+  DEFAULT_EVALUATION_TIMEOUT_MS as FILTER_TIMEOUT_MS,
+} from '../../evaluation/batches.js';
 /** Provisional conservative cutoff; live evidence-retention evaluation is documented separately. */
 export const IRRELEVANT_PROBABILITY = 0.05;

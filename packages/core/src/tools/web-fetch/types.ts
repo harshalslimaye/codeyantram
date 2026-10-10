@@ -1,5 +1,5 @@
-import type {TokenUsage} from '@codeyantram/shared';
-import type {JevEvaluator} from '../../evaluation/index.js';
+import type {EvaluationMetadata} from '../../evaluation/index.js';
+export type {JevCapability} from '../../evaluation/index.js';
 import type {WebFetchInput} from './schema.js';
 
 export type WebFormat = 'markdown' | 'text' | 'html';
@@ -13,18 +13,10 @@ export interface TransportDocument {
 export interface WebTransport {
   fetch(url: string, format: WebFormat, signal: AbortSignal): Promise<TransportDocument>;
 }
-/** The host resolves configuration; credentials never enter tool arguments or results. */
-export type JevCapability = {status: 'disabled'} | {status: 'available'; evaluator: JevEvaluator}
-  | {status: 'unavailable'; reason: 'missing_credentials' | 'initialization_failed'};
-export interface FilteringMetadata {
-  status: 'skipped' | 'completed' | 'partial' | 'failed';
-  reason?: string;
+export interface FilteringMetadata extends EvaluationMetadata {
   totalChunks: number;
   evaluatedChunks: number;
   retainedChunks: number;
-  incomplete: boolean;
-  durationMs?: number;
-  usage?: TokenUsage;
 }
 export interface WebFetchOutput {
   requestedUrl: string;

@@ -1,12 +1,11 @@
 import {performance} from 'node:perf_hooks';
 import type {TokenUsage} from '@codeyantram/shared';
+import {evaluationCapability, evaluationObjective, evaluationStatus} from '../../evaluation/index.js';
 import {evaluateChunks} from './evaluation-batches.js';
 import {retainedPositions} from './retained-content.js';
 import {chunkContent, ChunkLimitError, type ContentChunk} from './chunks.js';
 import {MAX_EVALUATED_CHUNKS, MIN_FILTER_CHARACTERS} from './limits.js';
 import type {FilteringMetadata, JevCapability, WebFormat} from './types.js';
-
-const MAX_OBJECTIVE_CHARACTERS = 2048;
 
 export interface Selection {content: string; filtering: FilteringMetadata; warnings: string[]}
 
@@ -16,7 +15,7 @@ export async function selectContent(content: string, sourceUrl: string, format: 
   options.signal?.throwIfAborted();
   const early = earlySelection(content, format, options);
   if ('content' in early) return early;
-  const objective = options.objective?.trim().slice(0, MAX_OBJECTIVE_CHARACTERS);
+  const objective = evaluationObjective(options.objective);
   if (objective === undefined || objective === '') return skippedSelection(content, 'no_objective');
   if (content.length < MIN_FILTER_CHARACTERS) return skippedSelection(content, 'small_document');
   let chunks: ContentChunk[];
@@ -33,13 +32,13 @@ export async function selectContent(content: string, sourceUrl: string, format: 
   await evaluateChunks(candidates, evaluator, {objective, signal: options.signal, judgments, usage});
   options.signal?.throwIfAborted();
   const retained = retainedPositions(chunks, judgments);
-  return buildSelection(content, chunks, {judgments, usage, started, retained});
+  return buildSelection(content, chunks, {judgments, evaluatedChunkLimit: candidates.length, usage, started, retained});
 }
 
 function buildSelection(content: string, chunks: ContentChunk[], context: {
-  judgments: Map<number, number>; usage: TokenUsage; started: number; retained: Set<number>;
+  judgments: Map<number, number>; evaluatedChunkLimit: number; usage: TokenUsage; started: number; retained: Set<number>;
 }): Selection {
-  const {judgments, usage, started, retained} = context;
+  const {judgments, evaluatedChunkLimit, usage, started, retained} = context;
   // An all-negative response is recoverable without requiring another fetch.
   if (!retained.size) return {content, warnings: ['JEV selected no evidence; normal content returned.'], filtering: {
     status: 'completed', reason: 'no_evidence', totalChunks: chunks.length, evaluatedChunks: judgments.size, retainedChunks: chunks.length,
@@ -54,16 +53,16 @@ function buildSelection(content: string, chunks: ContentChunk[], context: {
   }
   const selectedContent = selected.join('');
   let warnings: string[];
-  let status: FilteringMetadata['status'];
+  const status = evaluationStatus(chunks.length, judgments.size);
   if (judgments.size === 0) {
     warnings = ['JEV filtering skipped: evaluation failed or timed out. Normal content returned.'];
-    status = 'failed';
-  } else if (incomplete) {
+  } else if (judgments.size < evaluatedChunkLimit) {
     warnings = ['JEV evaluation was incomplete; unevaluated content was retained.'];
-    status = 'partial';
+  } else if (incomplete) {
+    // The configured evaluation budget was reached; remaining chunks were deliberately retained.
+    warnings = [];
   } else {
     warnings = [];
-    status = 'completed';
   }
   return {content: selectedContent, warnings, filtering: {
     status,
@@ -80,11 +79,13 @@ function skippedSelection(content: string, reason: string, warning?: string): Se
 }
 
 function earlySelection(content: string, format: WebFormat, options: {jev?: JevCapability; filter?: boolean}): Selection | Extract<JevCapability, {status: 'available'}> {
-  if (options.filter === false) return skippedSelection(content, 'disabled_for_request');
-  if (!options.jev || options.jev.status === 'disabled') return skippedSelection(content, 'disabled');
-  if (options.jev.status === 'unavailable') return skippedSelection(content, options.jev.reason, options.jev.reason === 'missing_credentials'
-    ? 'JEV filtering skipped: configure TypeSafe through /connect. Normal content returned.'
-    : 'JEV filtering skipped: evaluation could not be initialized. Normal content returned.');
+  const capability = evaluationCapability(options.jev, options.filter);
+  if (capability.status === 'skipped') {
+    let warning: string | undefined;
+    if (capability.reason === 'missing_credentials') warning = 'JEV filtering skipped: configure TypeSafe through /connect. Normal content returned.';
+    if (capability.reason === 'initialization_failed') warning = 'JEV filtering skipped: evaluation could not be initialized. Normal content returned.';
+    return skippedSelection(content, capability.reason, warning);
+  }
   if (format === 'html') return skippedSelection(content, 'raw_html');
-  return options.jev;
+  return capability;
 }

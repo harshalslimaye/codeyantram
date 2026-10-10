@@ -25,6 +25,17 @@ export interface JevEvaluator {
   evaluate<const Questions extends EvaluationQuestions>(input: EvaluationInput<Questions>): Promise<EvaluationResult<Questions>>;
 }
 
+export type JevCapability = {status: 'disabled'} | {status: 'available'; evaluator: JevEvaluator}
+  | {status: 'unavailable'; reason: 'missing_credentials' | 'initialization_failed'};
+
+export interface EvaluationMetadata {
+  status: 'skipped' | 'completed' | 'partial' | 'failed';
+  reason?: string;
+  incomplete: boolean;
+  durationMs?: number;
+  usage?: TokenUsage;
+}
+
 /** The host supplies credentials; core never reads configuration or environment keys. */
 export interface JevEvaluatorOptions {
   apiKey: string;
