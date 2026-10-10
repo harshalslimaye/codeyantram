@@ -1,6 +1,6 @@
 # Agents Implementation Plan
 
-Status: Phase 1 implemented. Phases 2–8 remain planned.
+Status: Phases 1–2 implemented. Phases 3–8 remain planned.
 
 Phase 1 result: `packages/shared/src/agents/` defines the validated authoring,
 resolved, and public metadata contracts; `packages/core/src/tools/catalog.ts`
@@ -8,9 +8,15 @@ inventories all 15 current tool names; `packages/core/src/agents/builtins.ts`
 declares Ask, Build, and Yolo from that catalog; and
 `packages/core/AGENT_CONTRACT.md` records the capability and trust boundaries.
 Shared and mode-specific prompt text is composed in
-`packages/core/src/agents/instructions.ts`. The catalog and new prompts are not
-yet wired into chat. Focused contract tests, typecheck, and
+`packages/core/src/agents/instructions.ts`. The catalog and composed prompts
+are wired into core chat in Phase 2. Focused contract tests, typecheck, and
 lint passed when Phase 1 was completed.
+
+Phase 2 result: `packages/core/src/agents/registry.ts` resolves validated
+custom definitions into immutable snapshots; `packages/core/src/chat/agent-tools.ts`
+selects catalog tools and instructions; and chat defaults to Ask while requiring
+a matching host-resolved agent for any other ID. The server does not resolve
+selected agents until Phase 3.
 
 ## Goal and first-version contract
 

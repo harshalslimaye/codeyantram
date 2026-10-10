@@ -22,6 +22,13 @@ describe('chat request validation', () => {
     expect(chatRequestSchema.parse(withSummary)).toEqual(withSummary);
   });
 
+  it('accepts a selected agent ID and rejects malformed IDs', () => {
+    const request = {model: 'gpt-6.1-sol', messages};
+    expect(chatRequestSchema.parse({...request, agentId: 'build'}).agentId).toBe('build');
+    expect(chatRequestSchema.parse({...request, agentId: 'user:reviewer'}).agentId).toBe('user:reviewer');
+    expect(chatRequestSchema.safeParse({...request, agentId: 'user:../reviewer'}).success).toBe(false);
+  });
+
   it.each(['', ' \n\t ', 'x'.repeat(MAX_SUMMARY_CHARACTERS + 1), null])(
     'rejects invalid historical summaries (case %#)', contextSummary => {
       const result = chatRequestSchema.safeParse({model: 'gpt-6.1-sol', messages, contextSummary});

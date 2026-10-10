@@ -1,26 +1,17 @@
 import {randomUUID} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
-import type {ChatRequest, ChatStreamEvent} from '@codeyantram/shared';
+import type {ChatRequest, ChatStreamEvent, ResolvedAgent} from '@codeyantram/shared';
 import {toChatErrorEvent} from './errors.js';
 import type {ProviderCredentials} from './models.js';
-import type {NavigationGraphService, WebFetchService, ReadService, GrepService, GlobService, ApplyPatchService, BashService, GitService} from '../tools/index.js';
+import type {ToolHostServices} from '../tools/catalog.js';
 import {createChatStream} from './stream-options.js';
-import type {JevCapability} from '../evaluation/index.js';
 import {translateProviderEvents} from './provider-events.js';
 
-export interface ChatStreamOptions {
+export interface ChatStreamOptions extends ToolHostServices {
   credentials: ProviderCredentials;
+  agent?: ResolvedAgent;
   abortSignal?: AbortSignal;
   fetch?: typeof globalThis.fetch;
-  workspaceGraph?: NavigationGraphService;
-  webFetch?: WebFetchService;
-  read?: ReadService;
-  grep?: GrepService;
-  glob?: GlobService;
-  applyPatch?: ApplyPatchService;
-  bash?: BashService;
-  git?: GitService;
-  jev?: JevCapability;
 }
 
 /** Streams the shared chat events; cancellation ends without a terminal event. */

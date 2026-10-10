@@ -7,7 +7,7 @@ describe('Phase 1 agent inventory', () => {
   it('catalogs each existing tool once with a host service and instruction', () => {
     const names = TOOL_CATALOG.map(entry => entry.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names).toEqual(['explore', 'find', 'inspect', 'trace', 'graph', 'web_fetch', 'read', 'grep', 'glob',
+    expect(names).toEqual(['explore', 'graph', 'find', 'inspect', 'trace', 'web_fetch', 'read', 'grep', 'glob',
       'git_status', 'git_diff', 'git_log', 'git_show', 'apply_patch', 'bash']);
     for (const entry of TOOL_CATALOG) {
       expect(toolNameSchema.safeParse(entry.name).success).toBe(true);

@@ -47,7 +47,7 @@ describe('streamChat provider integration', () => {
     expect(fetch).toHaveBeenCalledOnce();
   });
 
-  it('sends only conversation content, credentials, and the requested OpenAI effort', async () => {
+  it('sends the Ask instructions, conversation content, credentials, and requested OpenAI effort', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(sseResponse(openaiEvents));
     await collect(streamChat(request, {credentials, fetch}));
     const [url, init] = requireValue(fetch.mock.calls[0]);
@@ -55,8 +55,9 @@ describe('streamChat provider integration', () => {
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer test-openai-key');
     const body = parseJson<ProviderRequest>(requestBody(init?.body));
     expect(body).toMatchObject({model: request.model, reasoning: {effort: 'high'}, stream: true});
-    expect(requireValue(body.input).map((message: {role: string}) => message.role)).toEqual(['user', 'assistant', 'user']);
-    expect(requireValue(body.input)[2].content).toEqual([{type: 'input_text', text: 'Continue'}]);
+    expect(requireValue(body.input).map((message: {role: string}) => message.role)).toEqual(['developer', 'user', 'assistant', 'user']);
+    expect(JSON.stringify(requireValue(body.input)[0].content)).toContain('MODE: ASK');
+    expect(requireValue(body.input)[3].content).toEqual([{type: 'input_text', text: 'Continue'}]);
     expect(requireValue(body.input).every((message: object) => !('id' in message) && !('usage' in message))).toBe(true);
   });
 
@@ -116,7 +117,7 @@ describe('streamChat provider integration', () => {
     expect(events.at(-1)?.type).toBe('done');
     const body = parseJson<ProviderRequest>(requestBody(requireValue(fetch.mock.calls[0])[1]?.body));
     const wireMessages: {role: string; texts: string[]}[] = model.startsWith('gpt-')
-      ? requireValue(body.input).map((message: {role: string; content: string | {text: string}[]}) => ({
+      ? requireValue(body.input).filter(message => message.role !== 'developer').map((message: {role: string; content: string | {text: string}[]}) => ({
         role: message.role, texts: typeof message.content === 'string' ? [message.content] : message.content.map(part => part.text),
       }))
       : model.startsWith('claude-')
@@ -142,9 +143,9 @@ describe('streamChat provider integration', () => {
     // adapters retain distinct messages. No fabricated acknowledgement is needed.
     expect(wireMessages.map(message => message.role)).toEqual(model.startsWith('claude-')
       ? ['user', 'assistant', 'user'] : ['user', 'user', 'user', 'assistant', 'user']);
-    expect(body.system).toBeUndefined();
-    expect(body.systemInstruction).toBeUndefined();
-    expect(body.instructions).toBeUndefined();
+    if (model.startsWith('gpt-')) expect(JSON.stringify(requireValue(body.input)[0].content)).toContain('MODE: ASK');
+    else if (model.startsWith('claude-')) expect(JSON.stringify(body.system)).toContain('MODE: ASK');
+    else expect(JSON.stringify(body.systemInstruction)).toContain('MODE: ASK');
     expect(input).toEqual(original);
   });
 });
@@ -153,6 +154,7 @@ describe('streamChat failures and cancellation', () => {
   it.each([
     [{...request, model: 'unsupported'}, credentials, 'invalid_request'],
     [{...request, model: 'claude-haiku-4-5-20251001'}, credentials, 'invalid_request'],
+    [{...request, agentId: 'build'}, credentials, 'invalid_request'],
     [request, {}, 'missing_credentials'],
   ] as const)('rejects invalid requests or missing credentials before calling a provider', async (input, keys, code) => {
     const fetch = vi.fn<typeof globalThis.fetch>();

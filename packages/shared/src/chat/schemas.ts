@@ -2,6 +2,7 @@ import {z} from 'zod';
 import {effortLevelSchema, findSupportedChatModel, modelSupportsEffort} from '../providers/config/index.js';
 import type {ChatMessage, RequestMessage} from './types.js';
 import {toolCallPartSchema, toolResultPartSchema} from '../tools/schemas.js';
+import {agentIdSchema} from '../agents/schemas.js';
 
 export const chatModelIdSchema = z.string().min(1);
 
@@ -64,6 +65,7 @@ export function toRequestMessage(message: ChatMessage): RequestMessage {
 
 export const chatRequestSchema = z.object({
   model: chatModelIdSchema,
+  agentId: agentIdSchema.optional(),
   messages: z.array(requestMessageSchema).min(1),
   effort: effortLevelSchema.optional(),
   contextSummary: contextSummarySchema.optional(),

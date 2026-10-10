@@ -1,8 +1,7 @@
 # Agent contract and tool inventory
 
-Phase 1 defines agent data and catalogs existing tools. Chat continues to use
-the tool assembly in `src/chat/stream-options.ts` until Phase 2. The catalog in
-`src/tools/catalog.ts` records each stable name, host service, capability class,
+Phases 1–2 define agent data, catalog existing tools, and use the catalog in
+chat. `src/tools/catalog.ts` records each stable name, host service, capability class,
 factory, and the current user-facing usage guidance.
 
 ## Existing tool inventory
@@ -41,9 +40,16 @@ resolved schema and catalog-derived tool lists.
 
 The built-in instructions live in `src/agents/instructions.ts`: a shared base
 prompt plus one mode prompt. `composeAgentInstructions` is also available for
-future custom agents, so their authored instructions can follow the same
-base and selected mode. The current chat path does not yet use these prompts;
-Phase 2 will compose them with instructions for the tools actually available.
+custom agents, so their authored instructions follow the same base and selected
+mode. Chat adds guidance only for the tools actually available on that turn and
+sends the resulting instructions through the provider's instruction channel.
+
+`src/agents/registry.ts` validates custom definitions supplied by a host,
+checks tool subsets against the selected built-in base, records diagnostics,
+and returns immutable agent snapshots. File loading and HTTP agent resolution
+remain later phases. A chat request without `agentId` uses Ask. Direct core
+hosts must supply a matching resolved agent for any other ID. The default
+server and CLI do not yet select Build or Yolo.
 
 The resolved `approval` value is `none`, `prompt`, or `automatic`. It records
 the agent's requested behavior, not an authorization grant. A host must still

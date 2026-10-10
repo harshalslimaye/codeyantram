@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from 'vitest';
-import {streamChat, type BashService, type BashOutput} from '../../src/index.js';
+import {BUILTIN_AGENTS, streamChat, type BashService, type BashOutput} from '../../src/index.js';
 import {chatStreamEventSchema, type ChatStreamEvent} from '@codeyantram/shared';
 import {asymmetric} from '../../../shared/tests/helpers.js';
 import {sseResponse, openaiEvents, openaiToolEvents} from './fixtures.js';
@@ -14,13 +14,15 @@ const messages = [{id: 'prior', role: 'user' as const, parts: [{type: 'text' as 
   {id: 'latest', role: 'user' as const, parts: [{type: 'text' as const, text: 'Run tests'}]}];
 const output: BashOutput = {workdir: '.', stdout: 'failed test', stderr: '', exitCode: 1, signal: null,
   termination: 'exit', durationMs: 1, truncated: false, untrusted: true, warnings: []};
+const buildAgent = BUILTIN_AGENTS.find(agent => agent.id === 'build');
+if (!buildAgent) throw new Error('Build agent is unavailable.');
 
 describe('bash provider loop', () => {
   it('registers host-provided execution independently of the graph and passes only the latest objective', async () => {
     const run = vi.fn<BashService['run']>().mockResolvedValue(output);
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(sseResponse(openaiToolEvents('bash', input)))
       .mockResolvedValueOnce(sseResponse(openaiEvents));
-    const events = await collect(streamChat({model: 'gpt-6.1-sol', messages}, {credentials: {openai: 'test'}, fetch, bash: {run}}));
+    const events = await collect(streamChat({model: 'gpt-6.1-sol', agentId: 'build', messages}, {credentials: {openai: 'test'}, agent: buildAgent, fetch, bash: {run}}));
     expect(events[2]).toMatchObject({type: 'tool-result', result: {toolName: 'bash', status: 'success', output}});
     expect(run).toHaveBeenCalledWith(input, {objective: 'Run tests', abortSignal: asymmetric.any(AbortSignal)});
     expect(events.at(-1)?.type).toBe('done');
@@ -30,7 +32,7 @@ describe('bash provider loop', () => {
     const run = vi.fn<BashService['run']>();
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(sseResponse(openaiToolEvents('bash', {...input, ...extra})))
       .mockResolvedValueOnce(sseResponse(openaiEvents));
-    const events = await collect(streamChat({model: 'gpt-6.1-sol', messages}, {credentials: {openai: 'test'}, fetch, bash: {run}}));
+    const events = await collect(streamChat({model: 'gpt-6.1-sol', agentId: 'build', messages}, {credentials: {openai: 'test'}, agent: buildAgent, fetch, bash: {run}}));
     expect(events[2]).toMatchObject({type: 'tool-result', result: {status: 'error', error: {code: 'invalid_input'}}});
     expect(run).not.toHaveBeenCalled();
   });

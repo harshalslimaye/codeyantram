@@ -1,4 +1,6 @@
 export {BUILTIN_AGENTS} from './builtins.js';
+export {createAgentRegistry} from './registry.js';
+export type {AgentDiagnostic, AgentRegistry, CustomAgentEntry} from './registry.js';
 export {
   ASK_AGENT_INSTRUCTIONS,
   BASE_AGENT_INSTRUCTIONS,

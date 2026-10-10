@@ -44,7 +44,9 @@ describe('CLI server graph lifetime with the installed SDK', () => {
       };
       switch (step++) {
         case 0:
-          expect(requireValue(body.tools).map((tool: {name: string}) => tool.name)).toEqual(['explore', 'graph', 'find', 'inspect', 'trace', 'web_fetch']);
+          expect(requireValue(body.tools).map((tool: {name: string}) => tool.name)).toEqual(asymmetric.arrayContaining(['explore', 'graph', 'find', 'inspect', 'trace', 'web_fetch']));
+          expect(requireValue(body.tools).map((tool: {name: string}) => tool.name)).not.toContain('apply_patch');
+          expect(requireValue(body.tools).map((tool: {name: string}) => tool.name)).not.toContain('bash');
           return sseResponse(openaiToolEvents('find', {query: 'greet'}, 'find-1'));
         case 1:
           original = referenceFromFind();
