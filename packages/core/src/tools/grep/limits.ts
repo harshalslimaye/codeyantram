@@ -1,0 +1,9 @@
+export const MAX_PATTERN_CHARACTERS = 1024;
+export const DEFAULT_MATCH_LIMIT = 100;
+export const MAX_MATCH_LIMIT = 200;
+export const MAX_MATCH_CHARACTERS = 1000;
+export const MAX_RESULT_BYTES = 48_000;
+export const MAX_PROCESS_BYTES = 8_388_608;
+export const SEARCH_TIMEOUT_MS = 10_000;
+export const MAX_EVALUATED_MATCHES = 32;
+export const MIN_EVALUATED_MATCHES = 2;

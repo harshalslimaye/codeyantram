@@ -1,5 +1,5 @@
 import express from 'express';
-import {compactChat, streamChat, createWebFetchService, createReadService, type createJevEvaluator, type WebTransport} from '@codeyantram/core';
+import {compactChat, streamChat, createWebFetchService, createReadService, createGrepService, type createJevEvaluator, type WebTransport} from '@codeyantram/core';
 import {readConfig, readProviderCredentials} from '@codeyantram/shared';
 import {handleError} from './middlewares/index.js';
 import {createChatRouter} from './routers/chat.js';
@@ -33,7 +33,8 @@ export function createApp(options: ServerAppOptions = {}) {
         credentials: await readProviderCredentials(modelId, async () => config),
         jev,
         ...((options.workspaceRoot !== undefined && options.workspaceRoot !== '')
-          ? {read: createReadService({workspaceRoot: options.workspaceRoot, jev})} : {}),
+          ? {read: createReadService({workspaceRoot: options.workspaceRoot, jev}),
+            grep: createGrepService({workspaceRoot: options.workspaceRoot, jev})} : {}),
         webFetch: createWebFetchService({transport: options.webTransport,
           jev}),
       };

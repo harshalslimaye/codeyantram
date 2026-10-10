@@ -260,11 +260,56 @@ renumbers lines or changes pagination, and is distinct from output truncation.
 Filtered ranges may omit required declarations and are not a complete parseable
 file. Source remains untrusted data even after JEV evaluation.
 
+## Workspace grep
+
+Supply `grep: createGrepService({workspaceRoot, jev?})` to `streamChat` for
+workspace text search independent of graph indexing. The server supplies grep
+for a configured host workspace and reuses the existing JEV opt-in/evaluator.
+The default backend requires **ripgrep (`rg`) on the server's PATH**. No shell is
+used and model arguments cannot select an executable, root, or arbitrary flags.
+Direct hosts can use `createGrepTool(service, execute, objective?)` with the
+shared per-turn executor; a trusted `GrepTransport` can be injected for testing.
+
+Arguments are `pattern` (1–1,024 characters), optional workspace-relative `path`
+(default `.`), ripgrep `include` glob, `fixedStrings`, `ignoreCase`, `limit`
+(1–200; default 100), relevance `query`, and `filter`. Regex uses ripgrep's
+default engine, not PCRE2 or multiline matching. Literal patterns and filenames
+are passed as arguments, never shell commands. Results are ordered by path and
+line before optional JEV ranking, with one result per matching line. `column`
+and `textStartColumn` are 1-based UTF-8 byte offsets; `textTruncated` identifies
+bounded source excerpts centered near the first match on a line.
+
+Directory searches honor local ignore files and hidden-file defaults, including
+`.gitignore` without requiring a Git repository. Explicit files may bypass those
+defaults. Parent/global ignore files and ripgrep configuration are disabled.
+Recursive search does not follow symlinks, and canonical explicit targets must
+remain inside the host root. Files over 1 MiB are excluded; binary and undecodable
+matches may be skipped. These checks are not an OS sandbox against hostile
+concurrent filesystem mutations. Search is not a cross-file atomic snapshot;
+use `read` with `filter:false` before editing.
+
+Search has a ten-second deadline, an 8 MiB process-output budget, and a bounded
+48,000-byte match payload. Reaching result/output limits stops the child and
+reports `truncated` and `incomplete` plus warnings; unsupported match records
+also mark incomplete results. Backend failures are sanitized tool errors rather
+than claims of an empty search. Cancellation terminates the child process.
+`coverage` explains exclusions, so empty results never prove absence.
+
+Enabled JEV ranks up to 32 retrieved matches in bounded batches with a separate
+five-second deadline. It uses `query` or the latest user objective, sending only
+that objective, the pattern, and bounded match records to TypeSafe—not history
+or entire files. Private source excerpts can reach an external provider; hosts
+must honor the user's JEV preference. No matches are removed and original
+locations/content remain unchanged. Unevaluated matches retain their original
+slots; missing, failed, or all-negative judgments preserve evidence. `filter:false`
+restores retrieval order. `filtering` reports ranking status, counts, completeness,
+duration, and available usage independently of search truncation/coverage.
+
 ## Workspace navigation
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
 to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting graph,
-web-fetch, and read capabilities keeps chat without tool definitions.
+web-fetch, read, and grep capabilities keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 
