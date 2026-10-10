@@ -39,7 +39,7 @@ export function chunkContent(content: string, sourceUrl: string): ContentChunk[]
         const space = content.lastIndexOf(' ', next - 1);
         const boundary = Math.max(line, space);
         if (boundary > start + MAX_CHUNK_CHARACTERS / CHUNK_BOUNDARY_DIVISOR) next = boundary + 1;
-        if (/[\uD800-\uDBFF]/.test(content[next - 1]) && /[\uDC00-\uDFFF]/.test(content[next]!)) next--;
+        if (/[\uD800-\uDBFF]/.test(content[next - 1]) && /[\uDC00-\uDFFF]/.test(content[next])) next--;
       }
       const text = content.slice(start, next);
       chunks.push({id: createHash('sha256').update(`${sourceUrl}\0${start}\0${text}`).digest('hex').slice(0, CHUNK_ID_HEX_CHARACTERS),

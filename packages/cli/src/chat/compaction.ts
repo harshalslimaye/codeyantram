@@ -60,7 +60,7 @@ export function planCompaction(
 	const start = getContextStartIndex(transcript, compacted);
 	const turnStarts: number[] = [];
 	for (let index = start; index < transcript.length; index++) {
-		const message = transcript[index]!;
+		const message = transcript[index];
 		if (message.role === 'assistant' && message.status === 'streaming') {
 			return {type: 'noop', reason: 'streaming'};
 		}

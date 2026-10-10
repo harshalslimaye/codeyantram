@@ -11,7 +11,7 @@ const DOCUMENTATION_PREFIX_LENGTH = 20;
 
 export type Address = {address: string; family: number};
 export type ResolveHost = (hostname: string) => Promise<Address[]>;
-const resolveHost: ResolveHost = hostname => lookup(hostname, {all: true, verbatim: true});
+const resolveHost: ResolveHost = hostname => lookup(hostname, {all: true, order: 'verbatim'});
 
 export function normalizeUrl(input: string): URL {
   try {

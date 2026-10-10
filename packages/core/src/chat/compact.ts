@@ -83,7 +83,7 @@ export async function* compactChat(
     if (result.finishReason !== 'stop' || !summary.success) {
       throw new ChatError('compaction_failed', 'The provider did not return a complete, usable conversation summary.');
     }
-    const usage = toTokenUsage(result.totalUsage);
+    const usage = toTokenUsage(result.usage);
     yield {
       type: 'done',
       summary: summary.data,

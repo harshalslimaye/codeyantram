@@ -34,8 +34,10 @@ export async function performGraphEdit<T>(
     const {freshness} = await reconciler.run({signal: cleanup.signal});
     return {mutation, graph: {state: 'synchronized', freshness}};
   } catch (error) {
-    const failure = cleanup.signal.aborted ? timeout : error instanceof GraphCoordinatorError ? error
-      : new GraphCoordinatorError('sync_failed', 'Graph synchronization after the edit failed.', undefined, {cause: error});
+    let failure: GraphCoordinatorError;
+    if (cleanup.signal.aborted) failure = timeout;
+    else if (error instanceof GraphCoordinatorError) failure = error;
+    else failure = new GraphCoordinatorError('sync_failed', 'Graph synchronization after the edit failed.', undefined, {cause: error});
     reconciler.recordFailure(failure);
     return {mutation, graph: {state: 'failed', error: failure}};
   } finally {clearTimeout(timer);}

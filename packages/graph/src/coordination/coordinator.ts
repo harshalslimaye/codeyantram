@@ -29,10 +29,14 @@ export class GraphCoordinator {
 
   /** Diagnostic snapshots remain available during indexing and after failures. */
   getStatus(): GraphCoordinatorStatus {
+    const operation = this.queue.operation;
+    let readiness: GraphCoordinatorStatus['readiness'];
+    if (this.reconciler.lastError) readiness = 'error';
+    else if (this.changes.dirty) readiness = 'dirty';
+    else if (this.reconciler.freshness) readiness = 'ready';
+    else readiness = 'uninitialized';
     return {
-      operation: this.queue.operation,
-      readiness: this.reconciler.lastError ? 'error' : this.changes.dirty ? 'dirty'
-        : this.reconciler.freshness ? 'ready' : 'uninitialized',
+      operation, readiness,
       pendingOperations: this.queue.pendingOperations, pendingPaths: this.changes.pendingPaths,
       needsFullScan: this.changes.needsFullScan,
       freshness: this.reconciler.freshness, index: this.reconciler.indexStatus,

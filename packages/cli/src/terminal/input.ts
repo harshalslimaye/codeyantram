@@ -2,6 +2,8 @@ import {PassThrough} from 'node:stream';
 import {StringDecoder} from 'node:string_decoder';
 
 const MOUSE_WHEEL_FLAG = 64;
+const VERTICAL_WHEEL_BUTTON_COUNT = 2;
+
 const MOUSE_BUTTON_MASK = 3;
 const ESCAPE_FLUSH_DELAY_MS = 30;
 
@@ -66,7 +68,7 @@ export function createTerminalInput(source: NodeJS.ReadStream, stdout: NodeJS.Wr
 			if (mouse && !pasted) {
 				const button = Number(mouse[1]);
 				// Ignore clicks, releases, motion, and horizontal wheel reports.
-				if (sequence.endsWith('M') && (button & MOUSE_WHEEL_FLAG) !== 0 && (button & MOUSE_BUTTON_MASK) < 2) {
+				if (sequence.endsWith('M') && (button & MOUSE_WHEEL_FLAG) !== 0 && (button & MOUSE_BUTTON_MASK) < VERTICAL_WHEEL_BUTTON_COUNT) {
 					const event: MouseWheelEvent = {direction: (button & 1) === 0 ? 'up' : 'down', x: Number(mouse[2]), y: Number(mouse[3])};
 					for (const listener of listeners) listener(event);
 				}

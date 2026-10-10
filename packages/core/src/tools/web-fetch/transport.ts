@@ -6,7 +6,7 @@ import {classifyContent, decodeText} from './decoding.js';
 import {WebFetchError} from './errors.js';
 import {MAX_REDIRECTS} from './limits.js';
 import {readBody} from './response-body.js';
-import type {WebFormat, WebTransport} from './types.js';
+import type {TransportDocument, WebFormat, WebTransport} from './types.js';
 import {normalizeUrl, validateDestination, type Address, type ResolveHost} from './url-policy.js';
 
 const HTTP_MOVED_PERMANENTLY = 301;
@@ -20,6 +20,12 @@ const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;
 const HTTP_TOO_MANY_REQUESTS = 429;
 const MAX_CONTENT_TYPE_CHARACTERS = 512;
+
+function httpErrorDetail(status: number): string {
+  if (status === HTTP_UNAUTHORIZED || status === HTTP_FORBIDDEN) return 'Authentication or access is required.';
+  if (status === HTTP_TOO_MANY_REQUESTS) return 'The site is rate limited; try again later.';
+  return 'The site returned an unsuccessful response.';
+}
 
 export interface ConnectionResponse {status: number; headers: Record<string, string>; body: Readable}
 export type OpenConnection = (url: URL, addresses: Address[], format: WebFormat, signal: AbortSignal) => Promise<ConnectionResponse>;
@@ -62,25 +68,9 @@ export function createWebTransport(dependencies: {resolve?: ResolveHost; open?: 
         // Also release late responses from an injected connection that ignored cancellation.
         void pending.then(response => { if (signal.aborted) response.body.destroy(); return; }, () => {});
         const response = await abortable(pending, signal);
-        try {
-          if ([HTTP_MOVED_PERMANENTLY, HTTP_FOUND, HTTP_SEE_OTHER, HTTP_TEMPORARY_REDIRECT, HTTP_PERMANENT_REDIRECT].includes(response.status)) {
-            if (redirects >= MAX_REDIRECTS) throw new WebFetchError('http_error', 'The response exceeded five redirects.');
-            const location = response.headers.location;
-            if (!location) throw new WebFetchError('http_error', 'The redirect response has no destination.');
-            url = normalizeUrl(new URL(location, url).href);
-            continue;
-          }
-          if (response.status < HTTP_SUCCESS_START || response.status >= HTTP_SUCCESS_END) {
-            const detail = response.status === HTTP_UNAUTHORIZED || response.status === HTTP_FORBIDDEN ? 'Authentication or access is required.'
-              : response.status === HTTP_TOO_MANY_REQUESTS ? 'The site is rate limited; try again later.' : 'The site returned an unsuccessful response.';
-            throw new WebFetchError('http_error', `HTTP ${response.status}. ${detail}`);
-          }
-          const contentType = response.headers['content-type'] ?? '';
-          if (contentType.length > MAX_CONTENT_TYPE_CHARACTERS) throw new WebFetchError('unsupported_content', 'Invalid response content type.');
-          classifyContent(contentType);
-          const bytes = await readBody(response.body, response.headers, signal);
-          return {requestedUrl, finalUrl: url.href, status: response.status, contentType, text: decodeText(bytes, contentType)};
-        } finally { response.body.destroy(); }
+        const result = await handleResponse(response, {requestedUrl, url, redirects, signal});
+        if ('redirect' in result) url = result.redirect;
+        else return result.document;
       }
     } catch (error) {
       if (signal.aborted) throw signal.reason;
@@ -88,4 +78,25 @@ export function createWebTransport(dependencies: {resolve?: ResolveHost; open?: 
       throw new WebFetchError('network_error', 'The site could not be reached or its response could not be read.');
     }
   }};
+}
+
+async function handleResponse(response: ConnectionResponse, context: {requestedUrl: string; url: URL; redirects: number; signal: AbortSignal}): Promise<{redirect: URL} | {document: TransportDocument}> {
+  const {requestedUrl, url, redirects, signal} = context;
+  try {
+    if ([HTTP_MOVED_PERMANENTLY, HTTP_FOUND, HTTP_SEE_OTHER, HTTP_TEMPORARY_REDIRECT, HTTP_PERMANENT_REDIRECT].includes(response.status)) {
+      if (redirects >= MAX_REDIRECTS) throw new WebFetchError('http_error', 'The response exceeded five redirects.');
+      const location = response.headers.location;
+      if (!location) throw new WebFetchError('http_error', 'The redirect response has no destination.');
+      return {redirect: normalizeUrl(new URL(location, url).href)};
+    }
+    if (response.status < HTTP_SUCCESS_START || response.status >= HTTP_SUCCESS_END) {
+      const detail = httpErrorDetail(response.status);
+      throw new WebFetchError('http_error', `HTTP ${response.status}. ${detail}`);
+    }
+    const contentType = response.headers['content-type'] ?? '';
+    if (contentType.length > MAX_CONTENT_TYPE_CHARACTERS) throw new WebFetchError('unsupported_content', 'Invalid response content type.');
+    classifyContent(contentType);
+    const bytes = await readBody(response.body, response.headers, signal);
+    return {document: {requestedUrl, finalUrl: url.href, status: response.status, contentType, text: decodeText(bytes, contentType)}};
+  } finally { response.body.destroy(); }
 }

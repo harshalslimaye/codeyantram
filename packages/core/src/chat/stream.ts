@@ -16,6 +16,12 @@ import {createNavigationTools, createToolExecutor, createWebFetchTool, type Navi
 const MAX_TOOL_OBJECTIVE_CHARACTERS = 2048;
 const MAX_TOOL_STEPS = 6;
 
+function toolErrorCode(error: unknown): 'tool_not_found' | 'invalid_input' | 'execution_failed' {
+  if (NoSuchToolError.isInstance(error)) return 'tool_not_found';
+  if (InvalidToolInputError.isInstance(error)) return 'invalid_input';
+  return 'execution_failed';
+}
+
 export interface ChatStreamOptions {
   credentials: ProviderCredentials;
   abortSignal?: AbortSignal;
@@ -76,7 +82,7 @@ export async function* streamChat(
       onError: () => {},
     });
 
-    for await (const part of result.fullStream) {
+    for await (const part of result.stream) {
       if (signal.aborted || part.type === 'abort') return;
       if (part.type === 'text-delta') {
         yield {type: 'text-delta', text: part.text};
@@ -90,8 +96,9 @@ export async function* streamChat(
       } else if (part.type === 'tool-error') {
         const error = invalidCalls.get(part.toolCallId) ?? part.error;
         invalidCalls.delete(part.toolCallId);
+        const code = toolErrorCode(error);
         yield {type: 'tool-result', result: {toolCallId: part.toolCallId, toolName: part.toolName, status: 'error', error: {
-          code: NoSuchToolError.isInstance(error) ? 'tool_not_found' : InvalidToolInputError.isInstance(error) ? 'invalid_input' : 'execution_failed',
+          code,
           message: 'The tool call could not be executed. Use an available tool with valid arguments.',
         }}};
       } else if (part.type === 'error') {

@@ -19,8 +19,9 @@ export function decodeText(bytes: Uint8Array, contentType: string): string {
   let decoder: TextDecoder | undefined;
   if (declared !== undefined && declared !== '') { try { decoder = new TextDecoder(declared); } catch { /* Fall back to BOM or UTF-8. */ } }
   if (!decoder) {
-    const encoding = bytes[0] === BOM_BYTE_FF && bytes[1] === BOM_BYTE_FE ? 'utf-16le'
-      : bytes[0] === BOM_BYTE_FE && bytes[1] === BOM_BYTE_FF ? 'utf-16be' : 'utf-8';
+    let encoding = 'utf-8';
+    if (bytes[0] === BOM_BYTE_FF && bytes[1] === BOM_BYTE_FE) encoding = 'utf-16le';
+    else if (bytes[0] === BOM_BYTE_FE && bytes[1] === BOM_BYTE_FF) encoding = 'utf-16be';
     decoder = new TextDecoder(encoding);
   }
   const text = decoder.decode(bytes);

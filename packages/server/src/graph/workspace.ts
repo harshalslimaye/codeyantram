@@ -25,8 +25,14 @@ export class WorkspaceGraphService {
   ) {}
 
   getStatus(): ServerGraphStatus {
+    let lifecycle: ServerGraphStatus['lifecycle'];
+    if (this.closed) lifecycle = 'closed';
+    else if (this.closing) lifecycle = 'closing';
+    else if (this.lease) lifecycle = 'open';
+    else if (this.opening) lifecycle = 'opening';
+    else lifecycle = 'unopened';
     return {
-      lifecycle: this.closed ? 'closed' : this.closing ? 'closing' : this.lease ? 'open' : this.opening ? 'opening' : 'unopened',
+      lifecycle,
       workspaceRoot: this.lease?.coordinator.storage.workspaceRoot ?? this.workspaceRoot,
       graph: this.lease?.coordinator.getStatus() ?? null,
     };

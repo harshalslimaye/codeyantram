@@ -25,7 +25,11 @@ type ConversationBlock = {id: string; start: number; height: number; lines?: Con
 function toolInputSummary(input: ToolInput): string {
 	const reference = input.reference;
 	const filePath = reference !== null && typeof reference === 'object' && !Array.isArray(reference) ? reference.filePath : input.filePath;
-	const target = typeof input.url === 'string' ? input.url : typeof input.query === 'string' ? input.query : typeof filePath === 'string' ? filePath : JSON.stringify(input);
+	let target: string;
+	if (typeof input.url === 'string') target = input.url;
+	else if (typeof input.query === 'string') target = input.query;
+	else if (typeof filePath === 'string') target = filePath;
+	else target = JSON.stringify(input);
 	return [target, typeof input.direction === 'string' ? input.direction : ''].filter(Boolean).join(' · ').slice(0, MAX_TOOL_SUMMARY_CHARACTERS);
 }
 
@@ -92,7 +96,7 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 				start += blockHeight;
 			}
 			if (index < messages.length) {
-				const lines = messageLines[index]!;
+				const lines = messageLines[index];
 				result.push({id: messages[index].id, start, height: lines.length, lines});
 				start += lines.length;
 			}
@@ -127,11 +131,15 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 		<Box ref={viewport} flexGrow={1} flexShrink={1} flexBasis={0} overflowY="hidden" paddingX={1} flexDirection="column">
 			{blocks.map(block => block.lines ? block.lines
 				.slice(Math.max(0, visibleStart - block.start), Math.max(0, visibleEnd - block.start))
-				.map((line, index) => (
-					<Text key={`${block.id}-${index}`} color={line.kind === 'user' ? palette.prompt : line.kind === 'assistant' ? palette.primary : palette.text}>
+				.map((line, index) => {
+					let color: string | undefined;
+					if (line.kind === 'user') color = palette.prompt;
+					else if (line.kind === 'assistant') color = palette.primary;
+					else color = palette.text;
+					return <Text key={`${block.id}-${index}`} color={color}>
 						{line.text || ' '}
-					</Text>
-				)) : (
+					</Text>;
+				}) : (
 				<ScrollBlock key={block.id} id={block.id} start={block.start} height={block.height} visibleStart={visibleStart} visibleEnd={visibleEnd} onMeasure={measureBlock}>
 					{block.status ? <SessionStatus status={block.status.status} /> : <Welcome width={Math.max(1, columns - CONVERSATION_HORIZONTAL_MARGIN)} />}
 				</ScrollBlock>

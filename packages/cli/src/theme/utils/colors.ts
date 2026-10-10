@@ -57,6 +57,8 @@ function xtermColor(index: number): [number, number, number] {
 	return [levels[Math.floor(value / CUBE_RED_STRIDE)], levels[Math.floor(value / CUBE_CHANNEL_LEVELS) % CUBE_CHANNEL_LEVELS], levels[value % CUBE_CHANNEL_LEVELS]];
 }
 
+const COLOR_DISTANCE_EXPONENT = 2;
+
 function nearestAnsiIndex(rgb: readonly number[], depth: typeof BASIC_COLOR_DEPTH | typeof INDEXED_COLOR_DEPTH): number {
 	const candidates = depth === BASIC_COLOR_DEPTH ? ANSI_BASIC_COLOR_COUNT : ANSI_EXTENDED_COLOR_COUNT;
 	let nearestIndex = 0;
@@ -64,7 +66,7 @@ function nearestAnsiIndex(rgb: readonly number[], depth: typeof BASIC_COLOR_DEPT
 
 	for (let index = 0; index < candidates; index++) {
 		const [red, green, blue] = depth === BASIC_COLOR_DEPTH ? ANSI_16_RGB[index] : xtermColor(index);
-		const distance = (rgb[0] - red) ** 2 + (rgb[1] - green) ** 2 + (rgb[2] - blue) ** 2;
+		const distance = (rgb[0] - red) ** COLOR_DISTANCE_EXPONENT + (rgb[1] - green) ** COLOR_DISTANCE_EXPONENT + (rgb[2] - blue) ** COLOR_DISTANCE_EXPONENT;
 		if (distance < nearestDistance) {
 			nearestIndex = index;
 			nearestDistance = distance;

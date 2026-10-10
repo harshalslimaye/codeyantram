@@ -30,23 +30,12 @@ export async function* requestEventStream<TEvent extends StreamEvent>(
 	url: string,
 	request: unknown,
 	signal: AbortSignal,
-	fetchResponse: typeof fetch,
-	contract: StreamContract<TEvent>,
+	options: {fetchResponse: typeof fetch; contract: StreamContract<TEvent>},
 ): AsyncGenerator<TEvent> {
+	const {contract} = options;
 	const {operation, schema} = contract;
 	signal.throwIfAborted();
-	let response: Response;
-	try {
-		response = await fetchResponse(url, {
-			method: 'POST',
-			headers: {'content-type': 'application/json'},
-			body: JSON.stringify(request),
-			signal,
-		});
-	} catch {
-		signal.throwIfAborted();
-		throw new Error(`Could not reach the ${operation} server. Restart the CLI and try again.`);
-	}
+	const response = await postRequest(url, request, signal, options);
 	if (signal.aborted) {
 		await response.body?.cancel().catch(() => {});
 		signal.throwIfAborted();
@@ -62,13 +51,28 @@ export async function* requestEventStream<TEvent extends StreamEvent>(
 		throw new Error(`The ${operation} request failed (HTTP ${response.status}).`);
 	}
 
-	const contentType = response.headers.get('content-type')?.split(';')[0]?.trim();
-	if (contentType !== 'text/event-stream' || !response.body) {
-		await response.body?.cancel();
-		throw new Error(`The ${operation} server did not return an event stream.`);
-	}
+	const body = await eventBody(response, operation);
+	yield* readEvents(body, signal, contract);
+}
 
-	const reader = response.body.getReader();
+async function postRequest<TEvent>(url: string, request: unknown, signal: AbortSignal, options: {fetchResponse: typeof fetch; contract: StreamContract<TEvent>}): Promise<Response> {
+	const {fetchResponse, contract: {operation}} = options;
+	try {
+		return await fetchResponse(url, {
+			method: 'POST',
+			headers: {'content-type': 'application/json'},
+			body: JSON.stringify(request),
+			signal,
+		});
+	} catch {
+		signal.throwIfAborted();
+		throw new Error(`Could not reach the ${operation} server. Restart the CLI and try again.`);
+	}
+}
+
+async function* readEvents<TEvent extends StreamEvent>(body: ReadableStream<Uint8Array>, signal: AbortSignal, contract: StreamContract<TEvent>): AsyncGenerator<TEvent> {
+	const {operation} = contract;
+	const reader = body.getReader();
 	const cancelReader = () => {void reader.cancel().catch(() => {});};
 	signal.addEventListener('abort', cancelReader, {once: true});
 	const decoder = new TextDecoder();
@@ -76,25 +80,12 @@ export async function* requestEventStream<TEvent extends StreamEvent>(
 	try {
 		while (true) {
 			signal.throwIfAborted();
-			let chunk: ReadableStreamReadResult<Uint8Array>;
-			try {
-				chunk = await reader.read();
-			} catch {
-				signal.throwIfAborted();
-				throw new Error(`The ${operation} response was interrupted. Try again.`);
-			}
+			const chunk = await readChunk(reader, signal, operation);
 			signal.throwIfAborted();
 			buffer += decoder.decode(chunk.value, {stream: !chunk.done});
-			let boundary: RegExpExecArray | null;
-			while ((boundary = /\r?\n\r?\n/.exec(buffer)) !== null) {
-				signal.throwIfAborted();
-				const frame = buffer.slice(0, boundary.index);
-				buffer = buffer.slice(boundary.index + boundary[0].length);
-				const event = parseFrame(frame, contract);
-				if (!event) continue;
-				yield event;
-				if (event.type === 'done' || event.type === 'error') return;
-			}
+			const frames = yield* emitFrames(buffer, signal, contract);
+			if (frames.terminal) return;
+			buffer = frames.buffer;
 			if (chunk.done) throw new Error(`The ${operation} response was interrupted. Try again.`);
 		}
 	} finally {
@@ -102,4 +93,51 @@ export async function* requestEventStream<TEvent extends StreamEvent>(
 		await reader.cancel().catch(() => {});
 		reader.releaseLock();
 	}
+}
+
+async function readChunk(reader: ReadableStreamDefaultReader<Uint8Array>, signal: AbortSignal, operation: string) {
+	try {
+		return await reader.read();
+	} catch {
+		signal.throwIfAborted();
+		throw new Error(`The ${operation} response was interrupted. Try again.`);
+	}
+}
+
+function isTerminal(event: StreamEvent): boolean {
+	return event.type === 'done' || event.type === 'error';
+}
+
+function* parseEvents<TEvent extends StreamEvent>(input: string, signal: AbortSignal, contract: StreamContract<TEvent>): Generator<TEvent, string> {
+	let buffer = input;
+	let boundary: RegExpExecArray | null;
+	while ((boundary = /\r?\n\r?\n/.exec(buffer)) !== null) {
+		signal.throwIfAborted();
+		const frame = buffer.slice(0, boundary.index);
+		buffer = buffer.slice(boundary.index + boundary[0].length);
+		const event = parseFrame(frame, contract);
+		if (event !== undefined) yield event;
+	}
+	return buffer;
+}
+
+async function eventBody(response: Response, operation: string): Promise<ReadableStream<Uint8Array>> {
+	const contentType = response.headers.get('content-type')?.split(';')[0]?.trim();
+	if (contentType !== 'text/event-stream' || !response.body) {
+		await response.body?.cancel();
+		throw new Error(`The ${operation} server did not return an event stream.`);
+	}
+
+	return response.body;
+}
+
+function* emitFrames<TEvent extends StreamEvent>(buffer: string, signal: AbortSignal, contract: StreamContract<TEvent>): Generator<TEvent, {terminal: boolean; buffer: string}> {
+	const frames = parseEvents(buffer, signal, contract);
+	let frame = frames.next();
+	while (frame.done !== true) {
+		yield frame.value;
+		if (isTerminal(frame.value)) return {terminal: true, buffer: ''};
+		frame = frames.next();
+	}
+	return {terminal: false, buffer: frame.value};
 }

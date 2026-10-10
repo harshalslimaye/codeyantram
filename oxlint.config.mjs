@@ -1,6 +1,8 @@
 import {fileURLToPath} from 'node:url';
 import {defineConfig} from 'oxlint';
 
+const workspaceRoot = fileURLToPath(new URL('.', import.meta.url)).replaceAll('\\', '/');
+
 const MAX_FILE_LINES = 300;
 const MAX_FUNCTION_LINES = 50;
 const MAX_COMPLEXITY = 10;
@@ -75,7 +77,13 @@ const config = {
     "no-cond-assign": "error",
     "no-shadow": "error",
     "no-param-reassign": "error",
-    "no-magic-numbers": "error",
+    "no-magic-numbers": [
+      "error",
+      {
+        "ignore": [-1, 0, 1],
+        "ignoreArrayIndexes": true
+      }
+    ],
     "no-nested-ternary": "error",
     "no-eval": "error",
     "no-new-func": "error",
@@ -117,7 +125,16 @@ const config = {
     "import/no-cycle": "error",
     "import/no-duplicates": "error",
     "import/no-self-import": "error",
-    "import-js/no-internal-modules": "error",
+    "import-js/no-internal-modules": [
+      "error",
+      {
+        "allow": [
+          `${workspaceRoot}packages/*/src/**`,
+          `${workspaceRoot}packages/*/evaluations/**`,
+          `${workspaceRoot}scripts/**`
+        ]
+      }
+    ],
     "import-js/no-restricted-paths": "error",
     "import-js/no-extraneous-dependencies": [
       "error",

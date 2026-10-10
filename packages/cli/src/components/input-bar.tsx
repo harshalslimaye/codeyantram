@@ -163,6 +163,13 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 
 	}, {isActive: isEditing || isBusy});
 
+	let spinnerLabel = 'Generating · Esc to cancel';
+	if (isBusy) {
+		if (isSavingJev) spinnerLabel = 'Saving JEV preference…';
+		else if (operation === 'init') spinnerLabel = 'Initializing graph · Esc to cancel';
+		else if (operation === 'compact') spinnerLabel = 'Compacting conversation · Esc to cancel';
+	}
+
 	return (
 		<Box flexDirection="column" width="100%">
 			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} />}
@@ -172,7 +179,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 			)}
 			{!isBusy && (owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
 			<Box flexDirection="column">
-				{isBusy ? <Spinner label={isSavingJev ? 'Saving JEV preference…' : operation === 'init' ? 'Initializing graph · Esc to cancel' : operation === 'compact' ? 'Compacting conversation · Esc to cancel' : 'Generating · Esc to cancel'} />
+				{isBusy ? <Spinner label={spinnerLabel} />
 				: <Text color={palette.muted}>Enter to send · Mouse/trackpad scroll history · /help commands</Text>}
 				{showHelp && !isBusy && <Help />}
 				{(notice !== undefined && notice !== '') && <StatusMessage variant={noticeTone}>{notice}</StatusMessage>}

@@ -14,8 +14,9 @@ export async function* requestChat(
 	signal: AbortSignal,
 	fetchResponse: typeof fetch = fetch,
 ): AsyncGenerator<ChatStreamEvent> {
-	yield* requestEventStream(url, request, signal, fetchResponse, {
-		schema: chatStreamEventSchema, operation: 'chat',
+	yield* requestEventStream(url, request, signal, {
+		fetchResponse,
+		contract: {schema: chatStreamEventSchema, operation: 'chat'},
 	});
 }
 
@@ -26,7 +27,8 @@ export async function* requestCompact(
 	signal: AbortSignal,
 	fetchResponse: typeof fetch = fetch,
 ): AsyncGenerator<CompactStreamEvent> {
-	yield* requestEventStream(url, request, signal, fetchResponse, {
-		schema: compactStreamEventSchema, operation: 'compaction',
+	yield* requestEventStream(url, request, signal, {
+		fetchResponse,
+		contract: {schema: compactStreamEventSchema, operation: 'compaction'},
 	});
 }

@@ -14,7 +14,10 @@ const MIN_TABLE_CELL_WIDTH = 5;
 export function createMarkdownRenderer(columns: number, palette: InkThemePalette): (source: string) => string[] {
 	const width = Math.max(1, columns);
 	const colors = Object.values(palette).filter((color): color is string => color !== undefined);
-	const chalk = new Chalk({level: colors.some(color => color.startsWith('#')) ? TRUE_COLOR_LEVEL : colors.length ? INDEXED_COLOR_LEVEL : 0});
+	let level: 0 | typeof TRUE_COLOR_LEVEL | typeof INDEXED_COLOR_LEVEL = 0;
+	if (colors.some(color => color.startsWith('#'))) level = TRUE_COLOR_LEVEL;
+	else if (colors.length) level = INDEXED_COLOR_LEVEL;
+	const chalk = new Chalk({level});
 	const style = (color: string | undefined): ChalkInstance => {
 		if (color === undefined || color === '') return chalk;
 		const indexed = /^ansi256\((\d+)\)$/.exec(color);
