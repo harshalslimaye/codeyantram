@@ -1,3 +1,4 @@
+import {asymmetric} from '../../../../shared/tests/helpers.js';
 import {describe, expect, it} from 'vitest';
 import {validateTheme, isThemeRole} from '../../../src/theme/registry/schema.js';
 import {THEME_ROLES} from '../../../src/theme/registry/types.js';
@@ -25,29 +26,29 @@ describe('custom theme validation', () => {
 		{dark: 'missing', light: 'none'}, {dark: 'none', light: 'missing'}])('rejects an invalid role color: %j', primary => {
 		const result = validateTheme({...konkanTheme, colors: {...konkanTheme.colors, primary}});
 		expect(result.success).toBe(false);
-		expect(result.errors).toEqual([expect.stringContaining('colors.primary')]);
+		expect(result.errors).toEqual([asymmetric.stringContaining('colors.primary')]);
 	});
 
 	it.each([undefined, 42, '', 'UPPERCASE', '-leading', 'has space'])('rejects an invalid identifier: %j', id => {
-		expect(validateTheme({...konkanTheme, id}).errors).toEqual([expect.stringContaining('"id"')]);
+		expect(validateTheme({...konkanTheme, id}).errors).toEqual([asymmetric.stringContaining('"id"')]);
 	});
 
 	it.each([undefined, 42, '', '   '])('rejects an invalid name: %j', name => {
-		expect(validateTheme({...konkanTheme, name}).errors).toEqual([expect.stringContaining('"name"')]);
+		expect(validateTheme({...konkanTheme, name}).errors).toEqual([asymmetric.stringContaining('"name"')]);
 	});
 
 	it.each([null, [], 'bad'])('rejects malformed definitions: %j', defs => {
-		expect(validateTheme({...konkanTheme, defs}).errors).toEqual([expect.stringContaining('"defs"')]);
+		expect(validateTheme({...konkanTheme, defs}).errors).toEqual([asymmetric.stringContaining('"defs"')]);
 	});
 
 	it('reports invalid definition names and values together', () => {
 		const result = validateTheme({...konkanTheme, defs: {'1bad': 'none', valid: '#fff', valid_two: 255, validThree: 'none'}});
 		expect(result.success).toBe(false);
-		expect(result.errors).toEqual([expect.stringContaining('1bad'), expect.stringContaining('defs.valid')]);
+		expect(result.errors).toEqual([asymmetric.stringContaining('1bad'), asymmetric.stringContaining('defs.valid')]);
 	});
 
 	it.each([undefined, null, [], 'bad'])('rejects a malformed palette: %j', colors => {
-		expect(validateTheme({...konkanTheme, colors}).errors).toEqual([expect.stringContaining('"colors"')]);
+		expect(validateTheme({...konkanTheme, colors}).errors).toEqual([asymmetric.stringContaining('"colors"')]);
 	});
 
 	it('reports unknown fields, unknown roles, and missing roles', () => {

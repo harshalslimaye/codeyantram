@@ -1,10 +1,11 @@
+import {requireValue, requestBody, parseJson, type ProviderRequest} from '../../../shared/tests/helpers.js';
 import {describe, expect, it, vi} from 'vitest';
 import {streamChat, type NavigationGraphService} from '../../src/index.js';
 import {chatStreamEventSchema, type ChatStreamEvent} from '@codeyantram/shared';
 import {sseResponse, openaiEvents, openaiToolEvents, anthropicEvents, anthropicToolEvents, googleEvents} from './fixtures.js';
 function service() {
-  return {query: vi.fn().mockResolvedValue({value: {symbols: ['greet'], coverage: 'indexed scope'}, freshness: {epoch: 'e', revision: 1, reconciledAt: 1}}),
-    getStatus: vi.fn().mockReturnValue({lifecycle: 'unopened', graph: null})} as unknown as NavigationGraphService;
+  return {query: vi.fn<NavigationGraphService["query"]>().mockResolvedValue({value: {symbols: ['greet'], coverage: 'indexed scope'}, freshness: {epoch: 'e', revision: 1, reconciledAt: 1}}),
+    getStatus: vi.fn<NavigationGraphService["getStatus"]>().mockReturnValue({lifecycle: 'unopened', graph: null})} as unknown as NavigationGraphService;
 }
 async function collect(stream: AsyncIterable<ChatStreamEvent>) {
   const events = []; for await (const event of stream) events.push(chatStreamEventSchema.parse(event)); return events;
@@ -26,9 +27,8 @@ describe('provider navigation loop', () => {
     expect(events[2]).toMatchObject({type: 'tool-result', result: {status: 'success'}});
     expect(events.at(-1)).toMatchObject({usage: {inputTokens: 15, outputTokens: 6}});
     expect(fetch).toHaveBeenCalledTimes(2);
-    const second = JSON.parse(String(fetch.mock.calls[1][1]?.body));
-    const call = events.find(event => event.type === 'tool-call')!;
-    if (call.type !== 'tool-call') throw new Error('Expected a call');
+    const second = parseJson<ProviderRequest>(requestBody(fetch.mock.calls[1][1]?.body));
+    const call = requireValue(events.find(event => event.type === 'tool-call'));
     expect(JSON.stringify(second)).toContain(call.call.toolCallId);
     if (provider === 'google') expect(call.call.providerOptions).toMatchObject({google: {thoughtSignature: 'fixture-signature'}});
     expect(JSON.stringify(second)).toContain('success');
@@ -61,11 +61,12 @@ describe('provider navigation loop', () => {
     let entered!: () => void;
     const queryStarted = new Promise<void>(resolve => {entered = resolve;});
     const workspaceGraph = service();
-    workspaceGraph.query = vi.fn().mockImplementation(async (_read, options) => {
-      querySignal = options.signal; entered();
-      await new Promise<void>(resolve => querySignal!.addEventListener('abort', () => resolve(), {once: true}));
+    const query = vi.fn<NavigationGraphService["query"]>().mockImplementation(async (_read, options) => {
+      querySignal = options?.signal; entered();
+      await new Promise<void>(resolve => requireValue(querySignal).addEventListener('abort', () => resolve(), {once: true}));
       throw new DOMException('Cancelled', 'AbortError');
     });
+    workspaceGraph.query = async (read, options) => {await query(read, options); throw new Error('The cancelled query must reject.');};
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(sseResponse(openaiToolEvents()));
     const completed = collect(streamChat({model: 'gpt-6.1-sol', messages}, {credentials: {openai: 'test'}, fetch, workspaceGraph, abortSignal: controller.signal}));
     await queryStarted; controller.abort();

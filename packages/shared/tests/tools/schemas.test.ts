@@ -1,3 +1,4 @@
+import {parseJson} from '../helpers.js';
 import {describe, expect, it} from 'vitest';
 import {
   chatRequestSchema,
@@ -126,7 +127,7 @@ describe('tool message parts and stream events', () => {
   ];
 
   it('round-trips complete calls/results through JSON as both events and stored parts', () => {
-    const wire = JSON.parse(JSON.stringify(events));
+    const wire = parseJson<typeof events>(JSON.stringify(events));
     expect(wire.map((event: unknown) => toolStreamEventSchema.parse(event))).toEqual(events);
     expect(wire.map((event: unknown) => toolMessagePartSchema.parse(event))).toEqual(events);
     expect(events[0]).toMatchObject({call: {toolCallId: 'call-1'}});

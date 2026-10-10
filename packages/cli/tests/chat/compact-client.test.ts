@@ -1,3 +1,4 @@
+import {requireValue} from '../../../shared/tests/helpers.js';
 import {describe, expect, it, vi} from 'vitest';
 import type {CompactRequest, CompactStreamEvent} from '@codeyantram/shared';
 import {requestCompact} from '../../src/chat/client.js';
@@ -69,7 +70,7 @@ describe('compaction streaming client', () => {
 
 	it.each(['done', 'error'] as const)('closes the reader after %s without waiting for EOF', async type => {
 		const event = type === 'done' ? done : {type: 'error', code: 'compaction_failed', message: 'Unusable summary.'};
-		const cancel = vi.fn();
+		const cancel = vi.fn<() => Promise<void> | void>();
 		const response = new Response(new ReadableStream({
 			start(controller) {controller.enqueue(new TextEncoder().encode(frame(event) + frame(start)));}, cancel,
 		}), {headers: {'content-type': 'text/event-stream'}});
@@ -122,7 +123,7 @@ describe('compaction streaming client', () => {
 
 	it('cancels a pending reader even when an injected fetch does not observe the signal', async () => {
 		const controller = new AbortController();
-		const cancel = vi.fn();
+		const cancel = vi.fn<() => Promise<void> | void>();
 		const response = new Response(new ReadableStream({
 			start(stream) {stream.enqueue(new TextEncoder().encode(frame(start)));}, cancel,
 		}), {headers: {'content-type': 'text/event-stream'}});
@@ -133,7 +134,7 @@ describe('compaction streaming client', () => {
 		controller.abort();
 		await expect(pending).rejects.toMatchObject({name: 'AbortError'});
 		expect(cancel).toHaveBeenCalledOnce();
-		expect(response.body!.locked).toBe(false);
+		expect(requireValue(response.body).locked).toBe(false);
 	});
 
 	it('reports a failed reader as an interrupted response', async () => {
@@ -146,13 +147,13 @@ describe('compaction streaming client', () => {
 	});
 
 	it('cancels the reader when its consumer stops after start', async () => {
-		const cancel = vi.fn();
+		const cancel = vi.fn<() => Promise<void> | void>();
 		const response = new Response(new ReadableStream({
 			start(stream) {stream.enqueue(new TextEncoder().encode(frame(start)));}, cancel,
 		}), {headers: {'content-type': 'text/event-stream'}});
 		const fetchResponse = vi.fn<typeof fetch>().mockResolvedValue(response);
 		for await (const _event of requestCompact('http://localhost/compact', request, signal(), fetchResponse)) break;
 		expect(cancel).toHaveBeenCalledOnce();
-		expect(response.body!.locked).toBe(false);
+		expect(requireValue(response.body).locked).toBe(false);
 	});
 });

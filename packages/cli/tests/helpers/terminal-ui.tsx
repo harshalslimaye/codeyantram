@@ -13,6 +13,7 @@ export function renderTerminal(node: ReactNode) {
 	const input = createTerminalInput(stdin as unknown as NodeJS.ReadStream, stdout as unknown as NodeJS.WriteStream);
 	let frame = '';
 	stdout.on('data', chunk => {
+		// oxlint-disable-next-line no-control-regex -- Strip terminal escape sequences from rendered output.
 		const text = String(chunk).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '');
 		if (text.trim()) frame = text;
 	});

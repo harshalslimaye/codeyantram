@@ -1,24 +1,32 @@
+import {requireValue} from '../../../shared/tests/helpers.js';
+import type * as ServerModule from '@codeyantram/server';
 import {EventEmitter} from 'node:events';
 import {describe, expect, it, vi} from 'vitest';
 import {createServer} from 'node:http';
 import {startChatServer} from '../../src/chat/server.js';
 import {createApp} from '@codeyantram/server';
 
-vi.mock('node:http', () => ({createServer: vi.fn()}));
+vi.mock('node:http', () => ({createServer: vi.fn<typeof createServer>()}));
 vi.mock('@codeyantram/server', async importOriginal => ({
-	...await importOriginal<typeof import('@codeyantram/server')>(), createApp: vi.fn(),
+	...await importOriginal<typeof ServerModule>(), createApp: vi.fn<typeof createApp>(),
 }));
 
 function fakeServer(address: unknown) {
-	vi.mocked(createApp).mockReturnValue({close: vi.fn().mockResolvedValue(undefined), workspaceGraph: {}} as unknown as ReturnType<typeof createApp>);
+	vi.mocked(createApp).mockReturnValue({close: vi.fn<(callback: (error?: Error) => void) => void>().mockResolvedValue(undefined), workspaceGraph: {}} as unknown as ReturnType<typeof createApp>);
 	const server = Object.assign(new EventEmitter(), {
-		listen: vi.fn(() => {queueMicrotask(() => server.emit('listening'));}),
-		address: vi.fn(() => address),
-		close: vi.fn((callback: (error?: Error) => void) => callback()),
-		closeAllConnections: vi.fn(),
+		listen: vi.fn<(port: number, host: string) => void>(() => {queueMicrotask(() => server.emit('listening'));}),
+		address: vi.fn<() => unknown>(() => address),
+		close: vi.fn<(callback: (error?: Error) => void) => void>((callback: (error?: Error) => void) => callback()),
+		closeAllConnections: vi.fn<() => void>(),
 	});
 	vi.mocked(createServer).mockReturnValue(server as unknown as ReturnType<typeof createServer>);
 	return server;
+}
+
+function appMock() {
+  const result = requireValue(vi.mocked(createApp).mock.results[0]);
+  if (result.type !== 'return') throw new Error('Expected createApp to return.');
+  return result.value;
 }
 
 describe('private server lifecycle failures', () => {
@@ -27,14 +35,14 @@ describe('private server lifecycle failures', () => {
 		const running = await startChatServer({workspaceRoot: '/selected/project'});
 		expect(createApp).toHaveBeenCalledExactlyOnceWith({workspaceRoot: '/selected/project'});
 		await running.close();
-		expect(vi.mocked(createApp).mock.results[0].value.close).toHaveBeenCalledOnce();
+		expect(appMock().close).toHaveBeenCalledOnce();
 	});
 
 	it.each([null, '/tmp/socket'])('rejects a non-TCP listening address: %j', async address => {
 		const server = fakeServer(address);
 		await expect(startChatServer()).rejects.toThrow('The chat server did not open a TCP port.');
 		expect(server.close).toHaveBeenCalledOnce();
-		expect(vi.mocked(createApp).mock.results[0].value.close).toHaveBeenCalledOnce();
+		expect(appMock().close).toHaveBeenCalledOnce();
 	});
 
 	it('reports close errors and still closes outstanding connections', async () => {
@@ -44,7 +52,7 @@ describe('private server lifecycle failures', () => {
 		expect(server.listen).toHaveBeenCalledWith(0, '127.0.0.1');
 		await expect(running.close()).rejects.toThrow('close failed');
 		expect(server.closeAllConnections).toHaveBeenCalledOnce();
-		expect(vi.mocked(createApp).mock.results[0].value.close).toHaveBeenCalledOnce();
+		expect(appMock().close).toHaveBeenCalledOnce();
 	});
 
 	it('cleans up a listen failure before returning it to the CLI', async () => {
@@ -53,6 +61,6 @@ describe('private server lifecycle failures', () => {
 		await expect(startChatServer()).rejects.toThrow('listen failed');
 		expect(server.close).toHaveBeenCalledOnce();
 		expect(server.closeAllConnections).toHaveBeenCalledOnce();
-		expect(vi.mocked(createApp).mock.results[0].value.close).toHaveBeenCalledOnce();
+		expect(appMock().close).toHaveBeenCalledOnce();
 	});
 });

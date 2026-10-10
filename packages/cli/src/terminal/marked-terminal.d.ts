@@ -1,4 +1,5 @@
 declare module 'marked-terminal' {
+	import type {MarkedExtension} from 'marked';
 	type Style = (text: string) => string;
 	interface TerminalOptions {
 		code?: Style;
@@ -30,5 +31,5 @@ declare module 'marked-terminal' {
 	}
 	export function markedTerminal(options?: TerminalOptions, highlightOptions?: {
 		theme?: Record<string, Style>;
-	}): import('marked').MarkedExtension;
+	}): MarkedExtension;
 }

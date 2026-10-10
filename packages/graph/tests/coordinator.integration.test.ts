@@ -1,3 +1,5 @@
+import {requireValue} from '../../shared/tests/helpers.js';
+import type * as SharedModule from '@codeyantram/shared';
 import {mkdtemp, mkdir, readdir, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -6,14 +8,14 @@ import {getUserGraphDirectory} from '@codeyantram/shared';
 import {WorkspaceGraphRegistry, type GraphCoordinatorLease} from '../src/index.js';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
-  ...await importOriginal<typeof import('@codeyantram/shared')>(), getUserGraphDirectory: vi.fn(),
+  ...await importOriginal<typeof SharedModule>(), getUserGraphDirectory: vi.fn<typeof getUserGraphDirectory>(),
 }));
 
 let directory: string | undefined;
 let lease: GraphCoordinatorLease | undefined;
 afterEach(async () => {
   await lease?.release(); lease = undefined;
-  if (directory) await rm(directory, {recursive: true, force: true}); directory = undefined;
+  if (directory !== undefined) await rm(directory, {recursive: true, force: true}); directory = undefined;
 });
 
 describe('coordinator with the installed CodeGraph SDK', () => {
@@ -31,7 +33,7 @@ describe('coordinator with the installed CodeGraph SDK', () => {
     lease = await registry.acquire(workspace);
     const coordinator = lease.coordinator;
     const initial = await coordinator.query(reader => {
-      const symbol = reader.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+      const symbol = requireValue(reader.search('greet').find(result => result.symbol.name === 'greet')).symbol;
       return {symbol, callers: reader.getCallers(symbol.id), ignored: reader.search('ignoredSymbol')};
     });
     expect(initial.value.callers.map(relation => relation.symbol.name)).toContain('welcome');
@@ -43,7 +45,7 @@ describe('coordinator with the installed CodeGraph SDK', () => {
     await writeFile(path.join(workspace, 'helper.ts'), 'export function salute() { return "manual edit"; }\n');
     await writeFile(path.join(workspace, 'main.ts'), 'import {salute} from "./helper";\nexport function welcome() { return salute(); }\n');
     const updated = await coordinator.query(async reader => {
-      const symbol = reader.search('salute').find(result => result.symbol.name === 'salute')!.symbol;
+      const symbol = requireValue(reader.search('salute').find(result => result.symbol.name === 'salute')).symbol;
       return {old: reader.getSymbol(initial.value.symbol.id), source: await reader.getSource(symbol.id), callers: reader.getCallers(symbol.id)};
     });
     expect(updated.value.old).toBeNull();
@@ -71,7 +73,7 @@ describe('coordinator with the installed CodeGraph SDK', () => {
     await expect(stat(path.join(workspace, 'codegraph.json'))).rejects.toMatchObject({code: 'ENOENT'});
     await expect(stat(path.join(workspace, '.codegraph'))).rejects.toMatchObject({code: 'ENOENT'});
 
-    const epoch = coordinator.getStatus().freshness!.epoch;
+    const epoch = requireValue(coordinator.getStatus().freshness).epoch;
     await lease.release();
     await writeFile(path.join(workspace, 'late.ts'), 'export function offlineSymbol() {}\n');
     lease = await registry.acquire(workspace);

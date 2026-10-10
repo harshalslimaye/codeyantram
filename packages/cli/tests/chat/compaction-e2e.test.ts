@@ -1,3 +1,4 @@
+import {requireValue, requestBody, requestUrl, parseJson, type ProviderRequest} from '../../../shared/tests/helpers.js';
 import {requireTextPart} from '../helpers/message-parts.js';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {compactChat, streamChat} from '@codeyantram/core';
@@ -14,11 +15,11 @@ afterEach(async () => {await Promise.all(servers.splice(0).map(server => server.
 
 // Use the actual SDK adapters, replacing only outbound HTTP. Adjacent user
 // blocks may be merged by Anthropic; compare ordered text blocks, not messages.
-function wireText(body: Record<string, any>): string[] {
-  if (body.input) return body.input.filter((message: any) => !['system', 'developer'].includes(message.role)).flatMap((message: any) =>
-    typeof message.content === 'string' ? [message.content] : message.content.map((part: any) => part.text));
-  if (body.messages) return body.messages.flatMap((message: any) => message.content.map((part: any) => part.text));
-  return body.contents.flatMap((message: any) => message.parts.map((part: any) => part.text));
+function wireText(body: ProviderRequest): string[] {
+  if (body.input !== undefined) return requireValue(body.input).filter(message => !['system', 'developer'].includes(message.role)).flatMap(message =>
+    typeof message.content === 'string' ? [message.content] : message.content.map(part => part.text));
+  if (body.messages !== undefined) return requireValue(body.messages).flatMap(message => message.content.map(part => part.text));
+  return requireValue(body.contents).flatMap(message => message.parts.map(part => part.text));
 }
 
 describe('compaction end-to-end regressions', () => {
@@ -28,27 +29,30 @@ describe('compaction end-to-end regressions', () => {
     ['gemini-3.8-flash', 'gpt-6.1-sol'],
   ])('preserves context across compaction, provider switching, refresh and rollback (%s → %s)', async (model, nextModel) => {
     const compactRequests: CompactRequest[] = [];
-    const providerBodies: Record<string, any>[] = [];
+    const providerBodies: ProviderRequest[] = [];
     let summaryIndex = 0;
     let failedRefresh = false;
     const providerFetch = vi.fn<typeof fetch>().mockImplementation(async (url, init) => {
-      const body = JSON.parse(String(init?.body));
+      const body = parseJson<ProviderRequest>(requestBody(init?.body));
       providerBodies.push(body);
-      const google = String(url).includes('generativelanguage.googleapis.com');
-      const providerModel = google ? 'gemini-3.8-flash' : body.model;
-      if (!body.stream && !String(url).includes(':streamGenerateContent')) {
+      const google = requestUrl(url).includes('generativelanguage.googleapis.com');
+      const providerModel = google ? 'gemini-3.8-flash' : requireValue(body.model);
+      if (body.stream !== true && !requestUrl(url).includes(':streamGenerateContent')) {
         const text = summaryIndex++ === 0 ? compactionScenario.summary : compactionScenario.refreshedSummary;
         return summaryResponse(providerModel, text, failedRefresh ? 'length' : 'stop');
       }
       const base = google ? googleEvents : providerModel.startsWith('claude-') ? anthropicEvents : openaiEvents;
-      const text = compactionScenario.turns[chatCalls]?.assistant ?? 'Continue from the retained context.';
+      const text = compactionScenario.turns.at(chatCalls)?.assistant ?? 'Continue from the retained context.';
       chatCalls++;
-      const events = structuredClone(base).filter((event: any) =>
-        event.type !== 'response.output_text.delta' || event.delta === 'Hello');
-      for (const event of events as any[]) {
-        if (event.type === 'response.output_text.delta') event.delta = text;
-        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') event.delta.text = event.delta.text === 'Hello' ? text : '';
-        if (event.candidates) event.candidates[0].content.parts[0].text = event.candidates[0].content.parts[0].text === 'Hello' ? text : '';
+      const events = structuredClone(base).filter(event =>
+        !('type' in event) || event.type !== 'response.output_text.delta' || ('delta' in event && event.delta === 'Hello'));
+      for (const event of events) {
+        if ('type' in event && event.type === 'response.output_text.delta' && 'delta' in event) event.delta = text;
+        if ('type' in event && event.type === 'content_block_delta' && 'delta' in event && typeof event.delta === 'object' && event.delta.type === 'text_delta') event.delta.text = event.delta.text === 'Hello' ? text : '';
+        if ('candidates' in event) {
+          const part = requireValue(event.candidates[0]?.content.parts[0]);
+          part.text = part.text === 'Hello' ? text : '';
+        }
       }
       return sseResponse(events);
     });
@@ -84,7 +88,7 @@ describe('compaction end-to-end regressions', () => {
     for (const item of compactionEvaluationChecklist) {
       for (const literal of item.literals) expect(session.getSnapshot().compaction?.summary, item.criterion).toContain(literal);
     }
-    expect(compactRequests[0]!.messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(
+    expect(requireValue(compactRequests[0]).messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(
       transcript.slice(0, 4).map(message => message.parts.map(requireTextPart)[0]?.text),
     );
     expect(await session.compact(model)).toEqual({type: 'noop', reason: 'no-eligible-messages'});
@@ -92,7 +96,7 @@ describe('compaction end-to-end regressions', () => {
 
     await session.send('Continue reviewing ordering; deployment remains prohibited.', nextModel, 'high');
     expect(session.getSnapshot().error).toBeUndefined();
-    expect(wireText(providerBodies.at(-1)!)).toEqual([
+    expect(wireText(requireValue(providerBodies.at(-1)))).toEqual([
       formatContextSummary(compactionScenario.summary),
       ...transcript.slice(4).flatMap(message => message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part))),
       'Continue reviewing ordering; deployment remains prohibited.',
@@ -121,13 +125,13 @@ describe('compaction end-to-end regressions', () => {
     expect(session.getSnapshot().messages).toBe(previous.messages);
     await session.send('Continue using the last good summary.', model);
     expect(session.getSnapshot().error).toBeUndefined();
-    expect(wireText(providerBodies.at(-1)!)).toEqual([
+    expect(wireText(requireValue(providerBodies.at(-1)))).toEqual([
       formatContextSummary(compactionScenario.refreshedSummary),
       ...previous.messages.slice(6).flatMap(message => message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part))),
       'Continue using the last good summary.',
     ]);
     session.clear();
     await session.send('New session.', model);
-    expect(wireText(providerBodies.at(-1)!)).toEqual(['New session.']);
+    expect(wireText(requireValue(providerBodies.at(-1)))).toEqual(['New session.']);
   });
 });

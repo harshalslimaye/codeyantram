@@ -16,7 +16,7 @@ afterEach(async () => {
   await rm(directory, {recursive: true, force: true});
 });
 function backend(workspaceRoot: string) {
-  return {storage: {workspaceRoot}, close: vi.fn().mockResolvedValue(undefined)} as unknown as CoordinatedGraph;
+  return {storage: {workspaceRoot}, close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined)} as unknown as CoordinatedGraph;
 }
 async function acquire(registry: WorkspaceGraphRegistry, workspace = root) {
   const lease = await registry.acquire(workspace); leases.push(lease); return lease;
@@ -26,7 +26,7 @@ describe('graph coordinator leases', () => {
   it('shares one coordinator for concurrent acquisitions and symlink aliases, closing only on last release', async () => {
     const alias = path.join(directory, 'alias'); await symlink(root, alias, process.platform === 'win32' ? 'junction' : 'dir');
     const graph = backend(await realpath(root));
-    const open = vi.fn().mockResolvedValue(graph);
+    const open = vi.fn<(root: string) => Promise<CoordinatedGraph>>().mockResolvedValue(graph);
     const registry = new WorkspaceGraphRegistry(open);
     const [first, second] = await Promise.all([acquire(registry), acquire(registry, alias)]);
     expect(first.coordinator).toBe(second.coordinator);
@@ -43,7 +43,7 @@ describe('graph coordinator leases', () => {
 
   it('keeps separate workspaces independent', async () => {
     const other = path.join(directory, 'other'); await mkdir(other);
-    const open = vi.fn(async (root: string) => backend(root));
+    const open = vi.fn<(root: string) => Promise<CoordinatedGraph>>(async (workspaceRoot: string) => backend(workspaceRoot));
     const registry = new WorkspaceGraphRegistry(open);
     const [first, second] = await Promise.all([acquire(registry), acquire(registry, other)]);
     expect(first.coordinator).not.toBe(second.coordinator);
@@ -51,7 +51,7 @@ describe('graph coordinator leases', () => {
   });
 
   it('allows a new attempt after opening fails', async () => {
-    const open = vi.fn().mockRejectedValueOnce(new Error('locked')).mockResolvedValue(backend(root));
+    const open = vi.fn<(root: string) => Promise<CoordinatedGraph>>().mockRejectedValueOnce(new Error('locked')).mockResolvedValue(backend(root));
     const registry = new WorkspaceGraphRegistry(open);
     await expect(acquire(registry)).rejects.toThrow('locked');
     await acquire(registry);
@@ -62,7 +62,7 @@ describe('graph coordinator leases', () => {
     let finish!: () => void;
     const graph = backend(root);
     vi.mocked(graph.close).mockReturnValueOnce(new Promise<void>(resolve => {finish = resolve;}));
-    const open = vi.fn().mockResolvedValue(graph);
+    const open = vi.fn<(root: string) => Promise<CoordinatedGraph>>().mockResolvedValue(graph);
     const registry = new WorkspaceGraphRegistry(open);
     const first = await acquire(registry);
     const closing = first.release();

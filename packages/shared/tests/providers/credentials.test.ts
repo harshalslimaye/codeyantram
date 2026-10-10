@@ -1,3 +1,4 @@
+import type {readConfig as ReadConfigFunction} from '@codeyantram/shared';
 import {describe, expect, it, vi} from 'vitest';
 import {readProviderCredentials} from '../../src/providers/helpers/index.js';
 
@@ -26,7 +27,7 @@ describe('readProviderCredentials', () => {
   });
 
   it('does not read configuration for an unsupported model', async () => {
-    const readConfig = vi.fn(async () => ({}));
+    const readConfig = vi.fn<typeof ReadConfigFunction>(async () => ({}));
     expect(await readProviderCredentials('unsupported', readConfig)).toEqual({});
     expect(readConfig).not.toHaveBeenCalled();
   });

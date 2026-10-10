@@ -7,7 +7,7 @@ import {getUserConfigPath} from '../../src/filesystem/paths.js';
 import {readConfiguredProviders, readProviderCredentials, saveProviderApiKey} from '../../src/providers/helpers/index.js';
 import type {SupportedProvider} from '../../src/providers/config/index.js';
 
-vi.mock('../../src/filesystem/paths.js', () => ({getUserConfigPath: vi.fn()}));
+vi.mock('../../src/filesystem/paths.js', () => ({getUserConfigPath: vi.fn<typeof getUserConfigPath>()}));
 
 let directory: string;
 

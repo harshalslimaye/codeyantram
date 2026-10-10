@@ -71,7 +71,7 @@ describe('session graph initialization', () => {
     const init = vi.fn<InitTransport>();
     const session = new ChatSession(chat(), undefined, init);
     session.subscribe(() => {
-      if (session.getSnapshot().operation === 'init' && !session.getSnapshot().notice?.startsWith('Cancelling')) session.cancel();
+      if (session.getSnapshot().operation === 'init' && session.getSnapshot().notice?.startsWith('Cancelling') !== true) session.cancel();
     });
     await session.initialize();
     expect(init).not.toHaveBeenCalled();

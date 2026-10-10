@@ -1,3 +1,4 @@
+import {asymmetric} from '../../../../shared/tests/helpers.js';
 import {describe, expect, it} from 'vitest';
 import {convertContent} from '../../../src/tools/web-fetch/content.js';
 import {formatOutput} from '../../../src/tools/web-fetch/output.js';
@@ -32,7 +33,7 @@ describe('HTML conversion and source formatting', () => {
   });
   it('rejects excessive elements and nesting before Turndown and allows explicit HTML', () => {
     for (const source of ['<div>'.repeat(129) + 'text' + '</div>'.repeat(129), '<br>'.repeat(MAX_HTML_ELEMENTS + 1)]) {
-      expect(() => convertContent(document(source), 'markdown')).toThrowError(expect.objectContaining({code: 'source_too_large'}));
+      expect(() => convertContent(document(source), 'markdown')).toThrow(asymmetric.objectContaining({code: 'source_too_large'}));
       expect(convertContent(document(source), 'html').content).toBe(source);
     }
   });

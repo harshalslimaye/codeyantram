@@ -1,9 +1,11 @@
+import {requireValue} from '../../../shared/tests/helpers.js';
+import type * as GraphModule from '@codeyantram/graph';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {acquireGraphCoordinator, GraphCoordinator, type CoordinatedGraph, type GraphIndexReport, type GraphProgress} from '@codeyantram/graph';
 import {initializeGraphForUI, runInit} from '../../src/lib/init.js';
 
 vi.mock('@codeyantram/graph', async importOriginal => ({
-  ...await importOriginal<typeof import('@codeyantram/graph')>(), acquireGraphCoordinator: vi.fn(),
+  ...await importOriginal<typeof GraphModule>(), acquireGraphCoordinator: vi.fn<typeof acquireGraphCoordinator>(),
 }));
 
 const workspace = '/selected/project';
@@ -15,10 +17,10 @@ const report: GraphIndexReport = {
 };
 let graph: {
   storage: {databasePath: string};
-  getStatus: ReturnType<typeof vi.fn>;
-  index: ReturnType<typeof vi.fn>;
-  sync: ReturnType<typeof vi.fn>;
-  close: ReturnType<typeof vi.fn>;
+  getStatus: ReturnType<typeof vi.fn<CoordinatedGraph["getStatus"]>>;
+  index: ReturnType<typeof vi.fn<CoordinatedGraph["index"]>>;
+  sync: ReturnType<typeof vi.fn<CoordinatedGraph["sync"]>>;
+  close: ReturnType<typeof vi.fn<CoordinatedGraph["close"]>>;
 };
 const makeOutput = () => ({write: vi.fn<(chunk: string) => boolean>(() => true)});
 let stdout: ReturnType<typeof makeOutput>;
@@ -30,10 +32,10 @@ const text = (stream: typeof stdout) => stream.write.mock.calls.map(([chunk]) =>
 beforeEach(() => {
   graph = {
     storage: {databasePath},
-    getStatus: vi.fn().mockReturnValue(ready).mockReturnValueOnce({...ready, indexState: null}),
-    index: vi.fn().mockResolvedValue(report),
-    sync: vi.fn().mockResolvedValue({success: true, filesAdded: 1, filesModified: 1, filesRemoved: 0, failedFilePaths: []}),
-    close: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn<CoordinatedGraph["getStatus"]>().mockReturnValue(ready).mockReturnValueOnce({...ready, indexState: null}),
+    index: vi.fn<CoordinatedGraph["index"]>().mockResolvedValue(report),
+    sync: vi.fn<CoordinatedGraph["sync"]>().mockResolvedValue({success: true, filesAdded: 1, filesModified: 1, filesRemoved: 0, filesChecked: 2, nodesUpdated: 0, durationMs: 1, changedFilePaths: [], failedFilePaths: []}),
+    close: vi.fn<CoordinatedGraph["close"]>().mockResolvedValue(undefined),
   };
   coordinator = new GraphCoordinator(graph as unknown as CoordinatedGraph);
   vi.mocked(acquireGraphCoordinator).mockResolvedValue({coordinator, release: () => coordinator.close()});
@@ -45,12 +47,12 @@ describe('graph init command', () => {
 
   it('uses UI-owned cancellation and progress without adding process signal handlers', async () => {
     const before = process.listeners('SIGINT');
-    const progress = vi.fn();
+    const progress = vi.fn<(message: string) => void>();
     const controller = new AbortController();
     graph.index.mockImplementation(async options => {
       expect(process.listeners('SIGINT')).toEqual(before);
-      expect(options.signal.aborted).toBe(false);
-      options.onProgress({phase: 'parsing', current: 1, total: 2});
+      expect(requireValue(options?.signal).aborted).toBe(false);
+      requireValue(options?.onProgress)({phase: 'parsing', current: 1, total: 2});
       return report;
     });
     expect(await initializeGraphForUI(options => coordinator.initialize(options), controller.signal, progress)).toBe('Graph ready: 2 files, 4 symbols, 3 relationships.');
@@ -70,16 +72,16 @@ describe('graph init command', () => {
   });
 
   it('cancels UI initialization before opening if the signal is already aborted', async () => {
-    const initialize = vi.fn();
-    await expect(initializeGraphForUI(initialize, AbortSignal.abort(), vi.fn())).rejects.toThrow();
+    const initialize = vi.fn<Parameters<typeof initializeGraphForUI>[0]>();
+    await expect(initializeGraphForUI(initialize, AbortSignal.abort(), vi.fn())).rejects.toBeInstanceOf(Error);
     expect(initialize).not.toHaveBeenCalled();
     expect(acquireGraphCoordinator).not.toHaveBeenCalled();
   });
 
   it('builds a baseline and reports storage, progress, coverage, and graph counts', async () => {
     graph.index.mockImplementation(async options => {
-      options.onProgress({phase: 'scanning', current: 0, total: 2} satisfies GraphProgress);
-      options.onProgress({phase: 'parsing', current: 1, total: 2} satisfies GraphProgress);
+      requireValue(options?.onProgress)({phase: 'scanning', current: 0, total: 2} satisfies GraphProgress);
+      requireValue(options?.onProgress)({phase: 'parsing', current: 1, total: 2} satisfies GraphProgress);
       return {...report, filesSkippedUnsupported: 3};
     });
     expect(await runInit(workspace, {stdout, stderr})).toBe(0);
@@ -103,7 +105,7 @@ describe('graph init command', () => {
     expect(text(stdout)).toContain('Synced 1 added, 1 modified, 0 removed files');
   });
 
-  it.each(['partial', 'failed', 'indexing', 'outdated'])('rebuilds a %s index', async state => {
+  it.each(['partial', 'failed', 'indexing', 'outdated'] as const)('rebuilds a %s index', async state => {
     graph.getStatus.mockReset().mockReturnValue(ready).mockReturnValueOnce({
       ...ready, indexState: state === 'outdated' ? 'complete' : state, needsReindex: state === 'outdated',
     });
@@ -125,7 +127,7 @@ describe('graph init command', () => {
 
   it('returns failure when sync leaves changed files unindexed', async () => {
     graph.getStatus.mockReset().mockReturnValue(ready);
-    graph.sync.mockResolvedValue({success: false, failedFilePaths: ['src/bad.ts']});
+    graph.sync.mockResolvedValue({success: false, filesChecked: 1, filesAdded: 0, filesModified: 1, filesRemoved: 0, nodesUpdated: 0, durationMs: 1, changedFilePaths: ['src/bad.ts'], failedFilePaths: ['src/bad.ts']});
     expect(await runInit(workspace, {stdout, stderr})).toBe(1);
     expect(text(stderr)).toContain('Failed to index: src/bad.ts');
     expect(text(stdout)).not.toContain('Graph ready');
@@ -145,8 +147,8 @@ describe('graph init command', () => {
   it.each([['SIGINT', 130], ['SIGTERM', 143]] as const)('cancels on %s and removes signal handlers after draining', async (signal, code) => {
     const previous = process.listeners(signal);
     graph.index.mockImplementation(async options => {
-      process.listeners(signal).find(listener => !previous.includes(listener))!(signal);
-      expect(options.signal.aborted).toBe(true);
+      requireValue(process.listeners(signal).find(listener => !previous.includes(listener)))(signal);
+      expect(requireValue(options?.signal).aborted).toBe(true);
       return {...report, success: false};
     });
     expect(await runInit(workspace, {stdout, stderr})).toBe(code);

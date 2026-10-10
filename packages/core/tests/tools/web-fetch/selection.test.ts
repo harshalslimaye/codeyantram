@@ -1,3 +1,4 @@
+import {requireValue, asymmetric} from '../../../../shared/tests/helpers.js';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {chunkContent} from '../../../src/tools/web-fetch/chunks.js';
 import {selectContent} from '../../../src/tools/web-fetch/selection.js';
@@ -35,7 +36,7 @@ describe('lossless chunking', () => {
     }
     const code = chunks.filter(chunk => chunk.codeBlock !== undefined);
     expect(new Set(code.map(chunk => chunk.codeBlock)).size).toBe(1);
-    expect(code[0]!.sectionPath).toEqual(['Parent', 'Child']);
+    expect(requireValue(code[0]).sectionPath).toEqual(['Parent', 'Child']);
     expect(code.map(chunk => chunk.text).join('')).toContain('# not a heading');
   });
 });
@@ -57,10 +58,10 @@ describe('optional relevance selection', () => {
     expect(selected.content).toContain('UNCERTAIN');
     expect(selected.content).not.toContain('IRRELEVANT');
     expect(selected.content.indexOf('EVIDENCE')).toBeLessThan(selected.content.indexOf('UNCERTAIN'));
-    expect(selected.filtering).toMatchObject({status: 'completed', incomplete: false, usage: {inputTokens: expect.any(Number)}});
+    expect(selected.filtering).toMatchObject({status: 'completed', incomplete: false, usage: {inputTokens: asymmetric.any(Number)}});
     expect(selected.filtering.retainedChunks).toBeLessThan(selected.filtering.totalChunks);
-    expect((mock.mock.calls[0]![0].state as {objective: string}).objective).toBe('How do I authenticate?');
-    expect(Object.keys(mock.mock.calls[0]![0].questions).length).toBeLessThanOrEqual(8);
+    expect((requireValue(mock.mock.calls[0])[0].state as {objective: string}).objective).toBe('How do I authenticate?');
+    expect(Object.keys(requireValue(mock.mock.calls[0])[0].questions).length).toBeLessThanOrEqual(8);
   });
   it.each([
     [{status: 'disabled'}, true, 'markdown', 'task', content, 'disabled'],
@@ -125,7 +126,7 @@ describe('optional relevance selection', () => {
     const pending = selectContent(content, sourceUrl, 'markdown', {jev, objective: 'task'});
     await vi.advanceTimersByTimeAsync(FILTER_TIMEOUT_MS);
     expect((await pending).content).toBe(content);
-    expect(mock.mock.calls[0]![0].abortSignal?.aborted).toBe(true);
+    expect(requireValue(mock.mock.calls[0])[0].abortSignal?.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });
   it('propagates caller cancellation instead of returning a fallback result', async () => {
@@ -134,6 +135,6 @@ describe('optional relevance selection', () => {
     const pending = selectContent(content, sourceUrl, 'markdown', {jev, objective: 'task', signal: controller.signal});
     controller.abort();
     await expect(pending).rejects.toMatchObject({name: 'AbortError'});
-    expect(mock.mock.calls[0]![0].abortSignal?.aborted).toBe(true);
+    expect(requireValue(mock.mock.calls[0])[0].abortSignal?.aborted).toBe(true);
   });
 });

@@ -31,7 +31,7 @@ function streamedResponse(text: string) {
 describe('chat streaming client', () => {
 	it('cancels a response arriving after abort even if body cancellation rejects', async () => {
 		const controller = new AbortController();
-		const cancel = vi.fn().mockRejectedValue(new Error('cancel failed'));
+		const cancel = vi.fn<() => Promise<void> | void>().mockRejectedValue(new Error('cancel failed'));
 		const response = new Response(new ReadableStream<Uint8Array>({cancel}), {headers: {'content-type': 'text/event-stream'}});
 		const fetchResponse = vi.fn<typeof fetch>().mockImplementation(async () => {
 			controller.abort();
@@ -74,7 +74,7 @@ describe('chat streaming client', () => {
 	});
 
 	it('cancels the reader after a terminal event without waiting for EOF', async () => {
-		const cancel = vi.fn();
+		const cancel = vi.fn<() => Promise<void> | void>();
 		const response = new Response(new ReadableStream({
 			start(controller) {controller.enqueue(new TextEncoder().encode(frame(done)));}, cancel,
 		}), {headers: {'content-type': 'text/event-stream'}});

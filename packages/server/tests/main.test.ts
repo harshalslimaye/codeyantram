@@ -1,7 +1,8 @@
+import {requireValue, asymmetric} from '../../shared/tests/helpers.js';
 import {EventEmitter} from 'node:events';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
-const mocks = vi.hoisted(() => ({createApp: vi.fn(), listen: vi.fn(), closeApp: vi.fn()}));
+const mocks = vi.hoisted(() => ({createApp: vi.fn<() => {listen: (port: number, host: string, callback: () => void) => typeof server; close: () => Promise<void>}>(), listen: vi.fn<(port: number, host: string, callback: () => void) => typeof server>(), closeApp: vi.fn<() => Promise<void>>()}));
 vi.mock('../src/app.js', () => ({createApp: mocks.createApp}));
 
 let server: EventEmitter & {close: ReturnType<typeof vi.fn>; closeAllConnections: ReturnType<typeof vi.fn>};
@@ -13,7 +14,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   previousExitCode = process.exitCode;
   signalHandlers = [];
-  server = Object.assign(new EventEmitter(), {close: vi.fn((callback: (error?: Error) => void) => callback()), closeAllConnections: vi.fn()});
+  server = Object.assign(new EventEmitter(), {close: vi.fn<(callback: (error?: Error) => void) => void>((callback: (error?: Error) => void) => callback()), closeAllConnections: vi.fn<() => void>()});
   mocks.closeApp.mockResolvedValue(undefined);
   mocks.createApp.mockReturnValue({listen: mocks.listen, close: mocks.closeApp});
   mocks.listen.mockImplementation((_port: number, _host: string, onListening: () => void) => {
@@ -43,7 +44,7 @@ describe('standalone server entry point', () => {
     await import('../src/main.js');
     expect(mocks.createApp).toHaveBeenCalledOnce();
     expect(mocks.createApp).toHaveBeenCalledWith({workspaceRoot: process.env.INIT_CWD ?? process.cwd()});
-    expect(mocks.listen).toHaveBeenCalledExactlyOnceWith(43187, '127.0.0.1', expect.any(Function));
+    expect(mocks.listen).toHaveBeenCalledExactlyOnceWith(43187, '127.0.0.1', asymmetric.any(Function));
     expect(process.stdout.write).toHaveBeenCalledExactlyOnceWith('Codeyantram server listening at http://127.0.0.1:43187\n');
     expect(process.stderr.write).not.toHaveBeenCalled();
   });
@@ -51,7 +52,7 @@ describe('standalone server entry point', () => {
   it.each([1, 31337, 65535])('accepts a configured TCP port: %i', async port => {
     vi.stubEnv('CODEYANTRAM_PORT', String(port));
     await import('../src/main.js');
-    expect(mocks.listen).toHaveBeenCalledExactlyOnceWith(port, '127.0.0.1', expect.any(Function));
+    expect(mocks.listen).toHaveBeenCalledExactlyOnceWith(port, '127.0.0.1', asymmetric.any(Function));
     expect(process.stdout.write).toHaveBeenCalledWith(`Codeyantram server listening at http://127.0.0.1:${port}\n`);
   });
 
@@ -76,12 +77,12 @@ describe('standalone server entry point', () => {
   it.each(['SIGINT', 'SIGTERM'] as const)('closes the server and active connections on %s', async signal => {
     vi.stubEnv('CODEYANTRAM_PORT', undefined);
     await import('../src/main.js');
-    expect(process.once).toHaveBeenCalledWith('SIGINT', expect.any(Function));
-    expect(process.once).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
-    signalHandlers.find(entry => entry.signal === signal)!.handler();
+    expect(process.once).toHaveBeenCalledWith('SIGINT', asymmetric.any(Function));
+    expect(process.once).toHaveBeenCalledWith('SIGTERM', asymmetric.any(Function));
+    requireValue(signalHandlers.find(entry => entry.signal === signal)).handler();
     expect(server.close).toHaveBeenCalledOnce();
     expect(server.closeAllConnections).toHaveBeenCalledOnce();
-    expect(server.close.mock.invocationCallOrder[0]).toBeLessThan(server.closeAllConnections.mock.invocationCallOrder[0]!);
+    expect(server.close.mock.invocationCallOrder[0]).toBeLessThan(requireValue(server.closeAllConnections.mock.invocationCallOrder[0]));
     await vi.waitFor(() => expect(mocks.closeApp).toHaveBeenCalledOnce());
   });
 });

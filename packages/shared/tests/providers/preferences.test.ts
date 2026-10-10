@@ -3,8 +3,8 @@ import {DEFAULT_CHAT_MODEL_ID, readModelPreferences, resolveModelPreferences, sa
 import {readConfig, writeConfig} from '../../src/filesystem/config.js';
 
 vi.mock('../../src/filesystem/config.js', () => ({
-	readConfig: vi.fn(),
-	writeConfig: vi.fn(),
+	readConfig: vi.fn<typeof readConfig>(),
+	writeConfig: vi.fn<typeof writeConfig>(),
 }));
 
 describe('model preferences', () => {
@@ -44,7 +44,7 @@ describe('model preferences', () => {
 	it('saves a selection while preserving unrelated configuration and existing efforts', async () => {
 		const config = {theme: 'konkan', effortByModel: {'claude-sonnet-5-5': 'medium'}};
 		vi.mocked(readConfig).mockResolvedValueOnce(config);
-		vi.mocked(writeConfig).mockResolvedValueOnce(undefined);
+		vi.mocked(writeConfig).mockResolvedValueOnce();
 		const effortByModel = {...config.effortByModel, 'gpt-6.1-sol': 'high'};
 		await expect(saveModelPreference('gpt-6.1-sol', 'high')).resolves.toEqual({modelId: 'gpt-6.1-sol', effortByModel});
 		expect(writeConfig).toHaveBeenCalledExactlyOnceWith({...config, model: 'gpt-6.1-sol', effortByModel});

@@ -1,3 +1,4 @@
+import {requireValue} from '../../../shared/tests/helpers.js';
 import {requireTextPart} from '../helpers/message-parts.js';
 import {describe, expect, it} from 'vitest';
 import {Buffer} from 'node:buffer';
@@ -23,7 +24,7 @@ describe('chat context builder', () => {
 	});
 	it('preserves full-history behavior before compaction without replaying metadata', () => {
 		const context = buildChatContext(transcript);
-		expect(context).toEqual({messages: transcript.filter(message => message.parts.length).map(toRequestMessage)});
+		expect(context).toEqual({messages: transcript.filter(turn => turn.parts.length).map(toRequestMessage)});
 		expect(context).not.toHaveProperty('contextSummary');
 		expect(context.messages[1]).not.toHaveProperty('usage');
 		expect(context.messages[1]).not.toHaveProperty('status');
@@ -57,8 +58,8 @@ describe('chat context builder', () => {
 	it('does not mutate history and isolates outgoing text parts from display history', () => {
 		const original = structuredClone(transcript);
 		const context = buildChatContext(transcript);
-		context.messages[0]!.parts.map(requireTextPart)[0]!.text = 'Changed request';
-		context.messages[0]!.parts.push({type: 'text', text: 'More text'});
+		requireValue(requireValue(context.messages[0]).parts.map(requireTextPart)[0]).text = 'Changed request';
+		requireValue(context.messages[0]).parts.push({type: 'text', text: 'More text'});
 		expect(transcript).toEqual(original);
 	});
 
@@ -73,7 +74,7 @@ describe('chat context builder', () => {
 	});
 
 	it('rejects invalid summary state instead of silently replaying archived history', () => {
-		expect(() => buildChatContext(transcript, {summary: ' \n ', coveredMessageCount: 4})).toThrow();
+		expect(() => buildChatContext(transcript, {summary: ' \n ', coveredMessageCount: 4})).toThrow(Error);
 	});
 });
 
@@ -93,7 +94,7 @@ describe('context token estimates', () => {
 		const compacted = {summary: 'Preserve constraints.', coveredMessageCount: 4};
 		const status = getContextStatus('gemma-4-31b-it', transcript, compacted);
 		const changedArchive = structuredClone(transcript);
-		changedArchive[0]!.parts.map(requireTextPart)[0]!.text = 'Archived log.'.repeat(10_000);
+		requireValue(requireValue(changedArchive[0]).parts.map(requireTextPart)[0]).text = 'Archived log.'.repeat(10_000);
 		expect(getContextStatus('gemma-4-31b-it', changedArchive, compacted)).toEqual(status);
 		expect(status.usedTokens).toBeGreaterThan(getContextStatus('gemma-4-31b-it', transcript.slice(4)).usedTokens);
 	});
@@ -112,7 +113,7 @@ describe('context token estimates', () => {
 		expect(baseline).toBeGreaterThan(0);
 		expect(estimateContextTokens({messages, contextSummary: 'Prior decisions.'})).toBeGreaterThan(baseline);
 		const longer = structuredClone(messages);
-		longer[0]!.parts.map(requireTextPart)[0]!.text += '\n' + 'Additional source code.\n'.repeat(100);
+		requireValue(requireValue(longer[0]).parts.map(requireTextPart)[0]).text += '\n' + 'Additional source code.\n'.repeat(100);
 		expect(estimateContextTokens({messages: longer})).toBeGreaterThan(baseline);
 	});
 
@@ -128,7 +129,7 @@ describe('context token estimates', () => {
 		const split = [{id: 'u1', role: 'user' as const, parts: [
 			{type: 'text' as const, text: 'const answer = '}, {type: 'text' as const, text: '42;'},
 		]}];
-		const joined = [{...split[0]!, parts: [{type: 'text' as const, text: 'const answer = 42;'}]}];
+		const joined = [{...requireValue(split[0]), parts: [{type: 'text' as const, text: 'const answer = 42;'}]}];
 		expect(estimateContextTokens({messages: split})).toBe(estimateContextTokens({messages: joined}));
 		expect(estimateContextTokens({messages: buildChatContext(transcript).messages}))
 			.toBe(estimateContextTokens({messages: transcript.filter(message => message.parts.length).map(toRequestMessage)}));
@@ -147,6 +148,6 @@ describe('serialized context size', () => {
 		expect(measureContextBytes({messages: [{...message, id: 'a very long unrelated identifier'.repeat(20)}], contextSummary: summary}))
 			.toBe(measureContextBytes({messages: [message], contextSummary: summary}));
 		expect(measureContextBytes(buildChatContext(transcript)))
-			.toBe(measureContextBytes({messages: transcript.filter(message => message.parts.length).map(toRequestMessage)}));
+			.toBe(measureContextBytes({messages: transcript.filter(turn => turn.parts.length).map(toRequestMessage)}));
 	});
 });

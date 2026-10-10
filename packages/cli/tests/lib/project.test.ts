@@ -30,7 +30,7 @@ describe('CLI project arguments', () => {
     ['--project', '--help'], ['--project', '/a', '--project=/b'],
     ['--workspace', '/a'], ['--unknown'], ['/a'], ['unknown'], ['init', 'extra'], ['init', 'init'],
   ].map(args => ({args})))('rejects unusable, ambiguous, or unknown arguments: $args', ({args}) => {
-    expect(() => parseCliOptions(args)).toThrow();
+    expect(() => parseCliOptions(args)).toThrow(Error);
   });
 });
 

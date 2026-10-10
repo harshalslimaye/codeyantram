@@ -1,5 +1,6 @@
+import {requireValue, requestUrl, requestBody, asymmetric, parseJson} from '../../../shared/tests/helpers.js';
 import {requireTextPart} from '../helpers/message-parts.js';
-import React, {useState, type ReactNode} from 'react';
+import React, {useEffect, useState, type ReactNode} from 'react';
 import {PassThrough} from 'node:stream';
 import {render, type Instance} from 'ink';
 import {afterEach, describe, expect, it, vi} from 'vitest';
@@ -32,12 +33,13 @@ afterEach(async () => {
 
 function renderUI(node: ReactNode, {debug = true}: {debug?: boolean} = {}) {
 	const stdout = Object.assign(new PassThrough(), {isTTY: true, columns: 80, rows: 24});
-	const stdin = Object.assign(new PassThrough(), {isTTY: true, setRawMode: vi.fn(), ref: vi.fn(), unref: vi.fn()});
+	const stdin = Object.assign(new PassThrough(), {isTTY: true, setRawMode: vi.fn<(enabled: boolean) => void>(), ref: vi.fn<() => void>(), unref: vi.fn<() => void>()});
 	const input = createTerminalInput(stdin as unknown as NodeJS.ReadStream, stdout as unknown as NodeJS.WriteStream);
 	let frame = '';
 	let output = '';
 	stdout.on('data', chunk => {
 		output += String(chunk);
+		// oxlint-disable-next-line no-control-regex -- Strip terminal escape sequences from rendered output.
 		const text = String(chunk).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '');
 		if (text.trim()) frame = text;
 	});
@@ -57,17 +59,17 @@ function renderUI(node: ReactNode, {debug = true}: {debug?: boolean} = {}) {
 }
 
 function renderInput(initialOperation: SessionOperation = 'idle') {
-	const onSubmit = vi.fn();
-	const onCancel = vi.fn();
-	const onClear = vi.fn();
-	const onCompact = vi.fn();
-	const onStatus = vi.fn();
-	const onInit = vi.fn();
-	const onSelectModel = vi.fn(async () => {});
+	const onSubmit = vi.fn<(text: string) => void>();
+	const onCancel = vi.fn<() => void>();
+	const onClear = vi.fn<() => void>();
+	const onCompact = vi.fn<() => void>();
+	const onStatus = vi.fn<() => void>();
+	const onInit = vi.fn<() => void>();
+	const onSelectModel = vi.fn<(model: string) => Promise<void>>(async () => {});
 	let setOperation!: (operation: SessionOperation) => void;
 	function InputHarness() {
 		const [operation, changeOperation] = useState(initialOperation);
-		setOperation = changeOperation;
+		useEffect(() => {setOperation = changeOperation;}, [changeOperation]);
 		return (
 			<ThemeProvider registry={registry} initialThemeId="konkan" colorDepth={0}>
 				<KeyboardProvider>
@@ -106,12 +108,12 @@ function eventResponse(events: unknown[]) {
 async function renderCompactionApp() {
 	const chatRequests: ChatRequest[] = [];
 	const compactRequests: CompactRequest[] = [];
-	const cancel = vi.fn();
+	const cancel = vi.fn<() => Promise<void> | void>();
 	let pending!: ReadableStreamDefaultController<Uint8Array>;
 	let compactSignal: AbortSignal | undefined;
 	vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async (url, init) => {
-		if (new URL(String(url)).pathname === '/compact') {
-			compactRequests.push(JSON.parse(String(init?.body)) as CompactRequest);
+		if (new URL(requestUrl(url)).pathname === '/compact') {
+			compactRequests.push(parseJson(requestBody(init?.body)) as CompactRequest);
 			compactSignal = init?.signal ?? undefined;
 			return new Response(new ReadableStream<Uint8Array>({
 				start(controller) {
@@ -120,7 +122,7 @@ async function renderCompactionApp() {
 				}, cancel,
 			}), {headers: {'content-type': 'text/event-stream'}});
 		}
-		chatRequests.push(JSON.parse(String(init?.body)) as ChatRequest);
+		chatRequests.push(parseJson(requestBody(init?.body)) as ChatRequest);
 		const turn = chatRequests.length;
 		const text = (turn === 1 ? 'ARCHIVED_HISTORY: exact constraints and pending validation.\n'.repeat(150) : '') + `Answer ${turn}`;
 		return eventResponse([
@@ -230,7 +232,7 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Initializing graph · Esc to cancel'));
 		expect(ui.frame()).toContain('parsing: 1/2');
-		expect(initializeGraph).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal), expect.any(Function));
+		expect(initializeGraph).toHaveBeenCalledExactlyOnceWith(asymmetric.any(AbortSignal), asymmetric.any(Function));
 		expect(fetch).not.toHaveBeenCalled();
 		ui.stdin.write('ignored input\r/init\r/model\r');
 		await ui.flush();
@@ -243,7 +245,7 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('Follow up'));
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('POST_INIT_REPLY'));
-		expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body)).messages).toHaveLength(1);
+		expect(parseJson<ChatRequest>(requestBody(requireValue(fetch.mock.calls[0])[1]?.body)).messages).toHaveLength(1);
 	});
 
 	it.each(['escape', 'unmount'] as const)('cancels palette initialization on %s and waits for cleanup', async action => {
@@ -311,7 +313,7 @@ describe('CLI chat UI', () => {
 		expect(ui.frame()).toContain('~0 / 1,050,000 tokens');
 		expect(ui.frame()).toContain('~100% remaining');
 		expect(chat).not.toHaveBeenCalled();
-		const first = structuredClone(session.getSnapshot().statusEntries[0]!);
+		const first = structuredClone(requireValue(session.getSnapshot().statusEntries[0]));
 		await session.send('First question.', preferences.modelId);
 		await vi.waitFor(() => expect(ui.frame()).toContain('Context ~0.3% used'));
 		expect(ui.frame()).not.toContain('Session status');
@@ -352,7 +354,7 @@ describe('CLI chat UI', () => {
 		for (let step = 0; step < 25; step++) ui.wheel('up');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));
 		expect(ui.frame()).toContain('█▀▀ █▀█ █▀▄ █▀▀');
-		expect(chat.mock.calls[0]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['First question.']);
+		expect(requireValue(chat.mock.calls[0])[0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['First question.']);
 		ui.stdout.rows = 12;
 		ui.stdout.emit('resize');
 		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(12));
@@ -444,13 +446,13 @@ describe('CLI chat UI', () => {
 
 	it('compacts from the command, keeps mouse history available above the pinned footer, and follows up with the summary', async () => {
 		const ui = await renderCompactionApp();
-		const original = ui.chatRequests[2]!.messages;
+		const original = requireValue(ui.chatRequests[2]).messages;
 		await selectCompact(ui);
 		await vi.waitFor(() => expect(ui.frame()).toContain('Compacting conversation · Esc to cancel'));
 		expect(ui.chatRequests).toHaveLength(3);
 		expect(ui.compactRequests).toHaveLength(1);
 		expect(ui.compactRequests[0]).toMatchObject({model: preferences.modelId});
-		expect(ui.compactRequests[0]!.messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(original.slice(0, 2).map(message => message.parts.map(requireTextPart)[0]?.text));
+		expect(requireValue(ui.compactRequests[0]).messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(original.slice(0, 2).map(message => message.parts.map(requireTextPart)[0]?.text));
 		expect(ui.frame()).not.toContain('Waiting for response');
 		ui.complete();
 		await vi.waitFor(() => expect(ui.frame()).toContain('Compacted 2 messages'));
@@ -475,7 +477,7 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Answer 4'));
 		expect(ui.chatRequests[3]).toMatchObject({contextSummary: compactResult.summary});
-		expect(ui.chatRequests[3]!.messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Question 2', 'Answer 2', 'Question 3', 'Answer 3', 'Follow up']);
+		expect(requireValue(ui.chatRequests[3]).messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Question 2', 'Answer 2', 'Question 3', 'Answer 3', 'Follow up']);
 		expect(ui.frame()).toContain('Context: compacted · 3 recent turns');
 		ui.stdin.write('/clear');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Commands ·'));
@@ -498,8 +500,8 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Answer 4'));
 		expect(ui.chatRequests[3]).not.toHaveProperty('contextSummary');
-		expect(ui.chatRequests[3]!.messages).toHaveLength(7);
-		expect(ui.chatRequests[3]!.messages[1]?.parts.map(requireTextPart)[0]?.text).toContain('ARCHIVED_HISTORY');
+		expect(requireValue(ui.chatRequests[3]).messages).toHaveLength(7);
+		expect(requireValue(ui.chatRequests[3]).messages[1]?.parts.map(requireTextPart)[0]?.text).toContain('ARCHIVED_HISTORY');
 	});
 
 	it('aborts an active command compaction when the App unmounts', async () => {
@@ -573,7 +575,7 @@ describe('CLI chat UI', () => {
 	it('displays streamed answers, sends follow-up history, and clears the conversation', async () => {
 		const requests: ChatRequest[] = [];
 		vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
-			requests.push(JSON.parse(String(init?.body)) as ChatRequest);
+			requests.push(parseJson(requestBody(init?.body)) as ChatRequest);
 			const text = [
 				{type: 'start', messageId: `assistant-${requests.length}`},
 				{type: 'text-delta', text: `Answer ${requests.length}`},
@@ -617,7 +619,7 @@ describe('CLI chat UI', () => {
 		expect(session.getSnapshot().messages[1]?.parts.map(requireTextPart)[0]?.text).toBe(markdown);
 		await session.send('Continue.', preferences.modelId);
 		await ui.flush();
-		expect(chat.mock.calls[1]![0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe(markdown);
+		expect(requireValue(chat.mock.calls[1])[0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe(markdown);
 	});
 
 	it('renders fragmented streamed code and tables while scrolling and resizing above the fixed footer', async () => {
@@ -732,7 +734,7 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('NEW_REPLY_2'));
 		await ui.flush();
-		expect(chat.mock.calls[1]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['ORIGINAL_QUESTION', answer, 'Next question']);
+		expect(requireValue(chat.mock.calls[1])[0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['ORIGINAL_QUESTION', answer, 'Next question']);
 		const beforeClear = ui.output().length;
 		session.clear();
 		await vi.waitFor(() => expect(ui.output().slice(beforeClear)).toContain('Type a message'));
@@ -741,7 +743,7 @@ describe('CLI chat UI', () => {
 		expect(ui.output().slice(beforeClear)).toContain('FRESH_QUESTION');
 		expect(ui.output().slice(beforeClear)).toContain('NEW_REPLY_3');
 		expect(ui.output().slice(beforeClear)).not.toContain('ORIGINAL_QUESTION');
-		expect(chat.mock.calls[2]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['FRESH_QUESTION']);
+		expect(requireValue(chat.mock.calls[2])[0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['FRESH_QUESTION']);
 	});
 
 	it.each(['cancelled', 'failed'] as const)('keeps %s partial output accessible by mouse after the next turn', async status => {
@@ -773,7 +775,7 @@ describe('CLI chat UI', () => {
 		for (let step = 0; step < 25; step++) ui.wheel('up');
 		await ui.flush();
 		expect(ui.output().slice(beforeScroll)).toContain('PARTIAL_ROW_1');
-		expect(chat.mock.calls[1]![0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe(partial);
+		expect(requireValue(chat.mock.calls[1])[0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe(partial);
 	});
 
 	it('pins controls for empty and short conversations and ignores mouse scrolling over the footer or pickers', async () => {

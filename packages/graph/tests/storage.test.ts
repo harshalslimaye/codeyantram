@@ -1,3 +1,4 @@
+import type * as SharedModule from '@codeyantram/shared';
 import {mkdtemp, mkdir, readdir, realpath, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -6,8 +7,8 @@ import {getUserGraphDirectory} from '@codeyantram/shared';
 import {resolveGraphStoragePaths} from '../src/index.js';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
-  ...await importOriginal<typeof import('@codeyantram/shared')>(),
-  getUserGraphDirectory: vi.fn(),
+  ...await importOriginal<typeof SharedModule>(),
+  getUserGraphDirectory: vi.fn<typeof getUserGraphDirectory>(),
 }));
 
 let temporaryDirectory: string;

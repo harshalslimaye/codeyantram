@@ -1,3 +1,4 @@
+import {requireValue, asymmetric} from '../../../shared/tests/helpers.js';
 import {requireTextPart} from '../helpers/message-parts.js';
 import {describe, expect, it, vi} from 'vitest';
 import type {ChatStreamEvent} from '@codeyantram/shared';
@@ -36,6 +37,7 @@ describe('chat session', () => {
 	});
 
 	it('reports a generic failure for non-Error transport exceptions', async () => {
+		// oxlint-disable-next-line require-yield, typescript/only-throw-error -- Exercise rejection with a non-Error value before the stream yields.
 		const session = new ChatSession(async function* () {throw 'untrusted transport failure';});
 		await session.send('Hello', 'gpt-6.1-sol');
 		expect(session.getSnapshot()).toMatchObject({operation: 'idle', error: 'The chat request failed. Try again.'});
@@ -45,16 +47,16 @@ describe('chat session', () => {
 		const transport = successfulTransport();
 		const session = new ChatSession(transport);
 		session.showStatus('gemma-4-31b-it');
-		const first = structuredClone(session.getSnapshot().statusEntries[0]!);
+		const first = structuredClone(requireValue(session.getSnapshot().statusEntries[0]));
 		expect(first).toMatchObject({afterMessageCount: 0, status: {modelId: 'gemma-4-31b-it', usedTokens: 0}});
 		expect(transport).not.toHaveBeenCalled();
 		await session.send('Hi', 'gemma-4-31b-it');
 		session.showStatus('gpt-6.1-sol');
 		expect(session.getSnapshot().statusEntries[0]).toEqual(first);
 		expect(session.getSnapshot().statusEntries[1]).toMatchObject({afterMessageCount: 2, status: {modelId: 'gpt-6.1-sol'}});
-		expect(session.getSnapshot().statusEntries[1]!.status.usedTokens).toBeGreaterThan(0);
+		expect(requireValue(session.getSnapshot().statusEntries[1]).status.usedTokens).toBeGreaterThan(0);
 		await session.send('Follow up', 'gpt-6.1-sol');
-		expect(transport.mock.calls[1]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Hi', 'Hello world', 'Follow up']);
+		expect(requireValue(transport.mock.calls[1])[0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Hi', 'Hello world', 'Follow up']);
 		expect(session.getSnapshot().messages).toHaveLength(4);
 		session.clear();
 		expect(session.getSnapshot().statusEntries).toEqual([]);
@@ -69,14 +71,14 @@ describe('chat session', () => {
 		await session.send('Recent question.', 'gemma-4-31b-it');
 		await session.send('Latest question.', 'gemma-4-31b-it');
 		session.showStatus('gemma-4-31b-it');
-		const before = structuredClone(session.getSnapshot().statusEntries[0]!);
+		const before = structuredClone(requireValue(session.getSnapshot().statusEntries[0]));
 		expect(await session.compact('gemma-4-31b-it')).toEqual({type: 'success'});
-		expect(compact.mock.calls[0]![0].messages).toHaveLength(2);
+		expect(requireValue(compact.mock.calls[0])[0].messages).toHaveLength(2);
 		session.showStatus('gemma-4-31b-it');
 		const entries = session.getSnapshot().statusEntries;
 		expect(entries[0]).toEqual(before);
-		expect(entries[1]!.status.usedTokens).toBeLessThan(before.status.usedTokens);
-		expect(entries[1]!.status.remainingPercent).toBeGreaterThan(before.status.remainingPercent);
+		expect(requireValue(entries[1]).status.usedTokens).toBeLessThan(before.status.usedTokens);
+		expect(requireValue(entries[1]).status.remainingPercent).toBeGreaterThan(before.status.remainingPercent);
 	});
 
 	it('updates partial text and sends history without usage on follow-up turns', async () => {
@@ -93,7 +95,7 @@ describe('chat session', () => {
 			{id: 'assistant-1', role: 'assistant', parts: [{type: 'text', text: 'Hello world'}], usage: done.usage},
 		]);
 		await session.send('Follow up', 'claude-sonnet-5-5', 'medium');
-		expect(transport.mock.calls[1]![0]).toEqual({
+		expect(requireValue(transport.mock.calls[1])[0]).toEqual({
 			model: 'claude-sonnet-5-5', effort: 'medium', messages: [
 				{...session.getSnapshot().messages[0]},
 				{id: 'assistant-1', role: 'assistant', parts: [{type: 'text', text: 'Hello world'}]},
@@ -128,7 +130,7 @@ describe('chat session', () => {
 		await session.send('Hi', 'gpt-6.1-sol');
 		expect(session.getSnapshot().error).toContain('/connect');
 		await session.send('Retry', 'gpt-6.1-sol');
-		expect(transport.mock.calls[1]![0].messages.map(message => message.role)).toEqual(['user', 'user']);
+		expect(requireValue(transport.mock.calls[1])[0].messages.map(message => message.role)).toEqual(['user', 'user']);
 	});
 
 	it('keeps partial output after cancellation and allows another turn', async () => {
@@ -142,11 +144,11 @@ describe('chat session', () => {
 		await vi.waitFor(() => expect(session.getSnapshot().messages.at(-1)?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer'));
 		session.cancel();
 		await sending;
-		expect(session.getSnapshot()).toMatchObject({isStreaming: false, notice: expect.stringContaining('cancelled')});
+		expect(session.getSnapshot()).toMatchObject({isStreaming: false, notice: asymmetric.stringContaining('cancelled')});
 		expect(session.getSnapshot().error).toBeUndefined();
 		transport.mockImplementation(successfulTransport());
 		await session.send('Continue', 'gpt-6.1-sol');
-		expect(transport.mock.calls[1]![0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer');
+		expect(requireValue(transport.mock.calls[1])[0].messages[1]?.parts.map(requireTextPart)[0]?.text).toBe('Partial answer');
 	});
 
 	it('clears a pending turn without allowing its late cleanup to replace a new conversation', async () => {

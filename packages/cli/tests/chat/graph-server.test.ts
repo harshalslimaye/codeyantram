@@ -1,8 +1,11 @@
+import {requireValue, requestBody, asymmetric, parseJson, type ProviderRequest} from '../../../shared/tests/helpers.js';
+import type {streamChat as StreamChatFunction} from '@codeyantram/core';
+import {type readConfig as ReadConfigFunction,getUserGraphDirectory,symbolReferenceSchema,type SymbolReference,type ToolResult} from '@codeyantram/shared';
+import type * as SharedModule from '@codeyantram/shared';
 import {mkdtemp, mkdir, readdir, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {getUserGraphDirectory, symbolReferenceSchema, type SymbolReference, type ToolResult} from '@codeyantram/shared';
 import type {GraphFindResult} from '@codeyantram/graph';
 import {streamChat as coreStreamChat} from '@codeyantram/core';
 import {sseResponse, openaiEvents, openaiToolEvents} from '../../../core/tests/chat/fixtures.js';
@@ -11,14 +14,14 @@ import {requestChat} from '../../src/chat/client.js';
 import {ChatSession} from '../../src/chat/session.js';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
-  ...await importOriginal<typeof import('@codeyantram/shared')>(), getUserGraphDirectory: vi.fn(),
+  ...await importOriginal<typeof SharedModule>(), getUserGraphDirectory: vi.fn<typeof getUserGraphDirectory>(),
 }));
 
 const servers: Awaited<ReturnType<typeof startChatServer>>[] = [];
 let directory: string | undefined;
 afterEach(async () => {
   await Promise.all(servers.splice(0).map(server => server.close()));
-  if (directory) await rm(directory, {recursive: true, force: true}); directory = undefined;
+  if (directory !== undefined) await rm(directory, {recursive: true, force: true}); directory = undefined;
 });
 
 describe('CLI server graph lifetime with the installed SDK', () => {
@@ -31,26 +34,26 @@ describe('CLI server graph lifetime with the installed SDK', () => {
     await writeFile(path.join(root, 'main.ts'), 'import {greet} from "./helper";\nexport function welcome() { return greet(); }\n');
     let step = 0, original!: SymbolReference;
     const providerFetch = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
-      const body = JSON.parse(String(init?.body));
+      const body = parseJson<ProviderRequest>(requestBody(init?.body));
       const outputs = (body.input as {type: string; output?: string}[]).filter(item => item.type === 'function_call_output');
-      const last = outputs.length ? JSON.parse(outputs.at(-1)!.output!) as ToolResult : undefined;
+      const last = outputs.length ? parseJson(requireValue(requireValue(outputs.at(-1)).output)) as ToolResult : undefined;
       const referenceFromFind = () => {
         if (last?.status !== 'success') throw new Error('Expected find result');
         const context = (last.output as unknown as {context: GraphFindResult}).context;
-        return symbolReferenceSchema.parse(context.matches.find(match => match.symbol.name === 'greet')!.symbol.reference);
+        return symbolReferenceSchema.parse(requireValue(context.matches.find(match => match.symbol.name === 'greet')).symbol.reference);
       };
       switch (step++) {
         case 0:
-          expect(body.tools.map((tool: {name: string}) => tool.name)).toEqual(['explore', 'graph', 'find', 'inspect', 'trace', 'web_fetch']);
+          expect(requireValue(body.tools).map((tool: {name: string}) => tool.name)).toEqual(['explore', 'graph', 'find', 'inspect', 'trace', 'web_fetch']);
           return sseResponse(openaiToolEvents('find', {query: 'greet'}, 'find-1'));
         case 1:
           original = referenceFromFind();
           return sseResponse(openaiToolEvents('inspect', {reference: original}, 'inspect-1'));
         case 2:
-          expect(last).toMatchObject({status: 'success', output: {context: {source: {text: expect.stringContaining('before edit')}}}});
+          expect(last).toMatchObject({status: 'success', output: {context: {source: {text: asymmetric.stringContaining('before edit')}}}});
           return sseResponse(openaiToolEvents('trace', {reference: original, direction: 'callers'}, 'trace-1'));
         case 3:
-          expect(last).toMatchObject({status: 'success', output: {context: {symbols: expect.arrayContaining([expect.objectContaining({name: 'welcome'})])}}});
+          expect(last).toMatchObject({status: 'success', output: {context: {symbols: asymmetric.arrayContaining([asymmetric.objectContaining({name: 'welcome'})])}}});
           return sseResponse(openaiEvents);
         case 4:
           expect(JSON.stringify(body.input)).toContain('trace-1');
@@ -64,7 +67,7 @@ describe('CLI server graph lifetime with the installed SDK', () => {
           return sseResponse(openaiToolEvents('inspect', {reference: updated}, 'inspect-2'));
         }
         case 7:
-          expect(last).toMatchObject({status: 'success', output: {context: {source: {text: expect.stringContaining('after manual edit')}}}});
+          expect(last).toMatchObject({status: 'success', output: {context: {source: {text: asymmetric.stringContaining('after manual edit')}}}});
           return sseResponse(openaiEvents);
         default: throw new Error('Unexpected provider step');
       }
@@ -80,7 +83,7 @@ describe('CLI server graph lifetime with the installed SDK', () => {
     await writeFile(path.join(root, 'helper.ts'), 'export function greet() { return "after manual edit"; }\n');
     await session.send('Inspect greet again and recover if it changed', 'gpt-6.1-sol');
     expect(session.getSnapshot().error).toBeUndefined();
-    expect(session.getSnapshot().messages[3].parts).toContainEqual(expect.objectContaining({type: 'tool-result', result: expect.objectContaining({status: 'error', error: expect.objectContaining({code: 'stale_reference'})})}));
+    expect(session.getSnapshot().messages[3].parts).toContainEqual(asymmetric.objectContaining({type: 'tool-result', result: asymmetric.objectContaining({status: 'error', error: asymmetric.objectContaining({code: 'stale_reference'})})}));
     expect(providerFetch).toHaveBeenCalledTimes(8);
     expect(await readdir(root)).toEqual(['helper.ts', 'main.ts']);
   }, 30_000);
@@ -117,7 +120,7 @@ describe('CLI server graph lifetime with the installed SDK', () => {
     const first = session.getSnapshot().messages[3];
     expect(first.parts.map(part => part.type)).toEqual(['tool-call', 'tool-result', 'text']);
     expect(JSON.stringify(first.parts)).toContain('initial source');
-    const continuation = String(providerFetch.mock.calls[3][1]?.body);
+    const continuation = requestBody(providerFetch.mock.calls[3][1]?.body);
     expect(continuation).toContain('function_call_output');
     expect(continuation).toContain('initial source');
     expect(continuation).toMatch(/[a-f0-9]{64}/);
@@ -126,10 +129,10 @@ describe('CLI server graph lifetime with the installed SDK', () => {
     await session.send('Check greet again', 'gpt-6.1-sol');
     expect(session.getSnapshot().error).toBeUndefined();
     expect(JSON.stringify(session.getSnapshot().messages[5].parts)).toContain('manually updated source');
-    const replay = String(providerFetch.mock.calls[4][1]?.body);
+    const replay = requestBody(providerFetch.mock.calls[4][1]?.body);
     expect(replay).toContain('explore-1');
     expect(replay).toContain('initial source');
-    const updated = String(providerFetch.mock.calls[5][1]?.body);
+    const updated = requestBody(providerFetch.mock.calls[5][1]?.body);
     expect(updated).toContain('explore-2');
     expect(updated).toContain('manually updated source');
     expect(providerFetch).toHaveBeenCalledTimes(6);
@@ -144,8 +147,8 @@ describe('CLI server graph lifetime with the installed SDK', () => {
     vi.mocked(getUserGraphDirectory).mockReturnValue(global);
     await mkdir(root);
     await writeFile(path.join(root, 'entry.ts'), 'export function initialSymbol() { return "initial"; }\n');
-    const readConfig = vi.fn(async () => ({}));
-    const streamChat = vi.fn(async function* () {
+    const readConfig = vi.fn<typeof ReadConfigFunction>(async () => ({}));
+    const streamChat = vi.fn<typeof StreamChatFunction>(async function* () {
       yield {type: 'start' as const, messageId: 'a1'};
       yield {type: 'done' as const, durationMs: 1};
     });
@@ -160,7 +163,7 @@ describe('CLI server graph lifetime with the installed SDK', () => {
     expect(first.workspaceGraph.getStatus().lifecycle).toBe('unopened');
     await expect(stat(global)).rejects.toMatchObject({code: 'ENOENT'});
 
-    const progress = vi.fn();
+    const progress = vi.fn<(message: string) => void>();
     expect(await first.initializeGraph(new AbortController().signal, progress)).toMatch(/^Graph ready: 1 files,/);
     expect(progress).toHaveBeenCalled();
     expect(first.workspaceGraph.getStatus()).toMatchObject({lifecycle: 'open', graph: {readiness: 'ready'}});

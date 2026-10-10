@@ -1,3 +1,5 @@
+import {requireValue, asymmetric} from '../../../shared/tests/helpers.js';
+import type {ChatTransport} from '../../src/chat/session.js';
 import {describe, expect, it, vi} from 'vitest';
 import {chatRequestSchema, compactRequestSchema, type ChatStreamEvent, type MessagePart} from '@codeyantram/shared';
 import {ChatSession} from '../../src/chat/session.js';
@@ -12,7 +14,7 @@ const events: ChatStreamEvent[] = [{type: 'start', messageId: 'a1'}, {type: 'tex
 
 describe('tool-bearing conversation history', () => {
   it('preserves interleaved text, calls, and results and replays assistant/tool roles in order', async () => {
-    const transport = vi.fn(async function* () {yield* events;});
+    const transport = vi.fn<ChatTransport>(async function* () {yield* events;});
     const session = new ChatSession(transport);
     await session.send('Locate greet', 'gpt-6.1-sol');
     const history = session.getSnapshot().messages;
@@ -24,7 +26,7 @@ describe('tool-bearing conversation history', () => {
     expect(model[1].content).toContainEqual({type: 'tool-call', ...call.call});
     expect(model[2]).toMatchObject({role: 'tool', content: [{output: {type: 'json', value: result.result}}]});
     expect(estimateContextTokens(context)).toBeGreaterThan(estimateContextTokens({messages: [history[0]]}));
-    const replayedCall = context.messages[1].parts.find(part => part.type === 'tool-call')!;
+    const replayedCall = requireValue(context.messages[1].parts.find(part => part.type === 'tool-call'));
     if (replayedCall.type !== 'tool-call') throw new Error('Expected a call');
     replayedCall.call.input.query = 'changed replay';
     expect(history[1].parts).toContainEqual(call);
@@ -36,7 +38,7 @@ describe('tool-bearing conversation history', () => {
     expect(session.getSnapshot().messages[1]).toMatchObject({status: 'failed', parts: [call]});
     const history = structuredClone(session.getSnapshot().messages);
     const context = buildChatContext(history);
-    expect(context.messages[1].parts.at(-1)).toMatchObject({type: 'tool-result', result: {status: 'error', error: {code: 'cancelled', message: expect.stringContaining('unknown')}}});
+    expect(context.messages[1].parts.at(-1)).toMatchObject({type: 'tool-result', result: {status: 'error', error: {code: 'cancelled', message: asymmetric.stringContaining('unknown')}}});
     expect(chatRequestSchema.safeParse({model: 'gpt-6.1-sol', ...context}).success).toBe(true);
     expect(history).toEqual(session.getSnapshot().messages);
   });

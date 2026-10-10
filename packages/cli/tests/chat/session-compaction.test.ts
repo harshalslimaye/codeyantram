@@ -1,3 +1,4 @@
+import {requireValue, asymmetric} from '../../../shared/tests/helpers.js';
 import {requireTextPart} from '../helpers/message-parts.js';
 import {describe, expect, it, vi} from 'vitest';
 import {toRequestMessage, type CompactStreamEvent} from '@codeyantram/shared';
@@ -41,6 +42,7 @@ describe('session compaction', () => {
 	it('reports a generic failure for non-Error summarizer exceptions', async () => {
 		const {session, compact} = setup();
 		await seed(session);
+		// oxlint-disable-next-line require-yield, typescript/only-throw-error -- Exercise rejection with a non-Error value before the stream yields.
 		compact.mockImplementationOnce(async function* () {throw 'untrusted summarizer failure';});
 		expect(await session.compact(model)).toEqual({type: 'failed', message: 'The compaction request failed. Try again.'});
 		expect(session.getSnapshot().operation).toBe('idle');
@@ -65,14 +67,14 @@ describe('session compaction', () => {
 			if (update.compaction) expect(update.compaction).toMatchObject({summary: done.summary, coveredMessageCount: 4});
 		}
 		expect(session.getSnapshot().notice).toContain('Estimated context: ~');
-		expect(compact.mock.calls[0]![0]).toEqual({model, messages: transcript.slice(0, 4).map(message => ({
+		expect(requireValue(compact.mock.calls[0])[0]).toEqual({model, messages: transcript.slice(0, 4).map(message => ({
 			...toRequestMessage(message), ...(message.role === 'assistant' ? {status: 'complete'} : {}),
 		}))});
 		await session.send('Continue with the next task', 'gemini-3.8-flash', 'low');
-		const request = chat.mock.calls.at(-1)![0];
+		const request = requireValue(chat.mock.calls.at(-1))[0];
 		expect(request).toEqual({
 			model: 'gemini-3.8-flash', effort: 'low', contextSummary: done.summary,
-			messages: [...transcript.slice(4), session.getSnapshot().messages[8]!].map(toRequestMessage),
+			messages: [...transcript.slice(4), requireValue(session.getSnapshot().messages[8])].map(toRequestMessage),
 		});
 		expect(request.messages.every(message => !('status' in message) && !('usage' in message))).toBe(true);
 	});
@@ -86,7 +88,7 @@ describe('session compaction', () => {
 		await session.send('Next user turn', model);
 		compact.mockImplementationOnce(async function* () {yield {...done, summary: 'Refreshed working summary.', usage: {inputTokens: 10, totalTokens: 15}};});
 		expect(await session.compact('claude-sonnet-5-5')).toEqual({type: 'success'});
-		expect(compact.mock.calls[1]![0]).toEqual({
+		expect(requireValue(compact.mock.calls[1])[0]).toEqual({
 			model: 'claude-sonnet-5-5', previousSummary: done.summary,
 			messages: session.getSnapshot().messages.slice(4, 6).map(message => ({
 				...toRequestMessage(message), ...(message.role === 'assistant' ? {status: 'complete'} : {}),
@@ -126,8 +128,8 @@ describe('session compaction', () => {
 		expect(session.getSnapshot().compactionUsage).toEqual({completedCalls: 2, callsWithUsage: 2, tokens: {inputTokens: 80, outputTokens: 24}});
 		expect(session.getSnapshot().notice).toContain('at least 20%');
 		await session.send('Still continue', model);
-		expect(chat.mock.calls.at(-1)![0].contextSummary).toBe(previous?.summary);
-		expect(chat.mock.calls.at(-1)![0].messages[0]?.id).toBe(transcript[4]?.id);
+		expect(requireValue(chat.mock.calls.at(-1))[0].contextSummary).toBe(previous?.summary);
+		expect(requireValue(chat.mock.calls.at(-1))[0].messages[0]?.id).toBe(transcript[4]?.id);
 	});
 
 	it.each([undefined, {}, {inputTokens: 0}])('preserves missing usage separately from measured zero (case %#)', async usage => {
@@ -153,7 +155,7 @@ describe('session compaction', () => {
 		expect(session.getSnapshot().compaction).toBe(previous.compaction);
 		expect(session.getSnapshot().messages).toBe(previous.messages);
 		expect(session.getSnapshot().compactionUsage).toBe(previous.compactionUsage);
-		expect(session.getSnapshot()).toMatchObject({operation: 'idle', error: expect.stringContaining('invalid response')});
+		expect(session.getSnapshot()).toMatchObject({operation: 'idle', error: asymmetric.stringContaining('invalid response')});
 	});
 
 	it.each(['compaction_failed', 'provider_error', 'missing_credentials'] as const)('keeps working context on a %s error', async code => {
@@ -182,6 +184,7 @@ describe('session compaction', () => {
 		const {session, compact} = setup();
 		await seed(session);
 		compact.mockImplementationOnce(async function* () {
+			// oxlint-disable-next-line no-unsafe-finally -- Deliberately simulate a generator cleanup failure.
 			try {yield done;} finally {throw new Error('Transport cleanup failed.');}
 		});
 		expect((await session.compact(model)).type).toBe('failed');
@@ -218,7 +221,7 @@ describe('session compaction', () => {
 		const pending = session.getSnapshot();
 		expect(await session.compact(model)).toEqual({type: 'busy'});
 		expect(session.getSnapshot()).toBe(pending);
-		expect(chat.mock.calls[0]![1].aborted).toBe(false);
+		expect(requireValue(chat.mock.calls[0])[1].aborted).toBe(false);
 		expect(compact).not.toHaveBeenCalled();
 		finish.resolve();
 		await sending;
@@ -251,8 +254,8 @@ describe('session compaction', () => {
 		compact.mockImplementationOnce(async function* () {await finish.promise; yield done;});
 		const compacting = session.compact(model);
 		session.cancel();
-		expect(session.getSnapshot()).toMatchObject({operation: 'idle', notice: expect.stringContaining('cancelled')});
-		expect(compact.mock.calls[1]![1].aborted).toBe(true);
+		expect(session.getSnapshot()).toMatchObject({operation: 'idle', notice: asymmetric.stringContaining('cancelled')});
+		expect(requireValue(compact.mock.calls[1])[1].aborted).toBe(true);
 		await session.send('Continue immediately', model);
 		const current = session.getSnapshot();
 		finish.resolve();
@@ -314,8 +317,8 @@ describe('session compaction', () => {
 		expect(session.getSnapshot().compaction).toBeUndefined();
 		expect(session.getSnapshot().compactionUsage).toBeUndefined();
 		await session.send('New session', model);
-		expect(chat.mock.calls.at(-1)![0]).not.toHaveProperty('contextSummary');
-		expect(chat.mock.calls.at(-1)![0].messages).toHaveLength(1);
+		expect(requireValue(chat.mock.calls.at(-1))[0]).not.toHaveProperty('contextSummary');
+		expect(requireValue(chat.mock.calls.at(-1))[0].messages).toHaveLength(1);
 	});
 
 	it.each(['failed', 'cancelled'] as const)('tracks %s assistant text for the summarizer without changing normal history', async status => {
@@ -337,8 +340,8 @@ describe('session compaction', () => {
 		await seed(session, ['Recent question', 'Latest question']);
 		expect(session.getSnapshot().messages[1]).toMatchObject({status, parts: [{text: 'Partial work'}]});
 		await session.compact(model);
-		expect(compact.mock.calls[0]![0].messages[1]).toMatchObject({status, parts: [{text: 'Partial work'}]});
-		expect(chat.mock.calls[1]![0].messages[1]).not.toHaveProperty('status');
+		expect(requireValue(compact.mock.calls[0])[0].messages[1]).toMatchObject({status, parts: [{text: 'Partial work'}]});
+		expect(requireValue(chat.mock.calls[1])[0].messages[1]).not.toHaveProperty('status');
 	});
 
 	it.each([

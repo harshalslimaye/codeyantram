@@ -1,3 +1,6 @@
+import {type GraphProgress,openWorkspaceGraph,type WorkspaceGraph} from '../src/index.js';
+import {requireValue, asymmetric} from '../../shared/tests/helpers.js';
+import type * as SharedModule from '@codeyantram/shared';
 import {chmod, mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -6,11 +9,10 @@ import {promisify} from 'node:util';
 import path from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {getUserGraphDirectory} from '@codeyantram/shared';
-import {openWorkspaceGraph, type WorkspaceGraph} from '../src/index.js';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
-  ...await importOriginal<typeof import('@codeyantram/shared')>(),
-  getUserGraphDirectory: vi.fn(),
+  ...await importOriginal<typeof SharedModule>(),
+  getUserGraphDirectory: vi.fn<typeof getUserGraphDirectory>(),
 }));
 
 let directory: string;
@@ -74,12 +76,12 @@ describe('real CodeGraph adapter', () => {
     const gitIndex = await trackFixture();
     const graph = await open();
     expect((await graph.index()).success).toBe(true);
-    const old = graph.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    const old = requireValue(graph.search('greet').find(result => result.symbol.name === 'greet')).symbol;
     await rename(path.join(workspace, 'src/helper.ts'), path.join(workspace, 'src/moved.ts'));
     await writeFile(path.join(workspace, 'src/main.ts'), 'import {greet} from "./moved";\nexport function welcome() { return greet(); }\n');
     expect(await graph.sync()).toMatchObject({success: true, filesRemoved: 1, filesAdded: 1, failedFilePaths: []});
     expect(graph.getSymbol(old.id)).toBeNull();
-    const moved = graph.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    const moved = requireValue(graph.search('greet').find(result => result.symbol.name === 'greet')).symbol;
     expect(moved.filePath).toBe('src/moved.ts');
     expect(graph.getCallers(moved.id).map(relation => relation.symbol.name)).toContain('welcome');
     await rm(path.join(workspace, 'src/main.ts'));
@@ -98,7 +100,7 @@ describe('real CodeGraph adapter', () => {
       const report = await graph.index();
       expect(report.success).toBe(false);
       expect(report.filesErrored).toBeGreaterThan(0);
-      expect(report.errors).toContainEqual(expect.objectContaining({filePath: 'src/helper.ts', code: 'read_error', severity: 'error'}));
+      expect(report.errors).toContainEqual(asymmetric.objectContaining({filePath: 'src/helper.ts', code: 'read_error', severity: 'error'}));
     } finally {await chmod(source, 0o644);}
   }, 30_000);
 
@@ -107,7 +109,7 @@ describe('real CodeGraph adapter', () => {
     const context = await graph.explore('greet');
     expect(context.symbols.some(symbol => symbol.name === 'greet')).toBe(true);
     expect(context.snippets.some(snippet => snippet.text.includes('hello'))).toBe(true);
-    expect(context.snippets[0]).toMatchObject({filePath: expect.any(String), startLine: expect.any(Number), contentHash: expect.stringMatching(/^[a-f0-9]{64}$/)});
+    expect(context.snippets[0]).toMatchObject({filePath: asymmetric.any(String), startLine: asymmetric.any(Number), contentHash: asymmetric.stringMatching(/^[a-f0-9]{64}$/)});
     expect(context.coverage).toContain('Indexed scope only');
     const bounded = await graph.explore('greet', {maxNodes: 1, maxCharacters: 2048});
     expect(bounded.symbols.length).toBeLessThanOrEqual(1);
@@ -145,7 +147,7 @@ describe('real CodeGraph adapter', () => {
     expect((await stat(graph.storage.databasePath)).isFile()).toBe(true);
     // A file in the data directory must never become part of the source project.
     await writeFile(path.join(graph.storage.directory, 'storage-only.ts'), 'export function storageOnly() {}\n');
-    const progress = vi.fn(() => {
+    const progress = vi.fn<(progress: GraphProgress) => void>(() => {
       expect(() => graph.search('greet')).toThrow('indexing');
       expect(readFileSync(graph.storage.lockPath, 'utf8')).toBe(String(process.pid));
     });
@@ -155,12 +157,12 @@ describe('real CodeGraph adapter', () => {
     expect(graph.getStatus()).toMatchObject({indexState: 'complete', needsReindex: false, fileCount: 2});
     expect(graph.search('excludedSymbol')).toEqual([]);
     expect(graph.search('storageOnly')).toEqual([]);
-    const greet = graph.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    const greet = requireValue(graph.search('greet').find(result => result.symbol.name === 'greet')).symbol;
     expect(greet).toMatchObject({filePath: 'src/helper.ts', startLine: 1, endLine: 1});
     expect(graph.getSymbol(greet.id)).toEqual(greet);
     expect(await graph.getSource(greet.id)).toContain('return "hello"');
     expect(graph.getCallers(greet.id).map(relation => relation.symbol.name)).toContain('welcome');
-    const welcome = graph.search('welcome').find(result => result.symbol.name === 'welcome')!.symbol;
+    const welcome = requireValue(graph.search('welcome').find(result => result.symbol.name === 'welcome')).symbol;
     expect(graph.getCallees(welcome.id).map(relation => relation.symbol.name)).toContain('greet');
     expect(await sourceSnapshot()).toEqual(before);
     expect(await readdir(path.join(workspace, '.codegraph'))).toEqual(['team.json']);
@@ -172,7 +174,7 @@ describe('real CodeGraph adapter', () => {
   it('reopens the persisted index and reads code from the original project', async () => {
     const first = await open();
     expect((await first.index()).success).toBe(true);
-    const symbol = first.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    const symbol = requireValue(first.search('greet').find(result => result.symbol.name === 'greet')).symbol;
     await first.close();
     const second = await open();
     expect(second.created).toBe(false);
@@ -185,14 +187,14 @@ describe('real CodeGraph adapter', () => {
   it('reconciles manual updates, creates, moves, and deletes without rebuilding', async () => {
     const graph = await open();
     await graph.index();
-    const old = graph.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    const old = requireValue(graph.search('greet').find(result => result.symbol.name === 'greet')).symbol;
     await writeFile(path.join(workspace, 'src', 'helper.ts'), 'export function salute(): string { return "updated"; }\n');
     await writeFile(path.join(workspace, 'src', 'main.ts'), 'import {salute} from "./helper";\nexport function welcome(): string { return salute(); }\n');
     const update = await graph.sync();
     expect(update).toMatchObject({success: true, filesModified: 2, failedFilePaths: []});
     expect(graph.getSymbol(old.id)).toBeNull();
     expect(graph.search('greet')).toEqual([]);
-    const salute = graph.search('salute').find(result => result.symbol.name === 'salute')!.symbol;
+    const salute = requireValue(graph.search('salute').find(result => result.symbol.name === 'salute')).symbol;
     expect(await graph.getSource(salute.id)).toContain('updated');
     expect(graph.getCallers(salute.id).map(relation => relation.symbol.name)).toContain('welcome');
 
@@ -239,7 +241,7 @@ describe('real CodeGraph adapter', () => {
     const {databasePath} = first.storage;
     await first.close();
     await writeFile(databasePath, 'invalid existing database');
-    await expect(open()).rejects.toThrow();
+    await expect(open()).rejects.toBeInstanceOf(Error);
     expect(await readFile(databasePath, 'utf8')).toBe('invalid existing database');
     await expect(stat(first.storage.lockPath)).rejects.toMatchObject({code: 'ENOENT'});
   });
@@ -262,12 +264,12 @@ describe('real CodeGraph adapter', () => {
     const writer = await open();
     await writer.index();
     const reader = await open();
-    const old = reader.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    const old = requireValue(reader.search('greet').find(result => result.symbol.name === 'greet')).symbol;
     expect(reader.getSymbol(old.id)).toEqual(old);
     await writeFile(path.join(workspace, 'src', 'helper.ts'), '\n\nexport function greet(): string { return "new source"; }\n');
     expect((await writer.sync()).success).toBe(true);
     expect(reader.getSymbol(old.id)).toBeNull();
-    const updated = reader.search('greet').find(result => result.symbol.name === 'greet')!.symbol;
+    const updated = requireValue(reader.search('greet').find(result => result.symbol.name === 'greet')).symbol;
     expect(updated.startLine).toBe(3);
     expect(await reader.getSource(updated.id)).toContain('new source');
   }, 30_000);

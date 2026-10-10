@@ -1,3 +1,5 @@
+import {requireValue, asymmetric} from '../../../../shared/tests/helpers.js';
+import type {ResolveHost} from '../../../src/tools/web-fetch/url-policy.js';
 import {once} from 'node:events';
 import {createServer, type Server} from 'node:http';
 import {Readable} from 'node:stream';
@@ -24,7 +26,7 @@ afterEach(async () => {
 
 describe('public network policy', () => {
   it.each(['file:///etc/passwd', 'ftp://example.com', 'https://user:pass@example.com', 'https://example.com/\n', 'data:text/plain,hello', 'https://example.com/' + 'x'.repeat(4096), 'https://example.com/' + '界'.repeat(500)])('rejects %s', input => {
-    expect(() => normalizeUrl(input)).toThrowError(expect.objectContaining({code: 'invalid_input'}));
+    expect(() => normalizeUrl(input)).toThrow(asymmetric.objectContaining({code: 'invalid_input'}));
   });
   it('normalizes alternate numeric IPv4 and strips fragments before policy checks', async () => {
     expect(normalizeUrl('HTTP://Example.COM:80/a#section').href).toBe('http://example.com/a');
@@ -56,34 +58,34 @@ describe('transport redirects and response policy', () => {
   it('pins validated DNS answers, resolves relative redirects, and reports the final URL', async () => {
     const first = response('', 302, {location: '/docs#title'});
     const second = response('# Docs', 200, {'content-type': 'text/markdown'});
-    const open = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
-    const lookup = vi.fn(resolve);
+    const open = vi.fn<typeof openConnection>().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const lookup = vi.fn<ResolveHost>(resolve);
     const result = await createWebTransport({resolve: lookup, open}).fetch('https://example.com/start', 'markdown', signal());
     expect(result).toMatchObject({requestedUrl: 'https://example.com/start', finalUrl: 'https://example.com/docs', text: '# Docs'});
-    expect(open.mock.calls[0]![1]).toEqual([publicAddress]);
+    expect(requireValue(open.mock.calls[0])[1]).toEqual([publicAddress]);
     expect(lookup).toHaveBeenCalledTimes(2);
     expect(first.body.destroyed && second.body.destroyed).toBe(true);
   });
   it('rejects redirects to private IPs and DNS rebinding before connecting', async () => {
     for (const location of ['http://127.0.0.1', 'https://other.example.com']) {
-      const open = vi.fn().mockResolvedValue(response('', 302, {location}));
-      const lookup = vi.fn().mockResolvedValueOnce([publicAddress]).mockResolvedValueOnce([{address: '10.0.0.1', family: 4}]);
+      const open = vi.fn<typeof openConnection>().mockResolvedValue(response('', 302, {location}));
+      const lookup = vi.fn<ResolveHost>().mockResolvedValueOnce([publicAddress]).mockResolvedValueOnce([{address: '10.0.0.1', family: 4}]);
       await expect(createWebTransport({resolve: lookup, open}).fetch('https://example.com', 'text', signal())).rejects.toMatchObject({code: 'permission_denied'});
       expect(open).toHaveBeenCalledOnce();
     }
   });
   it('detects redirect loops and bounds redirect chains', async () => {
-    const loop = vi.fn().mockImplementation(async () => response('', 301, {location: '/'}));
+    const loop = vi.fn<typeof openConnection>().mockImplementation(async () => response('', 301, {location: '/'}));
     await expect(createWebTransport({resolve, open: loop}).fetch('https://example.com', 'text', signal())).rejects.toThrow('loop');
     expect(loop).toHaveBeenCalledOnce();
     let hop = 0;
-    const chain = vi.fn().mockImplementation(async () => response('', 302, {location: `/${++hop}`}));
+    const chain = vi.fn<typeof openConnection>().mockImplementation(async () => response('', 302, {location: `/${++hop}`}));
     await expect(createWebTransport({resolve, open: chain}).fetch('https://example.com', 'text', signal())).rejects.toThrow('five redirects');
     expect(chain).toHaveBeenCalledTimes(6);
   });
   it.each([401, 403, 404, 429, 500])('sanitizes HTTP %s and destroys the unread error body', async status => {
     const reply = response('secret server body', status);
-    await expect(createWebTransport({resolve, open: async () => reply}).fetch('https://example.com', 'text', signal())).rejects.toMatchObject({code: 'http_error', message: expect.stringContaining(`HTTP ${status}`)});
+    await expect(createWebTransport({resolve, open: async () => reply}).fetch('https://example.com', 'text', signal())).rejects.toMatchObject({code: 'http_error', message: asymmetric.stringContaining(`HTTP ${status}`)});
     expect(reply.body.destroyed).toBe(true);
   });
   it('rejects binary MIME before reading the body and sanitizes transport errors', async () => {
@@ -96,7 +98,7 @@ describe('transport redirects and response policy', () => {
   });
   it('cancels connection establishment and destroys a late response', async () => {
     let release!: (reply: ConnectionResponse) => void;
-    const open = vi.fn().mockImplementation(() => new Promise<ConnectionResponse>(yes => {release = yes;}));
+    const open = vi.fn<typeof openConnection>().mockImplementation(() => new Promise<ConnectionResponse>(yes => {release = yes;}));
     const scope = deadline(20);
     const pending = createWebTransport({resolve, open}).fetch('https://example.com', 'text', scope.signal);
     try { await expect(pending).rejects.toMatchObject({code: 'timeout'}); }
@@ -137,9 +139,9 @@ describe('bounded response decoding', () => {
     expect(decodeText(Buffer.from([0xff, 0xfe, 0x48, 0, 0x69, 0]), 'text/plain')).toBe('Hi');
     expect(decodeText(Buffer.from([0xfe, 0xff, 0, 0x48, 0, 0x69]), 'text/plain; charset=unknown')).toBe('Hi');
     expect(decodeText(Buffer.from('नमस्कार'), 'text/plain; charset=unknown')).toBe('नमस्कार');
-    expect(() => decodeText(Buffer.from([0, 1, 2, 3]), 'text/plain')).toThrowError(expect.objectContaining({code: 'unsupported_content'}));
+    expect(() => decodeText(Buffer.from([0, 1, 2, 3]), 'text/plain')).toThrow(asymmetric.objectContaining({code: 'unsupported_content'}));
     expect(classifyContent('application/problem+json')).toBe('text');
-    expect(() => classifyContent('application/octet-stream')).toThrow();
+    expect(() => classifyContent('application/octet-stream')).toThrow(Error);
   });
 });
 
@@ -154,7 +156,7 @@ describe('native pinned HTTP connection', () => {
       reply.setHeader('content-type', 'text/plain'); reply.end('Pinned');
     });
     servers.push(server); server.listen(0, '127.0.0.1'); await once(server, 'listening');
-    const address = server.address(); if (!address || typeof address === 'string') throw new Error();
+    const address = server.address(); if (address === null || typeof address === 'string') throw new Error('Expected a TCP server.');
     // Direct low-level connection test; production destination validation rejects this local address.
     const reply = await openConnection(new URL(`http://docs.example:${address.port}`), [{address: '127.0.0.1', family: 4}], 'text', signal());
     expect((await readBody(reply.body, reply.headers, signal())).toString()).toBe('Pinned');

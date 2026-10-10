@@ -5,7 +5,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {getUserConfigPath} from '../../src/filesystem/paths.js';
 import {readConfig, writeConfig} from '../../src/filesystem/config.js';
 
-vi.mock('../../src/filesystem/paths.js', () => ({getUserConfigPath: vi.fn()}));
+vi.mock('../../src/filesystem/paths.js', () => ({getUserConfigPath: vi.fn<typeof getUserConfigPath>()}));
 
 let directory: string;
 let configPath: string;
@@ -64,7 +64,7 @@ describe('config persistence', () => {
 
 	it('cleans up a temporary file when replacement fails', async () => {
 		await mkdir(configPath, {recursive: true});
-		await expect(writeConfig({theme: 'konkan'})).rejects.toThrow();
+		await expect(writeConfig({theme: 'konkan'})).rejects.toBeInstanceOf(Error);
 		expect(await readdir(path.dirname(configPath))).toEqual(['config.json']);
 		expect((await stat(configPath)).isDirectory()).toBe(true);
 	});
@@ -84,7 +84,7 @@ describe('config persistence', () => {
 		const blockedDirectory = path.dirname(configPath);
 		await writeFile(blockedDirectory, 'keep this file');
 
-		await expect(writeConfig({theme: 'konkan'})).rejects.toThrow();
+		await expect(writeConfig({theme: 'konkan'})).rejects.toBeInstanceOf(Error);
 		expect(await readFile(blockedDirectory, 'utf8')).toBe('keep this file');
 		expect(await readdir(directory)).toEqual(['nested']);
 	});

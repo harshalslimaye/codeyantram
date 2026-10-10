@@ -1,3 +1,4 @@
+import {requireValue} from '../../../shared/tests/helpers.js';
 import {describe, expect, it} from 'vitest';
 import {findInputSchema} from '../../src/index.js';
 import {execution, setupNavigation} from './helpers.js';
@@ -11,7 +12,7 @@ describe('find tool', () => {
   it('runs through the query barrier and returns candidates with freshness', async () => {
     const {reader, query, tools} = setupNavigation();
     const input = {query: 'greet', limit: 5};
-    const result = await tools.find.execute!(input, execution());
+    const result = await requireValue(tools.find.execute)(input, execution());
     expect(query).toHaveBeenCalledOnce();
     expect(reader.find).toHaveBeenCalledExactlyOnceWith('greet', input);
     expect(result).toMatchObject({toolName: 'find', status: 'success', output: {context: {matches: []}, freshness: {revision: 2}}});

@@ -1,8 +1,9 @@
+import {requireValue, asymmetric, parseJson, type ProviderRequest} from '../../../shared/tests/helpers.js';
+import {type readConfig as ReadConfigFunction,compactStreamEventSchema,type CompactRequest,type CompactStreamEvent} from '@codeyantram/shared';
 import {once} from 'node:events';
 import {createServer, type Server} from 'node:http';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {compactChat as coreCompactChat, type compactChat} from '@codeyantram/core';
-import {compactStreamEventSchema, type CompactRequest, type CompactStreamEvent} from '@codeyantram/shared';
 import {createApp, type ServerAppOptions} from '@codeyantram/server';
 
 const servers: Server[] = [];
@@ -33,7 +34,7 @@ async function listen(options: ServerAppOptions = {}): Promise<string> {
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Expected a TCP server');
+  if (address === null || typeof address === 'string') throw new Error('Expected a TCP server');
   return `http://127.0.0.1:${address.port}/compact`;
 }
 
@@ -43,7 +44,7 @@ function post(url: string, body: unknown = request) {
 
 function parseEvents(text: string): CompactStreamEvent[] {
   return text.split('\n\n').filter(frame => frame.startsWith('data: '))
-    .map(frame => compactStreamEventSchema.parse(JSON.parse(frame.slice(6))));
+    .map(frame => compactStreamEventSchema.parse(parseJson<ProviderRequest>(frame.slice(6))));
 }
 
 afterEach(async () => {
@@ -66,9 +67,9 @@ describe('POST /compact', () => {
     expect(parseEvents(text)).toEqual([start, done]);
     expect(text).not.toContain('test-openai-key');
     expect(stream).toHaveBeenCalledWith(request, {
-      credentials: {openai: 'test-openai-key'}, abortSignal: expect.any(AbortSignal),
+      credentials: {openai: 'test-openai-key'}, abortSignal: asymmetric.any(AbortSignal),
     });
-    expect(stream.mock.calls[0]![1].abortSignal?.aborted).toBe(true);
+    expect(requireValue(stream.mock.calls[0])[1].abortSignal?.aborted).toBe(true);
   });
 
   it.each([
@@ -81,7 +82,7 @@ describe('POST /compact', () => {
       }}), compactChat: stream,
     }), {...request, model});
     expect(parseEvents(await response.text())).toEqual([start, done]);
-    expect(stream.mock.calls[0]![1].credentials).toEqual({[provider]: `${provider}-key`});
+    expect(requireValue(stream.mock.calls[0])[1].credentials).toEqual({[provider]: `${provider}-key`});
   });
 
   it.each([
@@ -90,7 +91,7 @@ describe('POST /compact', () => {
     {...request, messages: [{...request.messages[0], status: 'failed'}]},
     {...request, messages: [{...request.messages[1], status: 'streaming'}]},
   ])('rejects invalid input before reading credentials or starting SSE (case %#)', async body => {
-    const readConfig = vi.fn(async () => config);
+    const readConfig = vi.fn<typeof ReadConfigFunction>(async () => config);
     const stream = eventStream(start, done);
     const response = await post(await listen({readConfig, compactChat: stream}), body);
     expect(response.status).toBe(400);
@@ -103,7 +104,7 @@ describe('POST /compact', () => {
   it.each([
     ['application/json', '{broken JSON'], ['text/plain', JSON.stringify(request)],
   ])('rejects malformed or non-JSON bodies before generation (%s)', async (contentType, body) => {
-    const readConfig = vi.fn(async () => config);
+    const readConfig = vi.fn<typeof ReadConfigFunction>(async () => config);
     const stream = eventStream(start, done);
     const response = await fetch(await listen({readConfig, compactChat: stream}), {
       method: 'POST', headers: {'content-type': contentType}, body,
@@ -115,7 +116,7 @@ describe('POST /compact', () => {
   });
 
   it('enforces the shared 4 MB body limit before reading credentials', async () => {
-    const readConfig = vi.fn(async () => config);
+    const readConfig = vi.fn<typeof ReadConfigFunction>(async () => config);
     const stream = eventStream(start, done);
     const response = await post(await listen({readConfig, compactChat: stream}), {
       ...request, messages: [{id: 'u1', role: 'user', parts: [{type: 'text', text: 'x'.repeat(4 * 1024 * 1024)}]}],
@@ -146,18 +147,18 @@ describe('POST /compact', () => {
     const events = parseEvents(await response.text());
     expect(events.map(event => event.type)).toEqual(['start', 'done']);
     expect(events.at(-1)).toMatchObject({summary: 'Working summary', usage: {inputTokens: 10, outputTokens: 3, totalTokens: 13}});
-    expect(new Headers(providerFetch.mock.calls[0]![1]?.headers).get('authorization')).toBe('Bearer test-openai-key');
+    expect(new Headers(requireValue(providerFetch.mock.calls[0])[1]?.headers).get('authorization')).toBe('Bearer test-openai-key');
   });
 
   it('reloads credentials on each compaction request', async () => {
-    const readConfig = vi.fn().mockResolvedValueOnce(config)
+    const readConfig = vi.fn<typeof ReadConfigFunction>().mockResolvedValueOnce(config)
       .mockResolvedValueOnce({providers: {openai: {apiKey: 'replacement-key'}}});
     const stream = eventStream(start, done);
     const url = await listen({readConfig, compactChat: stream});
     await (await post(url)).text();
     await (await post(url)).text();
-    expect(stream.mock.calls[0]![1].credentials).toEqual({openai: 'test-openai-key'});
-    expect(stream.mock.calls[1]![1].credentials).toEqual({openai: 'replacement-key'});
+    expect(requireValue(stream.mock.calls[0])[1].credentials).toEqual({openai: 'test-openai-key'});
+    expect(requireValue(stream.mock.calls[1])[1].credentials).toEqual({openai: 'replacement-key'});
   });
 
   it('returns a sanitized JSON error if credential loading fails', async () => {
@@ -172,7 +173,7 @@ describe('POST /compact', () => {
 
   it.each(['rate_limited', 'compaction_failed', 'provider_error'] as const)('forwards a core %s error and closes the iterator', async code => {
     const error: CompactStreamEvent = {type: 'error', code, message: 'Could not summarize.'};
-    const cleanedUp = vi.fn();
+    const cleanedUp = vi.fn<() => void>();
     const stream = vi.fn<typeof compactChat>().mockImplementation(async function* () {
       try {yield start; yield error; yield done;} finally {cleanedUp();}
     });
@@ -202,11 +203,11 @@ describe('POST /compact', () => {
     });
     try {
       const response = await post(await listen({compactChat: stream}));
-      const reader = response.body!.getReader();
+      const reader = requireValue(response.body).getReader();
       const decoder = new TextDecoder();
       let text = decoder.decode((await reader.read()).value);
       expect(parseEvents(text)).toEqual([start]);
-      expect(stream.mock.calls[0]![1].abortSignal?.aborted).toBe(false);
+      expect(requireValue(stream.mock.calls[0])[1].abortSignal?.aborted).toBe(false);
       await vi.advanceTimersByTimeAsync(15_000);
       text += decoder.decode((await reader.read()).value);
       expect(text).toContain(': keep-alive\n\n');
@@ -229,15 +230,15 @@ describe('POST /compact', () => {
     const stream = vi.fn<typeof compactChat>().mockImplementation(async function* (_request, options) {
       try {
         yield start;
-        if (options.abortSignal!.aborted) aborted.resolve();
-        else options.abortSignal!.addEventListener('abort', aborted.resolve, {once: true});
+        if (requireValue(options.abortSignal).aborted) aborted.resolve();
+        else requireValue(options.abortSignal).addEventListener('abort', aborted.resolve, {once: true});
         await finish.promise;
         yield done; // Simulate a provider ignoring cancellation.
       } finally {cleanedUp.resolve();}
     });
     try {
       const response = await post(await listen({compactChat: stream}));
-      const reader = response.body!.getReader();
+      const reader = requireValue(response.body).getReader();
       expect((await reader.read()).done).toBe(false);
       await reader.cancel();
       await aborted.promise;
@@ -245,7 +246,7 @@ describe('POST /compact', () => {
       expect(vi.getTimerCount()).toBe(0);
       finish.resolve();
       await cleanedUp.promise;
-      expect(stream.mock.calls[0]![1].abortSignal?.aborted).toBe(true);
+      expect(requireValue(stream.mock.calls[0])[1].abortSignal?.aborted).toBe(true);
     } finally {finish.resolve();}
   });
 });

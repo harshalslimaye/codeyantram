@@ -1,4 +1,8 @@
-import React from 'react';
+import {requireValue, requestBody, parseJson} from '../../../shared/tests/helpers.js';
+import type {InitTransport} from '../../src/chat/session.js';
+import type * as SharedModule from '@codeyantram/shared';
+import type * as ThemeUtilsModule from '../../src/theme/utils/index.js';
+import React, {useEffect} from 'react';
 import {Text} from 'ink';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {JevNotConfiguredError, readConfiguredProviders, readJevConfiguration, saveModelPreference, saveProviderApiKey, toggleJevUsage, type SupportedChatModelId} from '@codeyantram/shared';
@@ -12,15 +16,15 @@ import {saveThemePreference} from '../../src/theme/utils/index.js';
 import {cleanupTerminal, renderTerminal} from '../helpers/terminal-ui.js';
 import {getGitBranch} from '../../src/lib/utils.js';
 
-vi.mock('../../src/lib/utils.js', () => ({getGitBranch: vi.fn(() => 'project-branch')}));
+vi.mock('../../src/lib/utils.js', () => ({getGitBranch: vi.fn<typeof getGitBranch>(() => 'project-branch')}));
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
-	...await importOriginal<typeof import('@codeyantram/shared')>(),
-	readConfiguredProviders: vi.fn(), saveModelPreference: vi.fn(), saveProviderApiKey: vi.fn(),
-	readJevConfiguration: vi.fn(), toggleJevUsage: vi.fn(),
+	...await importOriginal<typeof SharedModule>(),
+	readConfiguredProviders: vi.fn<typeof readConfiguredProviders>(), saveModelPreference: vi.fn<typeof saveModelPreference>(), saveProviderApiKey: vi.fn<typeof saveProviderApiKey>(),
+	readJevConfiguration: vi.fn<typeof readJevConfiguration>(), toggleJevUsage: vi.fn<typeof toggleJevUsage>(),
 }));
 vi.mock('../../src/theme/utils/index.js', async importOriginal => ({
-	...await importOriginal<typeof import('../../src/theme/utils/index.js')>(), saveThemePreference: vi.fn(),
+	...await importOriginal<typeof ThemeUtilsModule>(), saveThemePreference: vi.fn<typeof saveThemePreference>(),
 }));
 
 beforeEach(() => {
@@ -42,21 +46,22 @@ function deferred<T>() {
 
 function setup(modelId: SupportedChatModelId = 'gpt-6.1-sol') {
 	const registry = createThemeRegistry([{source: 'builtin', themes: BUILTIN_THEMES.map(theme => ({source: 'builtin', theme}))}]);
-	const onSelectModel = vi.fn(async (_id: string, _effort?: string) => {});
-	const onSubmit = vi.fn();
+	const onSelectModel = vi.fn<(model: string, effort?: string) => Promise<void>>(async (_id: string, _effort?: string) => {});
+	const onSubmit = vi.fn<(text: string) => void>();
 	let keyboard!: ReturnType<typeof useKeyboardOwner>;
 	let theme!: ReturnType<typeof useTheme>;
 	function Probe() {
-		keyboard = useKeyboardOwner();
-		theme = useTheme();
-		return <Text>Owner:{keyboard.owner} Theme:{theme.selectedId}</Text>;
+		const currentKeyboard = useKeyboardOwner();
+		const currentTheme = useTheme();
+		useEffect(() => {keyboard = currentKeyboard; theme = currentTheme;}, [currentKeyboard, currentTheme]);
+		return <Text>Owner:{currentKeyboard.owner} Theme:{currentTheme.selectedId}</Text>;
 	}
 	const ui = renderTerminal(
 		<ThemeProvider registry={registry} initialThemeId="konkan" colorDepth={0}>
 			<KeyboardProvider>
 				<Probe />
 				<InputBar modelPreferences={{modelId, effortByModel: {}}} onSelectModel={onSelectModel} operation="idle"
-					onSubmit={onSubmit} onCancel={vi.fn()} onClear={vi.fn()} onCompact={vi.fn()} onStatus={vi.fn()} onInit={vi.fn()} />
+					onSubmit={onSubmit} onCancel={vi.fn<() => void>()} onClear={vi.fn<() => void>()} onCompact={vi.fn<() => void>()} onStatus={vi.fn<() => void>()} onInit={vi.fn<() => void>()} />
 			</KeyboardProvider>
 		</ThemeProvider>,
 	);
@@ -216,7 +221,7 @@ describe('theme selection flow', () => {
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('saved to user config.'));
 		expect(saveThemePreference).toHaveBeenCalledOnce();
-		expect(ui.theme().selectedId).toBe(vi.mocked(saveThemePreference).mock.calls[0]![0]);
+		expect(ui.theme().selectedId).toBe(requireValue(vi.mocked(saveThemePreference).mock.calls[0])[0]);
 		expect(ui.theme().selectedId).not.toBe('konkan');
 		expect(ui.keyboard().getOwner()).toBe('input-bar');
 	});
@@ -268,7 +273,7 @@ describe('model selection flow', () => {
 		const registry = createThemeRegistry([{source: 'builtin', themes: BUILTIN_THEMES.map(theme => ({source: 'builtin', theme}))}]);
 		const ui = renderTerminal(<App registry={registry} initialThemeId="konkan"
 			initialModelPreferences={{modelId: 'gpt-6.1-sol', effortByModel: {}}}
-			serverBaseUrl="http://localhost" workspaceRoot="/chosen/project" initializeGraph={vi.fn()} />);
+			serverBaseUrl="http://localhost" workspaceRoot="/chosen/project" initializeGraph={vi.fn<InitTransport>()} />);
 		await vi.waitFor(() => expect(getGitBranch).toHaveBeenCalledWith('/chosen/project'));
 		expect(ui.frame()).toContain('project-branch');
 	});
@@ -281,7 +286,7 @@ describe('model selection flow', () => {
 		}));
 		vi.stubGlobal('fetch', fetchResponse);
 		const ui = renderTerminal(<App registry={registry} initialThemeId="konkan"
-			initialModelPreferences={{modelId: 'gemma-4-31b-it', effortByModel: {}}} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} initializeGraph={vi.fn()} />);
+			initialModelPreferences={{modelId: 'gemma-4-31b-it', effortByModel: {}}} serverBaseUrl="http://localhost" workspaceRoot={process.cwd()} initializeGraph={vi.fn<InitTransport>()} />);
 		await vi.waitFor(() => expect(ui.frame()).toContain('Enter to send'));
 		ui.stdin.write('/model');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Commands ·'));
@@ -298,7 +303,7 @@ describe('model selection flow', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('Next question'));
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(fetchResponse).toHaveBeenCalledOnce());
-		expect(JSON.parse(String(fetchResponse.mock.calls[0]![1]!.body))).toMatchObject({model: 'claude-fable-5-1', effort: 'high'});
+		expect(parseJson(requestBody(requireValue(requireValue(fetchResponse.mock.calls[0])[1]).body))).toMatchObject({model: 'claude-fable-5-1', effort: 'high'});
 	});
 	it('saves a model with its default effort and closes both pickers', async () => {
 		const ui = setup();

@@ -1,5 +1,6 @@
+import {captureRejection, requireValue} from '../../../shared/tests/helpers.js';
+import {type acquireGraphCoordinator as AcquireGraphCoordinatorFunction,GraphCoordinator,type CoordinatedGraph,type GraphCoordinatorLease} from '@codeyantram/graph';
 import {describe, expect, it, vi} from 'vitest';
-import {GraphCoordinator, type CoordinatedGraph, type GraphCoordinatorLease} from '@codeyantram/graph';
 import {createApp, WorkspaceGraphService} from '../../src/index.js';
 
 function deferred<T>() {
@@ -12,20 +13,20 @@ const report = {success: true, filesChecked: 1, filesAdded: 0, filesModified: 0,
 function setup() {
   const graph = {
     storage: {workspaceRoot: '/project'},
-    getStatus: vi.fn().mockReturnValue({indexState: 'complete', needsReindex: false, lastIndexedAt: 1, fileCount: 1, nodeCount: 1, edgeCount: 0}),
-    sync: vi.fn().mockResolvedValue(report), index: vi.fn(),
-    search: vi.fn().mockReturnValue([]), close: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn<CoordinatedGraph["getStatus"]>().mockReturnValue({indexState: 'complete', needsReindex: false, lastIndexedAt: 1, fileCount: 1, nodeCount: 1, edgeCount: 0}),
+    sync: vi.fn<CoordinatedGraph["sync"]>().mockResolvedValue(report), index: vi.fn<CoordinatedGraph["index"]>(),
+    search: vi.fn<CoordinatedGraph["search"]>().mockReturnValue([]), close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   };
   const coordinator = new GraphCoordinator(graph as unknown as CoordinatedGraph);
-  const release = vi.fn(() => coordinator.close());
-  const acquire = vi.fn().mockResolvedValue({coordinator, release});
+  const release = vi.fn<() => Promise<void>>(() => coordinator.close());
+  const acquire = vi.fn<typeof AcquireGraphCoordinatorFunction>().mockResolvedValue({coordinator, release});
   const service = new WorkspaceGraphService('/project', acquire);
   return {service, coordinator, graph, acquire, release};
 }
 
 describe('server-owned workspace graph', () => {
   it('constructs and closes an app without acquiring or initializing its graph', async () => {
-    const acquire = vi.fn();
+    const acquire = vi.fn<typeof AcquireGraphCoordinatorFunction>();
     const app = createApp({workspaceRoot: '/project', acquireGraphCoordinator: acquire});
     expect(app.workspaceGraph.getStatus()).toEqual({lifecycle: 'unopened', workspaceRoot: '/project', graph: null});
     expect(app.locals.workspaceGraph).toBe(app.workspaceGraph);
@@ -35,7 +36,7 @@ describe('server-owned workspace graph', () => {
   });
 
   it('requires a host-selected root only when graph work is requested', async () => {
-    const acquire = vi.fn();
+    const acquire = vi.fn<typeof AcquireGraphCoordinatorFunction>();
     const service = new WorkspaceGraphService(undefined, acquire);
     await expect(service.initialize()).rejects.toThrow('workspace root');
     expect(acquire).not.toHaveBeenCalled();
@@ -79,7 +80,7 @@ describe('server-owned workspace graph', () => {
     const {service, graph, acquire, release} = setup();
     const controller = new AbortController();
     graph.sync.mockImplementationOnce(async () => {controller.abort(); return report;});
-    await expect(service.initialize({signal: controller.signal})).rejects.toThrow();
+    await expect(service.initialize({signal: controller.signal})).rejects.toBeInstanceOf(Error);
     expect(release).not.toHaveBeenCalled();
     await service.initialize();
     expect(acquire).toHaveBeenCalledOnce();
@@ -93,14 +94,14 @@ describe('server-owned workspace graph', () => {
     const started = deferred<void>();
     acquire.mockImplementationOnce(() => {started.resolve(); return gate.promise;});
     const operation = service.initialize();
-    const rejected = expect(operation).rejects.toThrow();
+    const rejected = captureRejection(operation);
     await started.promise;
     const closing = service.close();
     expect(service.getStatus().lifecycle).toBe('closing');
     await expect(service.query(() => [])).rejects.toThrow('closing or closed');
     expect(release).not.toHaveBeenCalled();
     gate.resolve({coordinator, release});
-    await rejected; await closing;
+    expect(await rejected).toBeInstanceOf(Error); await closing;
     expect(graph.sync).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledOnce();
   });
@@ -110,15 +111,15 @@ describe('server-owned workspace graph', () => {
     const started = deferred<void>();
     const gate = deferred<typeof report>();
     let signal!: AbortSignal;
-    graph.sync.mockImplementationOnce(options => {signal = options.signal; started.resolve(); return gate.promise;});
+    graph.sync.mockImplementationOnce(options => {signal = requireValue(options?.signal); started.resolve(); return gate.promise;});
     const operation = service.initialize();
-    const rejected = expect(operation).rejects.toThrow();
+    const rejected = captureRejection(operation);
     await started.promise;
     const closing = service.close();
     expect(signal.aborted).toBe(true);
     expect(release).not.toHaveBeenCalled();
     gate.resolve(report);
-    await rejected; await closing;
+    expect(await rejected).toBeInstanceOf(Error); await closing;
     expect(release).toHaveBeenCalledOnce();
   });
 
@@ -127,7 +128,7 @@ describe('server-owned workspace graph', () => {
     const started = deferred<void>();
     const gate = deferred<typeof report>();
     let signal!: AbortSignal;
-    graph.sync.mockImplementationOnce(options => {signal = options.signal; started.resolve(); return gate.promise;});
+    graph.sync.mockImplementationOnce(options => {signal = requireValue(options?.signal); started.resolve(); return gate.promise;});
     const operation = service.edit(({markChanged}) => {markChanged('saved.ts'); return 'saved';});
     await started.promise;
     const closing = service.close();

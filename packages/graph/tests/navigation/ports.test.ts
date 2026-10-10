@@ -20,7 +20,7 @@ function verification() {
     fingerprint: vi.fn<SourceFingerprints['fingerprint']>().mockResolvedValue(hash),
     verifyFiles: vi.fn<SourceFingerprints['verifyFiles']>().mockResolvedValue(undefined),
   };
-  const backend = {getNode: vi.fn().mockReturnValue(node)};
+  const backend = {getNode: vi.fn<(id: string) => CodeGraphNode | null>().mockReturnValue(node)};
   const references = new SymbolReferences(backend, sources, workspaceId);
   return {sources, backend, references, reference: references.reference(node, hash)};
 }

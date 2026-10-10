@@ -50,7 +50,8 @@ describe('terminal Markdown', () => {
 		expect(output).toContain('Quoted');
 		expect(output).toContain('Docs (https://example.com)');
 		expect(output).toContain('const x = "**literal**";');
-		expect(output).not.toMatch(/# Heading|\*\*Bold\*\*|```|\x1b/);
+		expect(output).not.toMatch(/# Heading|\*\*Bold\*\*|```/);
+		expect(output).not.toContain('\x1b');
 	});
 
 	it('keeps plain multiline replies and incomplete streamed fences readable', () => {

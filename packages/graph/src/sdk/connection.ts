@@ -1,3 +1,4 @@
+import type * as CodegraphModule from '@colbymchenry/codegraph';
 import {mkdir, stat} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import type {CodeGraph} from '@colbymchenry/codegraph';
@@ -5,7 +6,7 @@ import type {GraphStoragePaths} from '../contracts/storage.js';
 import {resolveGraphStoragePaths} from '../storage/paths.js';
 import type {WorkspaceBackend} from './ports.js';
 
-type SDK = typeof import('@colbymchenry/codegraph');
+type SDK = typeof CodegraphModule;
 type EmbeddedSDK = Omit<SDK, 'CodeGraph'> & {
   CodeGraph: SDK['CodeGraph'] & {
     // The tracked install-time extension; no private fields or runtime overrides.

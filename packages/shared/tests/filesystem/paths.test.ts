@@ -1,14 +1,16 @@
+import {requireValue} from '../helpers.js';
+import type * as OsModule from 'node:os';
 import {homedir} from 'node:os';
 import path from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {getUserConfigDirectory, getUserConfigPath, getUserGraphDirectory, getUserThemeDirectory} from '../../src/filesystem/paths.js';
 
 vi.mock('node:os', async importOriginal => ({
-	...await importOriginal<typeof import('node:os')>(),
-	homedir: vi.fn(),
+	...await importOriginal<typeof OsModule>(),
+	homedir: vi.fn<typeof OsModule.homedir>(),
 }));
 
-const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+const platformDescriptor = requireValue(Object.getOwnPropertyDescriptor(process, 'platform'));
 const homeDirectory = path.resolve('test-home');
 
 beforeEach(() => {

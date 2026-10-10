@@ -1,3 +1,4 @@
+import type * as SharedModule from '@codeyantram/shared';
 import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -7,8 +8,8 @@ import {loadThemes, readThemePreference, saveThemePreference} from '../../../src
 import {BUILTIN_THEMES, konkanTheme} from '../../../src/theme/builtins/index.js';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
-	...await importOriginal<typeof import('@codeyantram/shared')>(),
-	getUserThemeDirectory: vi.fn(), readConfig: vi.fn(), writeConfig: vi.fn(),
+	...await importOriginal<typeof SharedModule>(),
+	getUserThemeDirectory: vi.fn<typeof getUserThemeDirectory>(), readConfig: vi.fn<typeof readConfig>(), writeConfig: vi.fn<typeof writeConfig>(),
 }));
 
 let directory: string;

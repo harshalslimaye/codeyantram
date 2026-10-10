@@ -1,4 +1,7 @@
-import React, {Component, type ReactNode} from 'react';
+import {requireValue} from '../../../shared/tests/helpers.js';
+import type * as InkUiModule from '@inkjs/ui';
+import type * as SharedModule from '@codeyantram/shared';
+import React, {useEffect, Component, type ReactNode} from 'react';
 import {Text} from 'ink';
 import {ProgressBar} from '@inkjs/ui';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
@@ -22,15 +25,15 @@ const widgets = vi.hoisted(() => ({selects: [] as Selection[], passwords: [] as 
 // A widget can deliver an effect callback after its owner or disabled state changed.
 // Capture that boundary while keeping the real contexts and component behavior.
 vi.mock('@inkjs/ui', async importOriginal => ({
-	...await importOriginal<typeof import('@inkjs/ui')>(),
+	...await importOriginal<typeof InkUiModule>(),
 	Select: (props: Selection) => {widgets.selects.push(props); return null;},
 	PasswordInput: (props: {onSubmit: (value: string) => void}) => {widgets.passwords.push(props); return null;},
 }));
 vi.mock('@codeyantram/shared', async importOriginal => {
-	const original = await importOriginal<typeof import('@codeyantram/shared')>();
-	return {...original, saveProviderApiKey: vi.fn(), findSupportedChatModel: vi.fn(original.findSupportedChatModel)};
+	const original = await importOriginal<typeof SharedModule>();
+	return {...original, saveProviderApiKey: vi.fn<typeof saveProviderApiKey>(), findSupportedChatModel: vi.fn<typeof findSupportedChatModel>(original.findSupportedChatModel)};
 });
-vi.mock('../../src/theme/utils/index.js', () => ({saveThemePreference: vi.fn()}));
+vi.mock('../../src/theme/utils/index.js', () => ({saveThemePreference: vi.fn<typeof saveThemePreference>()}));
 
 const registry = createThemeRegistry([{source: 'builtin', themes: [{source: 'builtin', theme: konkanTheme}]}]);
 beforeEach(() => {
@@ -45,9 +48,10 @@ function setup(node: ReactNode, initialThemeId = 'konkan') {
 	let keyboard!: ReturnType<typeof useKeyboardOwner>;
 	let theme!: ReturnType<typeof useTheme>;
 	function Probe() {
-		keyboard = useKeyboardOwner();
-		theme = useTheme();
-		return <Text>Owner:{keyboard.owner} Theme:{theme.selectedId}</Text>;
+		const currentKeyboard = useKeyboardOwner();
+		const currentTheme = useTheme();
+		useEffect(() => {keyboard = currentKeyboard; theme = currentTheme;}, [currentKeyboard, currentTheme]);
+		return <Text>Owner:{currentKeyboard.owner} Theme:{currentTheme.selectedId}</Text>;
 	}
 	const ui = renderTerminal(<ThemeProvider registry={registry} initialThemeId={initialThemeId} colorDepth={0}>
 		<KeyboardProvider><Probe />{node}</KeyboardProvider>
@@ -61,12 +65,12 @@ function setup(node: ReactNode, initialThemeId = 'konkan') {
 		},
 	};
 }
-const selection = () => widgets.selects.at(-1)!;
+const selection = () => requireValue(widgets.selects.at(-1));
 
 describe('picker callback ownership', () => {
 	it('ignores unknown options and callbacks arriving after another picker takes ownership', async () => {
-		const onSelect = vi.fn();
-		const ui = setup(<Picker owner="model-picker" title="Models" options={[{value: 'known', label: 'Known'}]} onSelect={onSelect} onCancel={vi.fn()} />);
+		const onSelect = vi.fn<(value: string) => void | Promise<void>>();
+		const ui = setup(<Picker owner="model-picker" title="Models" options={[{value: 'known', label: 'Known'}]} onSelect={onSelect} onCancel={vi.fn<() => void>()} />);
 		await ui.open('model-picker');
 		const choose = selection().onChange;
 		choose('unknown');
@@ -79,15 +83,15 @@ describe('picker callback ownership', () => {
 	});
 
 	it('ignores selection effects while the picker is disabled', async () => {
-		const onSelect = vi.fn();
-		const ui = setup(<Picker owner="model-picker" title="Models" options={[{value: 'known', label: 'Known'}]} isDisabled onSelect={onSelect} onCancel={vi.fn()} />);
+		const onSelect = vi.fn<(value: string) => void | Promise<void>>();
+		const ui = setup(<Picker owner="model-picker" title="Models" options={[{value: 'known', label: 'Known'}]} isDisabled onSelect={onSelect} onCancel={vi.fn<() => void>()} />);
 		await ui.open('model-picker');
 		selection().onChange('known');
 		expect(onSelect).not.toHaveBeenCalled();
 	});
 
 	it('does not execute an old command-palette callback after ownership changes', async () => {
-		const onSelect = vi.fn();
+		const onSelect = vi.fn<(value: string) => void | Promise<void>>();
 		const ui = setup(<CommandPalette onSelect={onSelect} />);
 		await ui.open('command-palette');
 		const choose = selection().onChange;
@@ -102,10 +106,10 @@ describe('save callback guards', () => {
 	it('ignores duplicate API-key submissions and submissions after ownership changes', async () => {
 		let finish!: () => void;
 		vi.mocked(saveProviderApiKey).mockReturnValueOnce(new Promise<void>(resolve => {finish = resolve;}));
-		const saved = vi.fn();
+		const saved = vi.fn<() => void>();
 		const ui = setup(<ApiKeyInput provider="openai" providerName="OpenAI" onSaved={saved} />);
 		await ui.open('api-key-input');
-		const submit = widgets.passwords.at(-1)!.onSubmit;
+		const submit = requireValue(widgets.passwords.at(-1)).onSubmit;
 		submit('key');
 		submit('duplicate');
 		expect(saveProviderApiKey).toHaveBeenCalledExactlyOnceWith('openai', 'key');
@@ -130,14 +134,14 @@ describe('save callback guards', () => {
 
 	it('ignores duplicate model saves and a stale model-selection effect during saving', async () => {
 		let finish!: () => void;
-		const onSelect = vi.fn(() => new Promise<void>(resolve => {finish = resolve;}));
+		const onSelect = vi.fn<(value: string, effort?: SharedModule.EffortLevel) => Promise<void>>(() => new Promise<void>(resolve => {finish = resolve;}));
 		const ui = setup(<ModelPicker preferences={{modelId: 'gpt-6.1-sol', effortByModel: {'gpt-6.1-sol': 'high'}}} onSelect={onSelect} />);
 		await ui.open('model-picker');
 		const chooseModel = selection().onChange;
 		chooseModel('gpt-6.1-sol');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Choose effort for gpt-6.1-sol'));
 		const chooseEffort = selection().onChange;
-		expect(selection().options[0]!.value).toBe('high');
+		expect(requireValue(selection().options[0]).value).toBe('high');
 		chooseEffort('high');
 		chooseEffort('high');
 		ui.keyboard().pop('effort-picker');
@@ -148,7 +152,7 @@ describe('save callback guards', () => {
 	});
 
 	it('keeps the model picker open if the selected model disappeared from the catalog', async () => {
-		const onSelect = vi.fn();
+		const onSelect = vi.fn<(value: string, effort?: SharedModule.EffortLevel) => Promise<void>>();
 		const ui = setup(<ModelPicker preferences={{modelId: 'gpt-6.1-sol', effortByModel: {}}} onSelect={onSelect} />);
 		await ui.open('model-picker');
 		vi.mocked(findSupportedChatModel).mockReturnValueOnce(undefined);
@@ -177,7 +181,7 @@ describe('theme and status presentation', () => {
 class ErrorBoundary extends Component<{children: ReactNode}, {message?: string}> {
 	state: {message?: string} = {};
 	static getDerivedStateFromError(error: Error) {return {message: error.message};}
-	render() {return this.state.message ? <Text>{this.state.message}</Text> : this.props.children;}
+	render() {return this.state.message !== undefined && this.state.message !== '' ? <Text>{this.state.message}</Text> : this.props.children;}
 }
 
 describe('context requirements', () => {

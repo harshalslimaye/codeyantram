@@ -1,3 +1,5 @@
+import {requireValue, asymmetric} from '../../shared/tests/helpers.js';
+import type * as SharedModule from '@codeyantram/shared';
 import {createHash} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
 import {mkdtemp, mkdir, rm, rename, writeFile} from 'node:fs/promises';
@@ -8,7 +10,7 @@ import {getUserGraphDirectory, symbolReferenceSchema} from '@codeyantram/shared'
 import {GraphCoordinator, openWorkspaceGraph, type GraphNavigationSymbol, type WorkspaceGraph} from '../src/index.js';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
-  ...await importOriginal<typeof import('@codeyantram/shared')>(), getUserGraphDirectory: vi.fn(),
+  ...await importOriginal<typeof SharedModule>(), getUserGraphDirectory: vi.fn<typeof getUserGraphDirectory>(),
 }));
 let directory: string, root: string, graph: WorkspaceGraph;
 const graphs: WorkspaceGraph[] = [];
@@ -28,10 +30,11 @@ beforeEach(async () => {
     writeFile(path.join(root, '.gitignore'), 'excluded.ts\n'),
   ]);
   graph = await openWorkspaceGraph(root); graphs.push(graph);
-  expect((await graph.index()).success).toBe(true);
+  const report = await graph.index();
+  if (!report.success) throw new Error('Expected the navigation fixture to index successfully.');
 });
 afterEach(async () => {
-  await Promise.all(graphs.splice(0).map(graph => graph.close()));
+  await Promise.all(graphs.splice(0).map(openedGraph => openedGraph.close()));
   await rm(directory, {recursive: true, force: true});
 });
 
@@ -51,9 +54,9 @@ describe('installed SDK focused navigation', () => {
     expect(symbolReferenceSchema.parse(greet.reference)).toEqual(greet.reference);
     expect(greet.reference.contentHash).toBe(createHash('sha256').update(helper).digest('hex'));
     const context = await graph.explore('greet');
-    const explored = context.symbols.find(symbol => symbol.id === greet.id)!;
+    const explored = requireValue(context.symbols.find(symbol => symbol.id === greet.id));
     expect(explored.reference).toEqual(greet.reference);
-    expect(await graph.inspect({reference: explored.reference})).toMatchObject({type: 'symbol', source: {text: expect.stringContaining('hello'), truncated: false}});
+    expect(await graph.inspect({reference: explored.reference})).toMatchObject({type: 'symbol', source: {text: asymmetric.stringContaining('hello'), truncated: false}});
     expect((await graph.find('excluded')).matches).toEqual([]);
   });
 
@@ -73,7 +76,7 @@ describe('installed SDK focused navigation', () => {
     const greet = await locate('greet', 'src/helper.ts');
     const immediate = await graph.trace(greet.reference, {direction: 'callers'});
     expect(immediate.symbols.map(symbol => symbol.name)).toEqual(['welcome']);
-    expect(immediate.relationships).toContainEqual(expect.objectContaining({source: immediate.symbols[0].id, target: greet.id, kind: 'calls', line: 2}));
+    expect(immediate.relationships).toContainEqual(asymmetric.objectContaining({source: immediate.symbols[0].id, target: greet.id, kind: 'calls', line: 2}));
     const transitive = await graph.trace(greet.reference, {direction: 'callers', depth: 2});
     expect(transitive.symbols.map(symbol => symbol.name)).toEqual(['welcome', 'launch']);
     const limited = await graph.trace(greet.reference, {direction: 'callers', depth: 2, limit: 1});
@@ -90,7 +93,7 @@ describe('installed SDK focused navigation', () => {
   it('preserves references through no-op scans and unrelated edits but rejects changed content and moved symbols', async () => {
     const coordinator = new GraphCoordinator(graph);
     const found = await coordinator.query(reader => reader.find('greet'));
-    const reference = found.value.matches.find(match => match.symbol.filePath === 'src/helper.ts')!.symbol.reference;
+    const reference = requireValue(found.value.matches.find(match => match.symbol.filePath === 'src/helper.ts')).symbol.reference;
     const before = await coordinator.query(reader => reader.inspect({reference}));
     expect(before.freshness.revision).toBeGreaterThan(found.freshness.revision);
     await writeFile(path.join(root, 'src/unrelated.ts'), 'export function unrelated() {}\n');
@@ -99,7 +102,7 @@ describe('installed SDK focused navigation', () => {
     await expect(coordinator.query(reader => reader.inspect({reference}))).rejects.toMatchObject({code: 'stale_reference'});
     await expect(coordinator.query(reader => reader.trace(reference, {direction: 'callers'}))).rejects.toMatchObject({code: 'stale_reference'});
     const current = await locate('greet', 'src/helper.ts');
-    expect(await graph.inspect({reference: current.reference})).toMatchObject({source: {text: expect.stringContaining('updated')}});
+    expect(await graph.inspect({reference: current.reference})).toMatchObject({source: {text: asymmetric.stringContaining('updated')}});
     await rename(path.join(root, 'src/helper.ts'), path.join(root, 'src/moved.ts'));
     await expect(coordinator.query(reader => reader.inspect({reference: current.reference}))).rejects.toMatchObject({code: 'stale_reference'});
     await coordinator.close();

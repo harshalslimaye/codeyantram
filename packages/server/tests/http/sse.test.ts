@@ -1,10 +1,11 @@
+import {captureRejection} from '../../../shared/tests/helpers.js';
 import {EventEmitter} from 'node:events';
 import type {Response} from 'express';
 import {describe, expect, it, vi} from 'vitest';
 import {startHeartbeat, writeStreamEvent} from '../../src/http/sse.js';
 
 function responseStub() {
-  const response = Object.assign(new EventEmitter(), {write: vi.fn().mockReturnValue(false)});
+  const response = Object.assign(new EventEmitter(), {write: vi.fn<(chunk: string) => boolean>().mockReturnValue(false)});
   return {response, typed: response as unknown as Response};
 }
 
@@ -23,9 +24,9 @@ describe('writeStreamEvent', () => {
     const {response, typed} = responseStub();
     const controller = new AbortController();
     const writing = writeStreamEvent(typed, {type: 'start', messageId: 'assistant-1'}, controller.signal);
-    const rejected = expect(writing).rejects.toMatchObject({name: 'AbortError'});
+    const rejected = captureRejection(writing);
     controller.abort();
-    await rejected;
+    expect(await rejected).toMatchObject({name: 'AbortError'});
     expect(response.listenerCount('drain')).toBe(0);
   });
 

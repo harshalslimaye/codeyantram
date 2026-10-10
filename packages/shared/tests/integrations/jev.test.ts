@@ -8,7 +8,7 @@ import {JevNotConfiguredError, readJevConfiguration, resolveJevConfiguration, to
 import {readConfiguredProviders, readProviderCredentials, saveProviderApiKey} from '../../src/providers/helpers/index.js';
 import {SUPPORTED_CHAT_MODELS} from '../../src/providers/config/index.js';
 
-vi.mock('../../src/filesystem/paths.js', () => ({getUserConfigPath: vi.fn()}));
+vi.mock('../../src/filesystem/paths.js', () => ({getUserConfigPath: vi.fn<typeof getUserConfigPath>()}));
 
 let directory: string;
 beforeEach(async () => {
@@ -73,12 +73,12 @@ describe('JEV configuration', () => {
 
 	it('propagates read and write failures without reporting success', async () => {
 		vi.mocked(getUserConfigPath).mockReturnValue(directory);
-		await expect(readJevConfiguration()).rejects.toThrow();
-		await expect(toggleJevUsage()).rejects.toThrow();
+		await expect(readJevConfiguration()).rejects.toBeInstanceOf(Error);
+		await expect(toggleJevUsage()).rejects.toBeInstanceOf(Error);
 		vi.mocked(getUserConfigPath).mockReturnValue(path.join(directory, 'config.json'));
 		await writeConfig({providers: {typesafe: {apiKey: 'test-key'}}});
 		vi.mocked(getUserConfigPath).mockReturnValueOnce(path.join(directory, 'config.json')).mockReturnValueOnce(directory);
-		await expect(toggleJevUsage()).rejects.toThrow();
+		await expect(toggleJevUsage()).rejects.toBeInstanceOf(Error);
 		vi.mocked(getUserConfigPath).mockReturnValue(path.join(directory, 'config.json'));
 		await expect(readJevConfiguration()).resolves.toEqual({enabled: false, configured: true});
 	});

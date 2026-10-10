@@ -1,3 +1,4 @@
+import {requireValue} from '../../../shared/tests/helpers.js';
 import {requireTextPart} from '../helpers/message-parts.js';
 import {describe, expect, it} from 'vitest';
 import {Buffer} from 'node:buffer';
@@ -128,7 +129,7 @@ describe('compaction planning', () => {
 
 	it.each([1, 5])('declines active streaming whether the answer is older or retained (index %i)', index => {
 		const transcript = [user('u1', longText), assistant('a1'), user('u2'), assistant('a2'), user('u3'), assistant('a3')];
-		transcript[index] = assistant('stream', 'Still writing', 'streaming');
+		transcript.splice(index, 1, assistant('stream', 'Still writing', 'streaming'));
 		expect(planCompaction(transcript)).toEqual({type: 'noop', reason: 'streaming'});
 	});
 
@@ -147,8 +148,8 @@ describe('compaction planning', () => {
 		const plan = planCompaction(transcript);
 		if (plan.type !== 'ready') throw new Error('Expected eligible history');
 		expect(plan.messages[1]).not.toHaveProperty('usage');
-		plan.messages[0]!.parts.map(requireTextPart)[0]!.text = 'Changed request';
-		plan.messages[1]!.parts.push({type: 'text', text: 'Extra'});
+		requireValue(requireValue(plan.messages[0]).parts.map(requireTextPart)[0]).text = 'Changed request';
+		requireValue(plan.messages[1]).parts.push({type: 'text', text: 'Extra'});
 		expect(transcript).toEqual(original);
 	});
 });
@@ -172,19 +173,19 @@ describe('compaction reduction and size guards', () => {
 	it('enforces the 4 MB body boundary on serialized UTF-8 requests', () => {
 		const request: CompactRequest = {model: 'gpt-6.1-sol', messages: [user('u1', '')]};
 		const overhead = Buffer.byteLength(JSON.stringify(request), 'utf8');
-		request.messages[0]!.parts.map(requireTextPart)[0]!.text = 'x'.repeat(MAX_COMPACT_REQUEST_BYTES - overhead);
+		requireValue(requireValue(request.messages[0]).parts.map(requireTextPart)[0]).text = 'x'.repeat(MAX_COMPACT_REQUEST_BYTES - overhead);
 		expect(getCompactionSizeError(request)).not.toContain('4 MB');
-		request.messages[0]!.parts.map(requireTextPart)[0]!.text += '👋';
+		requireValue(requireValue(request.messages[0]).parts.map(requireTextPart)[0]).text += '👋';
 		expect(getCompactionSizeError(request)).toContain('4 MB');
 	});
 
 	it('reserves output and instruction margin against the selected model window', () => {
 		const request: CompactRequest = {model: 'claude-haiku-4-5-20251001', messages: [user('u1', '')]};
 		const overhead = Buffer.byteLength(JSON.stringify(request), 'utf8');
-		const window = findSupportedChatModel(request.model)!.contextWindow;
-		request.messages[0]!.parts.map(requireTextPart)[0]!.text = 'x'.repeat((window - COMPACTION_CONTEXT_MARGIN_TOKENS) * 4 - overhead);
+		const window = requireValue(findSupportedChatModel(request.model)).contextWindow;
+		requireValue(requireValue(request.messages[0]).parts.map(requireTextPart)[0]).text = 'x'.repeat((window - COMPACTION_CONTEXT_MARGIN_TOKENS) * 4 - overhead);
 		expect(getCompactionSizeError(request)).toBeUndefined();
-		request.messages[0]!.parts.map(requireTextPart)[0]!.text += 'x';
+		requireValue(requireValue(request.messages[0]).parts.map(requireTextPart)[0]).text += 'x';
 		expect(getCompactionSizeError(request)).toContain('context window');
 	});
 });

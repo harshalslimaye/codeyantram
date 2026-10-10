@@ -1,3 +1,4 @@
+import {captureRejection, requireValue, asymmetric, requestUrl, requestBody, parseJson, type EvaluationRequest} from '../../../shared/tests/helpers.js';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {
   createJevEvaluator, EvaluationError, MAX_EVALUATION_INPUT_BYTES, MAX_EVALUATION_QUESTIONS,
@@ -26,16 +27,16 @@ describe('JEV evaluation provider', () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({private: apiKey}));
     const result = await createJevEvaluator({apiKey: ` ${apiKey} `, fetch}).evaluate(input);
     expect(result).toEqual({
-      answers: {relevant: {type: 'boolean', probability: 0.91}}, modelId: 'jev-1.13.0', durationMs: expect.any(Number),
+      answers: {relevant: {type: 'boolean', probability: 0.91}}, modelId: 'jev-1.13.0', durationMs: asymmetric.any(Number),
       usage: {inputTokens: 10, outputTokens: 2, totalTokens: 12}, rounding: {probabilityDecimals: 2, scoreDecimals: 2},
     });
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
     expect(fetch).toHaveBeenCalledOnce();
-    const [url, init] = fetch.mock.calls[0]!;
-    expect(String(url)).toBe('https://api.typesafe.ai/v1/systemone');
+    const [url, init] = requireValue(fetch.mock.calls[0]);
+    expect(requestUrl(url)).toBe('https://api.typesafe.ai/v1/systemone');
     expect(init?.redirect).toBe('error');
     expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${apiKey}`);
-    expect(JSON.parse(String(init?.body))).toEqual({model: 'jev-latest', state: input.state,
+    expect(parseJson<EvaluationRequest>(requestBody(init?.body))).toEqual({model: 'jev-latest', state: input.state,
       questions: {relevant: {...input.questions.relevant, type: 'noul'}}});
     expect(JSON.stringify(result)).not.toContain(apiKey);
     expect(result).not.toHaveProperty('response');
@@ -67,13 +68,13 @@ describe('JEV evaluation provider', () => {
     const result = await createJevEvaluator({apiKey, fetch, modelId: 'jev-pinned-version'}).evaluate({state: 'Evidence',
       questions: {level: {type: 'score', instructions: 'Rate the evidence', criteria: ['None', 'Some', 'Direct']}}});
     expect(result.answers.level.score).toBe(1);
-    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body)).model).toBe('jev-pinned-version');
+    expect(parseJson<EvaluationRequest>(requestBody(requireValue(fetch.mock.calls[0])[1]?.body)).model).toBe('jev-pinned-version');
   });
 
   it.each([undefined, null, {input_tokens: 7}, {output_tokens: 0}])('preserves absent and partial usage: %j', async usage => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({usage}));
     const result = await createJevEvaluator({apiKey, fetch}).evaluate(input);
-    if (usage == null) expect(result).not.toHaveProperty('usage');
+    if (usage === null || usage === undefined) expect(result).not.toHaveProperty('usage');
     else if ('input_tokens' in usage) expect(result.usage).toEqual({inputTokens: 7});
     else expect(result.usage).toEqual({outputTokens: 0});
   });
@@ -89,19 +90,19 @@ describe('JEV evaluation provider', () => {
     delete (mutable.questions as Partial<typeof mutable.questions>).relevant;
     pending.resolve(response());
     await expect(result).resolves.toMatchObject({answers: {relevant: {probability: 0.91}}});
-    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body)).state).toEqual({chunk: 'Original'});
+    expect(parseJson<EvaluationRequest>(requestBody(requireValue(fetch.mock.calls[0])[1]?.body)).state).toEqual({chunk: 'Original'});
   });
 });
 
 describe('JEV input and failure handling', () => {
   it('requires an explicit key rather than using an environment key', () => {
     vi.stubEnv('TYPESAFE_AI_API_KEY', 'environment-key');
-    expect(() => createJevEvaluator({apiKey: ' '})).toThrowError(expect.objectContaining({code: 'missing_credentials'}));
+    expect(() => createJevEvaluator({apiKey: ' '})).toThrow(asymmetric.objectContaining({code: 'missing_credentials'}));
   });
 
   it.each([{timeoutMs: 0}, {timeoutMs: 30_001}, {timeoutMs: 1.5}, {modelId: ' '}, {modelId: 'x'.repeat(129)}])
   ('rejects invalid evaluator options: %j', options => {
-    expect(() => createJevEvaluator({apiKey, ...options})).toThrowError(expect.objectContaining({code: 'invalid_input'}));
+    expect(() => createJevEvaluator({apiKey, ...options})).toThrow(asymmetric.objectContaining({code: 'invalid_input'}));
   });
 
   it.each([
@@ -127,9 +128,11 @@ describe('JEV input and failure handling', () => {
   it.each([[401, 'authentication_failed'], [403, 'authentication_failed'], [429, 'rate_limited'], [500, 'provider_error'], [529, 'provider_error']] as const)
   ('sanitizes HTTP %s without retrying', async (status, code) => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({message: `private-state ${apiKey}`}, {status}));
-    const error = await createJevEvaluator({apiKey, fetch}).evaluate(input).catch(error => error);
+    const error = await createJevEvaluator({apiKey, fetch}).evaluate(input).catch((reason: unknown) => reason);
     expect(error).toBeInstanceOf(EvaluationError);
+    if (!(error instanceof EvaluationError)) throw new Error('Expected an evaluation error.');
     expect(error.code).toBe(code);
+    if (!(error instanceof Error)) throw new Error('Expected an error.');
     expect(`${error.message} ${JSON.stringify(error)}`).not.toMatch(/private-state|test-typesafe-key/);
     expect(fetch).toHaveBeenCalledOnce();
   });
@@ -167,9 +170,10 @@ describe('JEV input and failure handling', () => {
       vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(`{broken private-state ${apiKey}`)),
       vi.fn<typeof globalThis.fetch>().mockRejectedValue(new Error(`private-state ${apiKey}`)),
     ]) {
-      const error = await createJevEvaluator({apiKey, fetch}).evaluate(input).catch(error => error);
+      const error = await createJevEvaluator({apiKey, fetch}).evaluate(input).catch((reason: unknown) => reason);
       expect(error).toBeInstanceOf(EvaluationError);
-      expect(`${error.message} ${JSON.stringify(error)}`).not.toMatch(/private-state|test-typesafe-key/);
+      if (!(error instanceof Error)) throw new Error('Expected an error.');
+    expect(`${error.message} ${JSON.stringify(error)}`).not.toMatch(/private-state|test-typesafe-key/);
       expect(fetch).toHaveBeenCalledOnce();
     }
   });
@@ -189,12 +193,12 @@ describe('JEV cancellation and deadlines', () => {
     const started = deferred<void>();
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => {started.resolve(); return pending.promise;});
     const result = createJevEvaluator({apiKey, fetch}).evaluate({...input, abortSignal: controller.signal});
-    const checked = expect(result).rejects.toMatchObject({code: 'cancelled'});
+    const checked = captureRejection(result);
     await started.promise;
     controller.abort(new Error(`private-reason ${apiKey}`));
     if (late) pending.resolve(response());
-    await checked;
-    expect(fetch.mock.calls[0]![1]?.signal?.aborted).toBe(true);
+    expect(await checked).toMatchObject({code: 'cancelled'});
+    expect(requireValue(fetch.mock.calls[0])[1]?.signal?.aborted).toBe(true);
   });
 
   it('enforces its deadline even if the transport ignores cancellation and clears the timer', async () => {
@@ -202,11 +206,11 @@ describe('JEV cancellation and deadlines', () => {
     const started = deferred<void>();
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => {started.resolve(); return new Promise(() => {});});
     const result = createJevEvaluator({apiKey, fetch, timeoutMs: 20}).evaluate(input);
-    const checked = expect(result).rejects.toMatchObject({code: 'timeout'});
+    const checked = captureRejection(result);
     await started.promise;
     await vi.advanceTimersByTimeAsync(20);
-    await checked;
-    expect(fetch.mock.calls[0]![1]?.signal?.aborted).toBe(true);
+    expect(await checked).toMatchObject({code: 'timeout'});
+    expect(requireValue(fetch.mock.calls[0])[1]?.signal?.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -218,17 +222,17 @@ describe('JEV cancellation and deadlines', () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => {
       const index = calls++;
       if (calls === 2) bothStarted.resolve();
-      return pending[index]!.promise;
+      return requireValue(pending.at(index)).promise;
     });
     const evaluator = createJevEvaluator({apiKey, fetch});
     const first = evaluator.evaluate({...input, abortSignal: controller.signal});
-    const checked = expect(first).rejects.toMatchObject({code: 'cancelled'});
+    const checked = captureRejection(first);
     const second = evaluator.evaluate(input);
     await bothStarted.promise;
     controller.abort();
-    await checked;
-    expect(fetch.mock.calls[1]![1]?.signal?.aborted).toBe(false);
-    pending[1]!.resolve(response());
+    expect(await checked).toMatchObject({code: 'cancelled'});
+    expect(requireValue(fetch.mock.calls[1])[1]?.signal?.aborted).toBe(false);
+    requireValue(pending[1]).resolve(response());
     await expect(second).resolves.toMatchObject({answers: {relevant: {probability: 0.91}}});
   });
 });

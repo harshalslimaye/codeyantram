@@ -1,3 +1,4 @@
+import type * as SharedModule from '@codeyantram/shared';
 import {mkdtemp, mkdir, readdir, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -8,13 +9,13 @@ import {initializeGraphForUI, runInit} from '../../src/lib/init.js';
 import {WorkspaceGraphService} from '@codeyantram/server';
 
 vi.mock('@codeyantram/shared', async importOriginal => ({
-  ...await importOriginal<typeof import('@codeyantram/shared')>(),
-  getUserGraphDirectory: vi.fn(),
+  ...await importOriginal<typeof SharedModule>(),
+  getUserGraphDirectory: vi.fn<typeof getUserGraphDirectory>(),
 }));
 
 let directory: string | undefined;
 afterEach(async () => {
-  if (directory) await rm(directory, {recursive: true, force: true});
+  if (directory !== undefined) await rm(directory, {recursive: true, force: true});
   directory = undefined;
 });
 

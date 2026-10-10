@@ -1,25 +1,32 @@
+import type {ReactElement, ComponentProps} from 'react';
+import type {App} from '../src/app.js';
+import type {runInit as RunInitFunction} from '../src/lib/init.js';
+import type {startChatServer as StartChatServerFunction} from '../src/chat/server.js';
+import type {InitTransport} from '../src/chat/session.js';
+import {captureRejection, requireValue, asymmetric} from '../../shared/tests/helpers.js';
+import type * as SharedModule from '@codeyantram/shared';
 import {realpath} from 'node:fs/promises';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	loadThemes: vi.fn(), readThemePreference: vi.fn(), readModelPreferences: vi.fn(),
-	startChatServer: vi.fn(), createTerminalInput: vi.fn(), render: vi.fn(),
-	runInit: vi.fn(), initializeGraph: vi.fn(),
-	resolve: vi.fn(), dispose: vi.fn(), close: vi.fn(), unmount: vi.fn(), waitUntilExit: vi.fn(),
+	loadThemes: vi.fn<() => Promise<{resolve: (id: string) => {selected: {theme: {id: string}}; usedFallback: boolean}}>>(), readThemePreference: vi.fn<() => Promise<string | undefined>>(), readModelPreferences: vi.fn<typeof SharedModule.readModelPreferences>(),
+	startChatServer: vi.fn<(options?: Parameters<typeof StartChatServerFunction>[0]) => Promise<{baseUrl: string; close: () => Promise<void>; initializeGraph: InitTransport}>>(), createTerminalInput: vi.fn<(stdin: NodeJS.ReadStream, stdout: NodeJS.WriteStream) => {stdin: string; dispose: () => void}>(), render: vi.fn<(node: ReactElement<{children: ReactElement<ComponentProps<typeof App>>}>, options: {stdin: string; alternateScreen: boolean}) => {waitUntilExit: () => Promise<void>; unmount: () => void}>(),
+	runInit: vi.fn<typeof RunInitFunction>(), initializeGraph: vi.fn<InitTransport>(),
+	resolve: vi.fn<(id: string) => {selected: {theme: {id: string}}; usedFallback: boolean}>(), dispose: vi.fn<() => void>(), close: vi.fn<() => Promise<void>>(), unmount: vi.fn<() => void>(), waitUntilExit: vi.fn<() => Promise<void>>(),
 }));
 vi.mock('ink', () => ({render: mocks.render}));
 vi.mock('../src/app.js', () => ({App: () => null}));
 vi.mock('../src/terminal/mouse.js', () => ({MouseProvider: () => null}));
 vi.mock('../src/theme/utils/index.js', () => ({loadThemes: mocks.loadThemes, readThemePreference: mocks.readThemePreference}));
 vi.mock('@codeyantram/shared', async importOriginal => ({
-	...await importOriginal<typeof import('@codeyantram/shared')>(),
+	...await importOriginal<typeof SharedModule>(),
 	readModelPreferences: mocks.readModelPreferences,
 }));
 vi.mock('../src/chat/server.js', () => ({startChatServer: mocks.startChatServer}));
 vi.mock('../src/terminal/input.js', () => ({createTerminalInput: mocks.createTerminalInput}));
 vi.mock('../src/lib/init.js', () => ({runInit: mocks.runInit}));
 
-const preferences = {modelId: 'gpt-6.1-sol', effortByModel: {}};
+const preferences: SharedModule.ModelPreferences = {modelId: 'gpt-6.1-sol', effortByModel: {}};
 const registry = {resolve: mocks.resolve};
 let finish: () => void;
 let fail: (error: Error) => void;
@@ -68,7 +75,7 @@ describe('CLI startup lifecycle', () => {
 		process.argv.push('init', '--help');
 		const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 		await import('../src/index.js');
-		expect(stdout).toHaveBeenCalledWith(expect.stringContaining('Build or refresh the project code graph'));
+		expect(stdout).toHaveBeenCalledWith(asymmetric.stringContaining('Build or refresh the project code graph'));
 		expect(mocks.runInit).not.toHaveBeenCalled();
 		expect(mocks.startChatServer).not.toHaveBeenCalled();
 	});
@@ -87,7 +94,7 @@ describe('CLI startup lifecycle', () => {
 		await vi.waitFor(() => expect(mocks.waitUntilExit).toHaveBeenCalledOnce());
 		expect(mocks.resolve).toHaveBeenCalledWith('konkan');
 		expect(mocks.createTerminalInput).toHaveBeenCalledWith(process.stdin, process.stdout);
-		const [node, options] = mocks.render.mock.calls[0]!;
+		const [node, options] = requireValue(mocks.render.mock.calls[0]);
 		expect(options).toEqual({stdin: 'filtered-input', alternateScreen: true});
 		const workspaceRoot = await realpath(process.cwd());
 		expect(mocks.startChatServer).toHaveBeenCalledExactlyOnceWith({workspaceRoot});
@@ -97,7 +104,7 @@ describe('CLI startup lifecycle', () => {
 		expect(mocks.dispose).toHaveBeenCalledOnce();
 		expect(mocks.close).toHaveBeenCalledOnce();
 		for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-			const handler = once.mock.calls.find(([name]) => name === signal)![1];
+			const handler = requireValue(once.mock.calls.find(([name]) => name === signal))[1];
 			expect(off).toHaveBeenCalledWith(signal, handler);
 			expect(process.listeners(signal)).not.toContain(handler);
 		}
@@ -119,7 +126,7 @@ describe('CLI startup lifecycle', () => {
 		const once = vi.spyOn(process, 'once');
 		const running = import('../src/index.js');
 		await vi.waitFor(() => expect(mocks.waitUntilExit).toHaveBeenCalledOnce());
-		const handler = once.mock.calls.find(([name]) => name === signal)![1] as () => void;
+		const handler = requireValue(once.mock.calls.find(([name]) => name === signal))[1] as () => void;
 		handler();
 		await running;
 		expect(mocks.unmount).toHaveBeenCalledOnce();
@@ -140,7 +147,7 @@ describe('CLI startup lifecycle', () => {
 		await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
 		const workspaceRoot = await realpath('packages/shared');
 		expect(mocks.startChatServer).toHaveBeenCalledExactlyOnceWith({workspaceRoot});
-		expect(mocks.render.mock.calls[0]![0].props.children.props.workspaceRoot).toBe(workspaceRoot);
+		expect(requireValue(mocks.render.mock.calls[0])[0].props.children.props.workspaceRoot).toBe(workspaceRoot);
 		finish();
 		await running;
 	});
@@ -149,7 +156,7 @@ describe('CLI startup lifecycle', () => {
 		process.argv.push('--help');
 		const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 		await import('../src/index.js');
-		expect(stdout).toHaveBeenCalledWith(expect.stringContaining('--project <directory>'));
+		expect(stdout).toHaveBeenCalledWith(asymmetric.stringContaining('--project <directory>'));
 		expect(mocks.loadThemes).not.toHaveBeenCalled();
 		expect(mocks.readModelPreferences).not.toHaveBeenCalled();
 		expect(mocks.startChatServer).not.toHaveBeenCalled();
@@ -162,7 +169,7 @@ describe('CLI startup lifecycle', () => {
 			const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 			await import('../src/index.js');
 			expect(process.exitCode).toBe(1);
-			expect(stderr).toHaveBeenCalledWith(expect.stringContaining('Could not start Codeyantram:'));
+			expect(stderr).toHaveBeenCalledWith(asymmetric.stringContaining('Could not start Codeyantram:'));
 			expect(mocks.loadThemes).not.toHaveBeenCalled();
 			expect(mocks.startChatServer).not.toHaveBeenCalled();
 			expect(mocks.createTerminalInput).not.toHaveBeenCalled();
@@ -179,12 +186,12 @@ describe('CLI startup lifecycle', () => {
 	it('removes signal handlers and cleans up resources when the app fails', async () => {
 		const off = vi.spyOn(process, 'off');
 		const running = import('../src/index.js');
-		const assertion = expect(running).rejects.toThrow('app failed');
+		const assertion = captureRejection(running);
 		await vi.waitFor(() => expect(mocks.waitUntilExit).toHaveBeenCalledOnce());
 		fail(new Error('app failed'));
-		await assertion;
-		expect(off).toHaveBeenCalledWith('SIGINT', expect.any(Function));
-		expect(off).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+		expect((await assertion).message).toContain('app failed');
+		expect(off).toHaveBeenCalledWith('SIGINT', asymmetric.any(Function));
+		expect(off).toHaveBeenCalledWith('SIGTERM', asymmetric.any(Function));
 		expect(mocks.dispose).toHaveBeenCalledOnce();
 		expect(mocks.close).toHaveBeenCalledOnce();
 	});

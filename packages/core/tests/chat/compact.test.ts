@@ -1,3 +1,4 @@
+import {requireValue, requireParts, requireString, asymmetric, requestBody, requestUrl, parseJson, type ProviderRequest} from '../../../shared/tests/helpers.js';
 import {describe, expect, it, vi} from 'vitest';
 import {compactChat} from '@codeyantram/core';
 import {MAX_SUMMARY_CHARACTERS, compactStreamEventSchema, type CompactRequest, type CompactStreamEvent} from '@codeyantram/shared';
@@ -32,40 +33,40 @@ describe('compactChat provider integration', () => {
     const events = await collect(compactChat({...request, model}, {credentials, fetch}));
     expect(events).toEqual([
       {type: 'start'},
-      {type: 'done', summary, durationMs: expect.any(Number), usage: {
+      {type: 'done', summary, durationMs: asymmetric.any(Number), usage: {
         inputTokens: 10, outputTokens: 3, totalTokens: 13, cacheReadTokens: 4,
         ...(model.startsWith('claude-') ? {cacheWriteTokens: 1} : {}),
       }},
     ]);
     expect(fetch).toHaveBeenCalledOnce();
-    const [url, init] = fetch.mock.calls[0]!;
-    const body = JSON.parse(String(init?.body));
+    const [url, init] = requireValue(fetch.mock.calls[0]);
+    const body = parseJson<ProviderRequest>(requestBody(init?.body));
     expect(body.stream).not.toBe(true);
     expect(body.tools ?? []).toEqual([]);
     let source: string;
     let instructions: string;
     if (model.startsWith('gpt-')) {
-      expect(String(url)).toBe('https://api.openai.com/v1/responses');
+      expect(requestUrl(url)).toBe('https://api.openai.com/v1/responses');
       expect(new Headers(init?.headers).get('authorization')).toBe('Bearer test-openai-key');
       expect(body).toMatchObject({max_output_tokens: 4096, reasoning: {effort: 'low'}});
-      expect(body.input.map((message: {role: string}) => message.role)).toEqual(['developer', 'user']);
-      instructions = body.input[0].content;
-      source = body.input[1].content[0].text;
+      expect(requireValue(body.input).map((message: {role: string}) => message.role)).toEqual(['developer', 'user']);
+      instructions = requireString(requireValue(body.input)[0].content);
+      source = requireParts(requireValue(body.input)[1].content)[0].text;
     } else if (model.startsWith('claude-')) {
       expect(new Headers(init?.headers).get('x-api-key')).toBe('test-anthropic-key');
       expect(body).toMatchObject({cache_control: {type: 'ephemeral'}, max_tokens: 4096, thinking: {type: 'adaptive'}, output_config: {effort: 'low'}});
-      expect(body.messages.map((message: {role: string}) => message.role)).toEqual(['user']);
-      instructions = body.system[0].text;
-      source = body.messages[0].content[0].text;
+      expect(requireValue(body.messages).map((message: {role: string}) => message.role)).toEqual(['user']);
+      instructions = requireValue(body.system)[0].text;
+      source = requireValue(body.messages)[0].content[0].text;
     } else {
-      expect(String(url)).toContain(':generateContent');
+      expect(requestUrl(url)).toContain(':generateContent');
       expect(new Headers(init?.headers).get('x-goog-api-key')).toBe('test-google-key');
       expect(body).toMatchObject({generationConfig: {maxOutputTokens: 4096, thinkingConfig: {thinkingLevel: 'low'}}});
-      expect(body.contents.map((message: {role: string}) => message.role)).toEqual(['user']);
-      instructions = body.systemInstruction.parts[0].text;
-      source = body.contents[0].parts[0].text;
+      expect(requireValue(body.contents).map((message: {role: string}) => message.role)).toEqual(['user']);
+      instructions = requireValue(body.systemInstruction).parts[0].text;
+      source = requireValue(body.contents)[0].parts[0].text;
     }
-    expect(JSON.parse(source)).toEqual({previousSummary: request.previousSummary, messages: request.messages});
+    expect(parseJson<ProviderRequest>(source)).toEqual({previousSummary: request.previousSummary, messages: request.messages});
     expect(instructions).not.toContain(request.previousSummary);
     expect(instructions).not.toContain('43188');
     // Check preservation requirements, without snapshotting the prompt's wording.
@@ -77,7 +78,7 @@ describe('compactChat provider integration', () => {
   it.each(['claude-haiku-4-5-20251001', 'gemma-4-31b-it'])('omits effort for %s without effort controls', async model => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(summaryResponse(model, summary));
     expect((await collect(compactChat({...request, model}, {credentials, fetch}))).at(-1)?.type).toBe('done');
-    const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body));
+    const body = parseJson<ProviderRequest>(requestBody(requireValue(fetch.mock.calls[0])[1]?.body));
     expect(body.thinking).toBeUndefined();
     expect(body.output_config).toBeUndefined();
     expect(body.generationConfig?.thinkingConfig).toBeUndefined();
@@ -88,23 +89,23 @@ describe('compactChat provider integration', () => {
   it.each(['gemini-2.5-pro', 'gemini-2.5-flash'])('uses the supported low reasoning budget for %s', async model => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(summaryResponse(model, summary));
     expect((await collect(compactChat({...request, model}, {credentials, fetch}))).at(-1)?.type).toBe('done');
-    const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body));
+    const body = parseJson<ProviderRequest>(requestBody(requireValue(fetch.mock.calls[0])[1]?.body));
     expect(body.generationConfig).toMatchObject({maxOutputTokens: 4096, thinkingConfig: {thinkingBudget: 6554}});
   });
 
   it('supports the first summary, defaults statusless assistants to complete, and strips usage', async () => {
-    const input = {model: request.model, messages: [request.messages[0]!, {
+    const input = {model: request.model, messages: [requireValue(request.messages[0]), {
       id: 'a1', role: 'assistant' as const, parts: [{type: 'text' as const, text: 'Reported work'}],
       usage: {inputTokens: 42},
     }]};
     const original = structuredClone(input);
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(summaryResponse(input.model, summary));
     await collect(compactChat(input, {credentials, fetch}));
-    const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body));
-    const source = JSON.parse(body.input[1].content[0].text);
+    const body = parseJson<ProviderRequest>(requestBody(requireValue(fetch.mock.calls[0])[1]?.body));
+    const source = parseJson<{messages: CompactRequest["messages"]}>(requireParts(requireValue(body.input)[1].content)[0].text);
     expect(source).not.toHaveProperty('previousSummary');
-    expect(source.messages[1]).toMatchObject({status: 'complete'});
-    expect(source.messages[1]).not.toHaveProperty('usage');
+    expect(requireValue(source.messages)[1]).toMatchObject({status: 'complete'});
+    expect(requireValue(source.messages)[1]).not.toHaveProperty('usage');
     expect(input).toEqual(original);
   });
 
@@ -220,7 +221,7 @@ describe('compactChat failures and cancellation', () => {
     await pending;
     controller.abort();
     expect(await result).toEqual([{type: 'start'}]);
-    expect(fetch.mock.calls[0]![1]?.signal?.aborted).toBe(true);
+    expect(requireValue(fetch.mock.calls[0])[1]?.signal?.aborted).toBe(true);
   });
 
   it('makes no request if the caller stops consuming after start', async () => {
@@ -232,6 +233,6 @@ describe('compactChat failures and cancellation', () => {
   it('releases its operation controller after successful consumption', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(summaryResponse(request.model, summary));
     await collect(compactChat(request, {credentials, fetch}));
-    expect(fetch.mock.calls[0]![1]?.signal?.aborted).toBe(true);
+    expect(requireValue(fetch.mock.calls[0])[1]?.signal?.aborted).toBe(true);
   });
 });

@@ -1,3 +1,4 @@
+import {captureRejection, requireValue, requestBody, asymmetric, parseJson, type ProviderRequest} from '../../../shared/tests/helpers.js';
 import {requireTextPart} from '../helpers/message-parts.js';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {compactChat as coreCompactChat, streamChat as coreStreamChat, type compactChat, type streamChat} from '@codeyantram/core';
@@ -24,8 +25,8 @@ describe('CLI-owned chat server', () => {
 	it('compacts a session through localhost and excludes the archived prefix from the next provider request', async () => {
 		const summary = 'Update /src/chat.ts, preserve port 43187. Validation pending.';
 		const providerFetch = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
-			const body = JSON.parse(String(init?.body));
-			if (!body.stream) return Response.json({
+			const body = parseJson<ProviderRequest>(requestBody(init?.body));
+			if (body.stream !== true) return Response.json({
 				id: 'summary-1', model: body.model, created_at: 1,
 				output: [{type: 'message', role: 'assistant', id: 'summary-message', content: [{type: 'output_text', text: summary, annotations: []}]}],
 				usage: {input_tokens: 30, output_tokens: 5, total_tokens: 35, input_tokens_details: {cached_tokens: 0}},
@@ -56,13 +57,13 @@ describe('CLI-owned chat server', () => {
 		expect(session.getSnapshot().messages).toBe(transcript);
 		expect(session.getSnapshot().compactionUsage?.tokens).toEqual({inputTokens: 30, outputTokens: 5, totalTokens: 35, cacheReadTokens: 0});
 		await session.send('NEXT_QUESTION', 'gpt-6.1-sol', 'high');
-		const nextBody = JSON.parse(String(providerFetch.mock.calls.at(-1)![1]?.body));
+		const nextBody = parseJson<ProviderRequest>(requestBody(requireValue(providerFetch.mock.calls.at(-1))[1]?.body));
 		const serialized = JSON.stringify(nextBody);
 		expect(serialized).not.toContain('ARCHIVED_ONE');
 		expect(serialized).not.toContain('ARCHIVED_TWO');
-		expect(nextBody.input[0]).toMatchObject({role: 'developer', content: expect.stringContaining('web_fetch')});
-		const history = nextBody.input.filter((message: {role: string}) => !['developer', 'system'].includes(message.role));
-		expect(history[0]).toMatchObject({role: 'user', content: [{text: expect.stringContaining(summary)}]});
+		expect(requireValue(nextBody.input)[0]).toMatchObject({role: 'developer', content: asymmetric.stringContaining('web_fetch')});
+		const history = requireValue(nextBody.input).filter((message: {role: string}) => !['developer', 'system'].includes(message.role));
+		expect(history[0]).toMatchObject({role: 'user', content: [{text: asymmetric.stringContaining(summary)}]});
 		expect(history.slice(1).map((message: {content: string | {text: string}[]}) =>
 			typeof message.content === 'string' ? message.content : message.content.map(part => part.text).join(''),
 		)).toEqual([...transcript.slice(4).map(message => message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part)).join('')), 'NEXT_QUESTION']);
@@ -88,26 +89,26 @@ describe('CLI-owned chat server', () => {
 		const events: CompactStreamEvent[] = [];
 		for await (const event of requestCompact(server.compactUrl, compactRequest, new AbortController().signal)) events.push(event);
 		expect(events).toEqual([{type: 'start'}, compactDone]);
-		expect(compact).toHaveBeenCalledWith(compactRequest, {credentials: {openai: 'test-openai'}, abortSignal: expect.any(AbortSignal)});
-		const result = events.at(-1)!;
+		expect(compact).toHaveBeenCalledWith(compactRequest, {credentials: {openai: 'test-openai'}, abortSignal: asymmetric.any(AbortSignal)});
+		const result = requireValue(events.at(-1));
 		if (result.type !== 'done') throw new Error('Expected a completed summary');
 		const followUp = {
 			model: 'gemini-3.8-flash', contextSummary: result.summary,
 			messages: [{id: 'recent-u1', role: 'user' as const, parts: [{type: 'text' as const, text: 'Retained tail and next question.'}]}],
 		};
 		for await (const _event of requestChat(server.chatUrl, followUp, new AbortController().signal)) { /* consume */ }
-		expect(chat.mock.calls[0]![0]).toEqual(followUp);
-		expect(chat.mock.calls[0]![1].credentials).toEqual({google: 'test-google'});
+		expect(requireValue(chat.mock.calls[0])[0]).toEqual(followUp);
+		expect(requireValue(chat.mock.calls[0])[1].credentials).toEqual({google: 'test-google'});
 	});
 
 	it('propagates CLI compaction cancellation to the server-side operation', async () => {
-		const aborted = vi.fn();
+		const aborted = vi.fn<() => void>();
 		const server = await start({readConfig: async () => ({}), compactChat: async function* (_request, options) {
 			yield {type: 'start'};
 			await new Promise<void>(resolve => {
 				const stop = () => {aborted(); resolve();};
-				if (options.abortSignal!.aborted) stop();
-				else options.abortSignal!.addEventListener('abort', stop, {once: true});
+				if (requireValue(options.abortSignal).aborted) stop();
+				else requireValue(options.abortSignal).addEventListener('abort', stop, {once: true});
 			});
 		}});
 		const controller = new AbortController();
@@ -120,22 +121,22 @@ describe('CLI-owned chat server', () => {
 	});
 
 	it('aborts compaction when its owner shuts down and reports the interruption', async () => {
-		const aborted = vi.fn();
+		const aborted = vi.fn<() => void>();
 		const server = await start({readConfig: async () => ({}), compactChat: async function* (_request, options) {
 			yield {type: 'start'};
 			await new Promise<void>(resolve => {
 				const stop = () => {aborted(); resolve();};
-				if (options.abortSignal!.aborted) stop();
-				else options.abortSignal!.addEventListener('abort', stop, {once: true});
+				if (requireValue(options.abortSignal).aborted) stop();
+				else requireValue(options.abortSignal).addEventListener('abort', stop, {once: true});
 			});
 		}});
 		const stream = requestCompact(server.compactUrl, compactRequest, new AbortController().signal);
 		expect((await stream.next()).value).toEqual({type: 'start'});
 		const pending = stream.next();
-		const interrupted = expect(pending).rejects.toThrow('The compaction response was interrupted. Try again.');
+		const interrupted = captureRejection(pending);
 		servers.splice(servers.indexOf(server), 1);
 		await server.close();
-		await interrupted;
+		expect((await interrupted).message).toContain('The compaction response was interrupted. Try again.');
 		await vi.waitFor(() => expect(aborted).toHaveBeenCalledOnce());
 	});
 
@@ -157,22 +158,22 @@ describe('CLI-owned chat server', () => {
 		await session.send('Follow up', 'gemini-3.8-flash', 'low');
 		expect(session.getSnapshot().error).toBeUndefined();
 		expect(session.getSnapshot().messages).toHaveLength(4);
-		expect(stream.mock.calls[1]![0]).toMatchObject({model: 'gemini-3.8-flash', effort: 'low'});
-		expect(stream.mock.calls[1]![0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Hi', 'Answer 👋', 'Follow up']);
-		expect(stream.mock.calls[1]![0].messages[1]).not.toHaveProperty('usage');
-		expect(stream.mock.calls[0]![1].credentials).toEqual({openai: 'test-openai'});
-		expect(stream.mock.calls[1]![1].credentials).toEqual({google: 'test-google'});
+		expect(requireValue(stream.mock.calls[1])[0]).toMatchObject({model: 'gemini-3.8-flash', effort: 'low'});
+		expect(requireValue(stream.mock.calls[1])[0].messages.map(message => message.parts.map(requireTextPart)[0]?.text)).toEqual(['Hi', 'Answer 👋', 'Follow up']);
+		expect(requireValue(stream.mock.calls[1])[0].messages[1]).not.toHaveProperty('usage');
+		expect(requireValue(stream.mock.calls[0])[1].credentials).toEqual({openai: 'test-openai'});
+		expect(requireValue(stream.mock.calls[1])[1].credentials).toEqual({google: 'test-google'});
 	});
 
 	it('cancels the server-side generation when the CLI cancels a request', async () => {
-		const aborted = vi.fn();
+		const aborted = vi.fn<() => void>();
 		const server = await start({
 			readConfig: async () => ({}),
 			streamChat: async function* (_request, options) {
 				yield {type: 'start', messageId: 'assistant-1'};
 				yield {type: 'text-delta', text: 'Partial answer'};
 				await new Promise<void>(resolve => {
-					options.abortSignal!.addEventListener('abort', () => {aborted(); resolve();}, {once: true});
+					requireValue(options.abortSignal).addEventListener('abort', () => {aborted(); resolve();}, {once: true});
 				});
 			},
 		});
@@ -187,14 +188,14 @@ describe('CLI-owned chat server', () => {
 	});
 
 	it('closes active requests and cancels generation when its owner shuts down', async () => {
-		const aborted = vi.fn();
+		const aborted = vi.fn<() => void>();
 		const server = await start({
 			readConfig: async () => ({}),
 			streamChat: async function* (_request, options) {
 				yield {type: 'start', messageId: 'assistant-1'};
 				yield {type: 'text-delta', text: 'Partial answer'};
 				await new Promise<void>(resolve => {
-					options.abortSignal!.addEventListener('abort', () => {aborted(); resolve();}, {once: true});
+					requireValue(options.abortSignal).addEventListener('abort', () => {aborted(); resolve();}, {once: true});
 				});
 			},
 		});

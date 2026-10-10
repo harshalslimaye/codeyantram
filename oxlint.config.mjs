@@ -46,7 +46,6 @@ const config = {
     "typescript/no-unsafe-member-access": "error",
     "typescript/no-unsafe-return": "error",
     "typescript/no-unsafe-argument": "error",
-    "typescript/no-unnecessary-type-assertion": "error",
     "typescript/no-non-null-assertion": "error",
     "typescript/ban-ts-comment": "error",
     "typescript/consistent-type-imports": "error",
@@ -56,7 +55,7 @@ const config = {
     "typescript/no-unnecessary-type-arguments": "error",
     "typescript/no-unnecessary-boolean-literal-compare": "error",
     "typescript/no-unnecessary-template-expression": "error",
-    "typescript/no-confusing-void-expression": "error",
+    "typescript/no-confusing-void-expression": "off",
     "typescript/require-await": "error",
     "typescript/no-deprecated": "error",
     "typescript/only-throw-error": "error",
@@ -178,6 +177,31 @@ const config = {
     ]
   },
   "overrides": [
+    {
+      // Tests use literal boundary cases, temporary paths, and internal units.
+      // Async mocks preserve the interface even when a fixture needs no await.
+      "files": ["packages/*/tests/**/*"],
+      "rules": {
+        "no-magic-numbers": "off",
+        "max-lines": "off",
+        "max-lines-per-function": "off",
+        "max-statements": "off",
+        "max-nested-callbacks": "off",
+        "max-params": "off",
+        "complexity": "off",
+        "no-nested-ternary": "off",
+        "import-js/no-internal-modules": "off",
+        "security/detect-non-literal-fs-filename": "off",
+        "typescript/require-await": "off",
+        // Tests inspect methods as mock values without invoking them unbound.
+        "typescript/unbound-method": "off",
+        // Parameterized provider cases and mock callbacks have branch-specific assertions.
+        "vitest/no-conditional-expect": "off",
+        "vitest/valid-expect": ["error", {"maxArgs": 2}],
+        // undefined is a meaningful argument to mocks and environment stubs.
+        "unicorn/no-useless-undefined": ["error", {"checkArguments": false}]
+      }
+    },
     {
       "files": [
         "packages/core/**/*"

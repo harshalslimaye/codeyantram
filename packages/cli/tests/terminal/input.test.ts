@@ -6,7 +6,7 @@ const inputs: ReturnType<typeof createTerminalInput>[] = [];
 afterEach(() => {for (const input of inputs.splice(0)) input.dispose(); vi.useRealTimers();});
 
 function setup(isTTY = true) {
-	const source = Object.assign(new PassThrough(), {isTTY, setRawMode: vi.fn(), ref: vi.fn(), unref: vi.fn()});
+	const source = Object.assign(new PassThrough(), {isTTY, setRawMode: vi.fn<(enabled: boolean) => void>(), ref: vi.fn<() => void>(), unref: vi.fn<() => void>()});
 	const stdout = Object.assign(new PassThrough(), {isTTY});
 	let output = '';
 	stdout.on('data', chunk => {output += String(chunk);});
@@ -14,7 +14,7 @@ function setup(isTTY = true) {
 	inputs.push(input);
 	let keyboard = '';
 	input.stdin.on('data', chunk => {keyboard += String(chunk);});
-	const wheel = vi.fn();
+	const wheel = vi.fn<Parameters<ReturnType<typeof createTerminalInput>["subscribe"]>[0]>();
 	input.subscribe(wheel);
 	input.stdin.setRawMode(true);
 	return {source, input, wheel, output: () => output, keyboard: () => keyboard};
