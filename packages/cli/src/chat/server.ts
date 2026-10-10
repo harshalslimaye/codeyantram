@@ -4,16 +4,20 @@ import {createServer} from 'node:http';
 import {createApp, createServerShutdown, type ServerAppOptions} from '@codeyantram/server';
 import {initializeGraphForUI} from '../lib/init.js';
 import {ApprovalController} from './approval.js';
+import {AgentSessionController, type AgentSelection} from './agent-session.js';
+import type {ChatRequest} from '@codeyantram/shared';
 
 const SESSION_TOKEN_BYTES = 32;
 
 /** Each CLI owns a private localhost server, avoiding conflicts between sessions. */
-export async function startChatServer(options: ServerAppOptions = {}) {
+export async function startChatServer(options: ServerAppOptions & {
+	automaticCapabilities?: {patch: boolean; command: boolean};
+} = {}) {
 	const sessionToken = randomBytes(SESSION_TOKEN_BYTES).toString('hex');
 	const approvals = new ApprovalController();
-	const app = createApp({...options, privateSessionToken: sessionToken,
-		approvePatch: approvals.approvePatch, approveCommand: approvals.approveCommand,
-		authorizeAgent: request => ({patch: request.agentId === 'build', command: request.agentId === 'build'})});
+	const agentSession = new AgentSessionController(options.automaticCapabilities ?? {patch: true, command: true},
+		options.workspaceRoot !== undefined && options.workspaceRoot !== '');
+	const app = createPrivateApp(options, sessionToken, approvals, agentSession);
 	const server = createServer(app);
 	const shutdown = createServerShutdown(server, () => app.close());
 	const close = async () => {approvals.close(); await shutdown();};
@@ -37,6 +41,7 @@ export async function startChatServer(options: ServerAppOptions = {}) {
 		baseUrl,
 		sessionToken,
 		approvals,
+		agentSession,
 		fetchResponse,
 		chatUrl: new URL('/chat', baseUrl).href,
 		compactUrl: new URL('/compact', baseUrl).href,
@@ -45,4 +50,25 @@ export async function startChatServer(options: ServerAppOptions = {}) {
 			initializeGraphForUI(graphOptions => app.workspaceGraph.initialize(graphOptions), signal, onProgress),
 		close,
 	};
+}
+
+function createPrivateApp(options: ServerAppOptions, sessionToken: string, approvals: ApprovalController,
+	agentSession: AgentSessionController) {
+	const turnSelections = new WeakMap<ChatRequest, AgentSelection>();
+	const selectedTurn = (request: ChatRequest) => turnSelections.get(request);
+	const automaticPatch = async () => true;
+	const automaticCommand = async () => true;
+	return createApp({...options, privateSessionToken: sessionToken,
+		approvePatch: approvals.approvePatch, approveCommand: approvals.approveCommand,
+		validateAgent: request => {
+			const snapshot = agentSession.getSnapshot();
+			if (!agentSession.matches(request, snapshot)) return false;
+			turnSelections.set(request, snapshot);
+			return true;
+		},
+		authorizeAgent: request => agentSession.authorize(request, selectedTurn(request)),
+		approvePatchForTurn: request => selectedTurn(request)?.id === 'yolo' ? automaticPatch : approvals.approvePatch,
+		approveCommandForTurn: request => selectedTurn(request)?.id === 'yolo' ? automaticCommand : approvals.approveCommand,
+		agentStatus: id => agentSession.status(id),
+	});
 }

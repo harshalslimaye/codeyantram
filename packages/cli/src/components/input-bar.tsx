@@ -10,11 +10,14 @@ import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {JevNotConfiguredError, toggleJevUsage, type EffortLevel, type ModelPreferences} from '@codeyantram/shared';
 import type {SessionOperation} from '../chat/session.js';
+import {AgentSessionController} from '../chat/agent-session.js';
+import {AgentPicker} from './agent-picker.js';
 
 const INPUT_RESERVED_COLUMNS = 6;
 
 type InputBarProps = {
 	modelPreferences: ModelPreferences;
+	agentSession?: AgentSessionController;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 	operation: SessionOperation;
 	onSubmit: (text: string) => void;
@@ -40,7 +43,9 @@ type DraftContext = {
 };
 
 export function InputBar(props: InputBarProps) {
-	const {modelPreferences, onSelectModel, operation} = props;
+	const {modelPreferences, onSelectModel, operation, agentSession} = props;
+	const [localAgentSession] = useState(() => new AgentSessionController({patch: false, command: false}));
+	const activeAgentSession = agentSession ?? localAgentSession;
 	const {columns} = useWindowSize();
 	const controller = useInputBarController(props);
 	const {isBusy, commandQuery, onSelectCommand, owner, palette, inputRevision, value, isEditing, handleChange, submitDraft} = controller;
@@ -48,7 +53,7 @@ export function InputBar(props: InputBarProps) {
 	return (
 		<Box flexDirection="column" width="100%">
 			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} />}
-			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} onSelectModel={onSelectModel} />
+			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} onSelectModel={onSelectModel} agentSession={activeAgentSession} />
 			<InputStatus {...controller} operation={operation} />
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
@@ -130,6 +135,7 @@ function useClosePickerOnBusy(isBusy: boolean, setShowHelp: DraftContext['setSho
 		setShowHelp(false);
 		let activeOwner = getOwner();
 		while (activeOwner !== 'input-bar') {
+			if (activeOwner === 'approval') break;
 			pop(activeOwner);
 			activeOwner = getOwner();
 		}
@@ -198,6 +204,7 @@ function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' 
   const commands = new Map<string, () => void>([
     ['/init', actions.onInit], ['/status', actions.onStatus], ['/help', () => {actions.setShowHelp(true);}],
     ['/model', () => {actions.push('model-picker');}], ['/connect', () => {actions.push('provider-picker');}],
+    ['/agent', () => {actions.push('agent-picker');}],
     ['/jev', () => {void actions.toggleJev();}], ['/theme', () => {actions.push('theme-picker');}],
     ['/clear', actions.onClear], ['/compact', actions.onCompact], ['/exit', actions.exit],
   ]);
@@ -225,7 +232,7 @@ function InputStatus({isBusy, isSavingJev, operation, showHelp, notice, noticeTo
 	);
 }
 
-function InputPickers({isBusy, owner, modelPreferences, onSelectModel}: Pick<InputBarProps, 'modelPreferences' | 'onSelectModel'> & Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'owner'>) {
+function InputPickers({isBusy, owner, modelPreferences, onSelectModel, agentSession}: Pick<InputBarProps, 'modelPreferences' | 'onSelectModel' | 'agentSession'> & Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'owner'>) {
 	if (isBusy) return null;
 	return <>
 			{owner === 'theme-picker' && <ThemePicker />}
@@ -233,5 +240,6 @@ function InputPickers({isBusy, owner, modelPreferences, onSelectModel}: Pick<Inp
 				<ModelPicker preferences={modelPreferences} onSelect={onSelectModel} />
 			)}
 			{(owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
+			{agentSession && (owner === 'agent-picker' || owner === 'yolo-confirmation') && <AgentPicker session={agentSession} />}
 	</>;
 }

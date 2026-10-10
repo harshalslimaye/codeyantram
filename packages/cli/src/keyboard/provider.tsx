@@ -1,6 +1,6 @@
 import {createContext, useCallback, useContext, useRef, useState, type ReactNode} from 'react';
 
-export type KeyboardOwner = 'input-bar' | 'command-palette' | 'theme-picker' | 'model-picker' | 'effort-picker' | 'provider-picker' | 'api-key-input' | 'approval';
+export type KeyboardOwner = 'input-bar' | 'command-palette' | 'theme-picker' | 'model-picker' | 'effort-picker' | 'provider-picker' | 'api-key-input' | 'approval' | 'agent-picker' | 'yolo-confirmation';
 
 const KeyboardContext = createContext<{
 	owner: KeyboardOwner;
@@ -34,9 +34,9 @@ export function KeyboardProvider({children}: {children: ReactNode}) {
 		return currentStack.current[currentStack.current.length - 1] === candidate;
 	}
 
-	function getOwner(): KeyboardOwner {
+	const getOwner = useCallback((): KeyboardOwner => {
 		return currentStack.current[currentStack.current.length - 1];
-	}
+	}, []);
 
 	return (
 		<KeyboardContext.Provider value={{owner: stack[stack.length - 1], getOwner, isOwner, push, pop}}>

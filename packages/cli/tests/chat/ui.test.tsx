@@ -16,6 +16,7 @@ import {ChatWorkspace} from '../../src/components/chat-workspace.js';
 import {createTerminalInput} from '../../src/terminal/input.js';
 import {MouseProvider} from '../../src/terminal/mouse.js';
 import {ApprovalController} from '../../src/chat/approval.js';
+import {AgentSessionController} from '../../src/chat/agent-session.js';
 const initializeGraph = vi.fn<InitTransport>();
 
 const registry = createThemeRegistry([{source: 'builtin', themes: [{source: 'builtin', theme: konkanTheme}]}]);
@@ -83,11 +84,11 @@ function renderInput(initialOperation: SessionOperation = 'idle') {
 	return {...ui, onSubmit, onCancel, onClear, onCompact, onStatus, onInit, onSelectModel, setOperation: (operation: SessionOperation) => setOperation(operation)};
 }
 
-function renderWorkspace(session: ChatSession, {debug = true, approvals}: {debug?: boolean; approvals?: ApprovalController} = {}) {
+function renderWorkspace(session: ChatSession, {debug = true, approvals, agentSession}: {debug?: boolean; approvals?: ApprovalController; agentSession?: AgentSessionController} = {}) {
 	return renderUI(
 		<ThemeProvider registry={registry} initialThemeId="konkan" colorDepth={0}>
 			<KeyboardProvider>
-				<ChatWorkspace session={session} approvals={approvals} modelPreferences={preferences} branch="main" onSelectModel={async () => {}} />
+				<ChatWorkspace session={session} approvals={approvals} agentSession={agentSession} modelPreferences={preferences} branch="main" onSelectModel={async () => {}} />
 			</KeyboardProvider>
 		</ThemeProvider>,
 		{debug},
@@ -155,6 +156,38 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 }
 
 describe('CLI chat UI', () => {
+	it('requires explicit Yolo activation and shows the active agent', async () => {
+		const agents = new AgentSessionController({patch: true, command: true});
+		const requests: ChatRequest[] = [];
+		const session = new ChatSession(async function* (request) {requests.push(request); yield {type: 'done', durationMs: 1};});
+		const ui = renderWorkspace(session, {agentSession: agents});
+		await vi.waitFor(() => expect(ui.frame()).toContain('Ask'));
+		ui.stdin.write('/agent');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Choose Ask, Build, or Yolo'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Choose an agent for the next turn'));
+		ui.stdin.write('\x1b[B');
+		ui.stdin.write('\x1b[B');
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Activate Yolo'));
+		expect(agents.getSnapshot()).toEqual({id: 'ask', yoloActive: false});
+		ui.stdin.write('a');
+		await vi.waitFor(() => expect(ui.frame()).toContain('YOLO ACTIVE'));
+		expect(agents.getSnapshot()).toEqual({id: 'yolo', yoloActive: true});
+		ui.stdin.write('Check this');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Check this'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(requests[0]?.agentId).toBe('yolo'));
+		agents.select('ask');
+		await vi.waitFor(() => expect(ui.frame()).not.toContain('YOLO ACTIVE'));
+		await vi.waitFor(() => expect(session.getSnapshot().operation).toBe('idle'));
+		ui.stdin.write('Another check');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Another check'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(requests).toHaveLength(2));
+		expect(requests[1]?.agentId).toBeUndefined();
+	});
+
 	it('shows a scrollable exact approval and gives its keys sole control', async () => {
 		const approvals = new ApprovalController();
 		const patchText = `*** Begin Patch\n*** Add File: long.txt\n${Array.from({length: 40}, (_, index) => `+line ${index}`).join('\n')}\n+END_MARKER\n*** End Patch`;

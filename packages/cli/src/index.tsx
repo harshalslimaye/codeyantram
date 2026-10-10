@@ -51,7 +51,7 @@ async function startInteractiveChat(workspaceRoot: string) {
 		try {
 			const app = render(
 				<MouseProvider value={terminalInput}>
-					<App registry={registry} initialThemeId={theme.theme.id} initialModelPreferences={modelPreferences} serverBaseUrl={server.baseUrl} serverSessionToken={server.sessionToken} approvals={server.approvals} workspaceRoot={workspaceRoot} initializeGraph={server.initializeGraph} />
+					<App registry={registry} initialThemeId={theme.theme.id} initialModelPreferences={modelPreferences} serverBaseUrl={server.baseUrl} serverSessionToken={server.sessionToken} approvals={server.approvals} agentSession={server.agentSession} workspaceRoot={workspaceRoot} initializeGraph={server.initializeGraph} />
 				</MouseProvider>,
 				{stdin: terminalInput.stdin, alternateScreen: true},
 			);

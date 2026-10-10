@@ -25,6 +25,12 @@ export interface ServerAppOptions {
   commandEnvironment?: Record<string, string>;
   /** Host-owned authorization, evaluated for each turn. Missing means read-only. */
   authorizeAgent?: (request: ChatRequest) => {patch?: boolean; command?: boolean; automatic?: boolean};
+  /** Reject a selected agent before opening SSE when host session state disagrees. */
+  validateAgent?: (request: ChatRequest) => boolean;
+  /** Optional per-turn approvers keep automatic decisions bound to the turn snapshot. */
+  approvePatchForTurn?: (request: ChatRequest) => PatchApprover | undefined;
+  approveCommandForTurn?: (request: ChatRequest) => BashApprover | undefined;
+  agentStatus?: (id: string) => {available: boolean; patch: boolean; command: boolean};
   /** Required on every CLI-owned HTTP route when set. */
   privateSessionToken?: string;
 }
@@ -38,6 +44,7 @@ export function createApp(options: ServerAppOptions = {}) {
   const chatRouter = createChatRouter({
     agents: () => agentMetadata(agents, options),
     hasAgent: id => agents.get(id) !== undefined,
+    validateAgent: options.validateAgent,
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),
     readOptions: (request, signal) => readChatOptions(request, signal, agents, options),
     // Tests can supply a fake stream to avoid calling AI providers.

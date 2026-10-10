@@ -3,7 +3,7 @@ import type {ChatTransport, CompactTransport, InitTransport, CompactionState, Co
 import {createChatEventHandler} from './chat-events.js';
 import {recordCompactionUsage, usageNotice} from './compaction-usage.js';
 import {compactionNoopNotice, prepareCompactionRequest, readCompactionResult} from './compaction-stream.js';
-import type {ChatRequest, CompactStreamEvent, EffortLevel} from '@codeyantram/shared';
+import type {AgentId, ChatRequest, CompactStreamEvent, EffortLevel} from '@codeyantram/shared';
 import {buildChatContext, estimateContextTokens, getContextStatus, type ConversationMessage} from './context.js';
 import {assessCompactionReduction, planCompaction, type CompactionPlan} from './compaction.js';
 
@@ -105,22 +105,22 @@ export class ChatSession {
 		}
 	}
 
-	private prepareChat(text: string, model: string, effort?: EffortLevel) {
+	private prepareChat(text: string, model: string, effort?: EffortLevel, agentId?: AgentId) {
 		const userMessage: ConversationMessage = {
 			id: randomUUID(), role: 'user', parts: [{type: 'text', text: text.trim()}],
 		};
 		const messages = [...this.state.messages, userMessage];
 		const request: ChatRequest = {
-			model, effort,
+			model, effort, ...(agentId === undefined ? {} : {agentId}),
 			...buildChatContext(messages, this.state.compaction),
 		};
 		return {messages, request};
 	}
 
-	async send(text: string, model: string, effort?: EffortLevel): Promise<void> {
+	async send(text: string, model: string, effort?: EffortLevel, agentId?: AgentId): Promise<void> {
 		if (this.controller || !text.trim()) return;
 		const controller = new AbortController();
-		const {messages, request} = this.prepareChat(text, model, effort);
+		const {messages, request} = this.prepareChat(text, model, effort, agentId);
 		this.controller = controller;
 		let assistantId: string = randomUUID();
 		this.update({

@@ -56,6 +56,13 @@ automatic authorization. `GET /agents` returns public metadata without agent
 instructions. Private CLI servers require `x-codeyantram-session` on every
 route.
 
+Private CLI mode also validates the selected agent against process-local
+selection state before opening the stream. Its Yolo approval callbacks are
+bound to the turn's selection snapshot. `ServerAppOptions` exposes
+`validateAgent`, per-turn approver factories, and `agentStatus` for hosts with
+their own trusted selection flow. The CLI can cap automatic patch and command
+execution independently; disabled tools are omitted from `/agents` metadata.
+
 Send `Content-Type: application/json` and a shared `ChatRequest`:
 
 ```json

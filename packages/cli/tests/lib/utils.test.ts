@@ -24,7 +24,7 @@ describe('git branch display', () => {
 
 describe('command filtering', () => {
 	it('shows all commands for an empty query and matches case-insensitive prefixes', () => {
-		expect(getCommandOptions()).toHaveLength(10);
+		expect(getCommandOptions()).toHaveLength(11);
 		expect(getCommandOptions('INI')).toEqual([{value: '/init', label: asymmetric.stringContaining('Build or refresh the project code graph')}]);
 		expect(getCommandOptions('MoD')).toEqual([{value: '/model', label: asymmetric.stringContaining('/model')}]);
 		expect(getCommandOptions('JeV')).toEqual([{value: '/jev', label: asymmetric.stringContaining('Toggle JEV usage on or off')}]);

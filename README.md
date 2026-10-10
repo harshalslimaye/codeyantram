@@ -71,6 +71,11 @@ Follow-up messages include the conversation history. Escape cancels generation
 and keeps any partial answer; use the mouse wheel or trackpad over the chat area
 to scroll through the conversation. The input and status bars stay at the bottom.
 Use `/clear` to reset the conversation, `/help` to list commands, or `/exit` to quit.
+Use `/agent` to select Ask, Build, or Yolo for the current CLI session. Build
+asks you to review each exact patch or command. Yolo requires a separate
+activation and then runs permitted patches and commands without per-action
+prompts. Its Bash commands are not sandboxed. Switching away from Yolo resets
+its activation; every new CLI process starts in Ask.
 Conversations stay in memory for the current CLI session.
 
 Use `/connect` and select **TypeSafe (JEV)** to save its evaluation API key.

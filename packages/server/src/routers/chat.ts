@@ -10,6 +10,7 @@ export interface ChatDependencies {
   readOptions?: (request: ChatRequest, signal: AbortSignal) => Promise<ChatStreamOptions>;
   agents?: () => readonly AgentMetadata[];
   hasAgent?: (id: string) => boolean;
+  validateAgent?: (request: ChatRequest) => boolean;
   streamChat: typeof streamChat;
 }
 
@@ -30,6 +31,11 @@ export function createChatRouter(dependencies: ChatDependencies): Router {
     if (dependencies.hasAgent && !dependencies.hasAgent(parsed.data.agentId ?? 'ask')) {
       response.status(HTTP_BAD_REQUEST).json({type: 'error', code: 'invalid_request',
         message: 'The selected agent is unavailable.'} satisfies ChatStreamEvent);
+      return;
+    }
+    if (dependencies.validateAgent && !dependencies.validateAgent(parsed.data)) {
+      response.status(HTTP_BAD_REQUEST).json({type: 'error', code: 'invalid_request',
+        message: 'The selected agent is not active for this session.'} satisfies ChatStreamEvent);
       return;
     }
 

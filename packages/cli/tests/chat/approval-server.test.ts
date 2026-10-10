@@ -23,6 +23,7 @@ async function setup(stream: typeof streamChat) {
   directories.push(directory);
   const server = await startChatServer({workspaceRoot: directory, streamChat: stream,
     readConfig: async () => ({providers: {openai: {apiKey: 'test-key'}}})});
+  server.agentSession.select('build');
   requests.push(server);
   return {server, directory};
 }

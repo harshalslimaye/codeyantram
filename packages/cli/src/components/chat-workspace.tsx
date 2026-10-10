@@ -1,4 +1,4 @@
-import React, {useSyncExternalStore} from 'react';
+import React, {useState, useSyncExternalStore} from 'react';
 import {Box, useWindowSize} from 'ink';
 import {StatusMessage} from '@inkjs/ui';
 import type {EffortLevel, ModelPreferences} from '@codeyantram/shared';
@@ -9,16 +9,21 @@ import {StatusBar} from './status-bar.js';
 import {getContextStatus} from '../chat/context.js';
 import type {ApprovalController} from '../chat/approval.js';
 import {ApprovalView} from './approval-view.js';
+import {AgentSessionController} from '../chat/agent-session.js';
 
-export function ChatWorkspace({session, approvals, modelPreferences, effort, branch, onSelectModel}: {
+export function ChatWorkspace({session, approvals, agentSession, modelPreferences, effort, branch, onSelectModel}: {
 	session: ChatSession;
 	approvals?: ApprovalController;
+	agentSession?: AgentSessionController;
 	modelPreferences: ModelPreferences;
 	effort?: EffortLevel;
 	branch: string;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 }) {
 	const {rows} = useWindowSize();
+	const [localAgentSession] = useState(() => new AgentSessionController({patch: false, command: false}));
+	const agents = agentSession ?? localAgentSession;
+	const selectedAgent = useSyncExternalStore(agents.subscribe, agents.getSnapshot);
 	const {messages, statusEntries, operation, isStreaming, compaction, error, notice} = useSyncExternalStore(session.subscribe, session.getSnapshot);
 	const pending = useSyncExternalStore(approvals?.subscribe ?? emptySubscribe, approvals?.getSnapshot ?? noApproval);
 	const contextStatus = getContextStatus(modelPreferences.modelId, messages, compaction);
@@ -32,16 +37,18 @@ export function ChatWorkspace({session, approvals, modelPreferences, effort, bra
 				{(notice !== undefined && notice !== '') && <StatusMessage variant="info">{notice}</StatusMessage>}
 				<InputBar
 					modelPreferences={modelPreferences}
+					agentSession={agents}
 					onSelectModel={onSelectModel}
 					operation={operation}
-					onSubmit={text => {void session.send(text, modelPreferences.modelId, effort);}}
+					onSubmit={text => {void session.send(text, modelPreferences.modelId, effort,
+						selectedAgent.id === 'ask' ? undefined : selectedAgent.id);}}
 					onCancel={() => session.cancel()}
 					onClear={() => session.clear()}
 					onCompact={() => {void session.compact(modelPreferences.modelId);}}
 					onStatus={() => session.showStatus(modelPreferences.modelId)}
 					onInit={() => {void session.initialize();}}
 				/>
-				<StatusBar branch={branch} model={modelPreferences.modelId} effort={effort} contextTurnCount={contextTurnCount} contextStatus={contextStatus} />
+				<StatusBar branch={branch} agent={selectedAgent.id} model={modelPreferences.modelId} effort={effort} contextTurnCount={contextTurnCount} contextStatus={contextStatus} />
 			</Box>
 		</Box>
 	);

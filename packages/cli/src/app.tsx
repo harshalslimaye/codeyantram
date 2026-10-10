@@ -8,6 +8,7 @@ import type {ThemeRegistry} from './theme/registry/registry.js';
 import {ChatSession, type InitTransport} from './chat/session.js';
 import {requestChat, requestCompact} from './chat/client.js';
 import type {ApprovalController} from './chat/approval.js';
+import type {AgentSessionController} from './chat/agent-session.js';
 
 export function App({
 	registry,
@@ -16,6 +17,7 @@ export function App({
 	serverBaseUrl,
 	serverSessionToken,
 	approvals,
+	agentSession,
 	workspaceRoot,
 	initializeGraph,
 }: {
@@ -25,6 +27,7 @@ export function App({
 	serverBaseUrl: string;
 	serverSessionToken?: string;
 	approvals?: ApprovalController;
+	agentSession?: AgentSessionController;
 	workspaceRoot: string;
 	initializeGraph: InitTransport;
 }) {
@@ -51,7 +54,7 @@ export function App({
 	return (
 		<ThemeProvider registry={registry} initialThemeId={initialThemeId}>
 			<KeyboardProvider>
-				<ChatWorkspace session={session} approvals={approvals} modelPreferences={modelPreferences} effort={effort} branch={branch} onSelectModel={selectModel} />
+				<ChatWorkspace session={session} approvals={approvals} agentSession={agentSession} modelPreferences={modelPreferences} effort={effort} branch={branch} onSelectModel={selectModel} />
 			</KeyboardProvider>
 		</ThemeProvider>
 	);

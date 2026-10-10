@@ -10,6 +10,7 @@ export const COMMANDS: Command[] = [
     { command: '/status', description: 'Show model and estimated context usage' },
     { command: '/init', description: 'Build or refresh the project code graph' },
     { command: '/model', description: 'Change the active model' },
+    { command: '/agent', description: 'Choose Ask, Build, or Yolo for this session' },
     { command: '/connect', description: 'Configure a provider API key' },
     { command: '/jev', description: 'Toggle JEV usage on or off' },
     { command: '/theme', description: 'Choose a terminal theme' },

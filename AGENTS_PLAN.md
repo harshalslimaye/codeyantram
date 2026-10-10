@@ -1,6 +1,6 @@
 # Agents Implementation Plan
 
-Status: Phases 1–4 implemented. Phases 5–8 remain planned.
+Status: Phases 1–5 implemented. Phases 6–8 remain planned.
 
 Phase 1 result: `packages/shared/src/agents/` defines the validated authoring,
 resolved, and public metadata contracts; `packages/core/src/tools/catalog.ts`
@@ -30,8 +30,16 @@ Phase 4 result: the CLI-owned server now supplies a host approval controller
 for Build patches and commands. It queues exact prepared requests, renders a
 scrollable review with paths, actions, hashes, workdir, timeout, and objective,
 and accepts explicit approval or denial. Escape cancels the turn. Disconnect,
-cancellation, and server shutdown deny pending requests. The CLI agent picker
-and ordinary conversation selection remain Phase 6 work.
+cancellation, and server shutdown deny pending requests. Agent selection was
+added in Phase 5; the metadata-driven picker remains Phase 6 work.
+
+Phase 5 result: `/agent` now allows session-local selection of Ask, Build, or
+Yolo. Yolo requires a separate activation screen explaining that Bash is not
+sandboxed, and the status bar marks it as active. The private server checks the
+host-owned selection before streaming, binds authorization and approvers to the
+turn snapshot, and can disable automatic patching and commands independently.
+Switching away resets activation; a new process starts in Ask. Phase 6 still
+adds the full metadata-driven picker and conversation display behavior.
 
 ## Goal and first-version contract
 
