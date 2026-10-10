@@ -3,6 +3,8 @@ import type {streamChat, ProviderCredentials, ChatStreamOptions} from '@codeyant
 import {chatRequestSchema, type ChatStreamEvent} from '@codeyantram/shared';
 import {serveEventStream} from '../http/stream.js';
 
+const HTTP_BAD_REQUEST = 400;
+
 export interface ChatDependencies {
   readCredentials: (modelId: string) => Promise<ProviderCredentials>;
   readOptions?: (modelId: string, signal: AbortSignal) => Promise<ChatStreamOptions>;
@@ -15,7 +17,7 @@ export function createChatRouter(dependencies: ChatDependencies): Router {
   router.post('/chat', async (request, response) => {
     const parsed = chatRequestSchema.safeParse(request.body);
     if (!parsed.success) {
-      response.status(400).json({
+      response.status(HTTP_BAD_REQUEST).json({
         type: 'error', code: 'invalid_request',
         message: parsed.error.issues[0]?.message ?? 'Invalid chat request.',
       } satisfies ChatStreamEvent);

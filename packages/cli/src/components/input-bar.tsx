@@ -11,6 +11,8 @@ import {useKeyboardOwner} from '../keyboard/provider.js';
 import {JevNotConfiguredError, toggleJevUsage, type EffortLevel, type ModelPreferences} from '@codeyantram/shared';
 import type {SessionOperation} from '../chat/session.js';
 
+const VISIBLE_COMMAND_COUNT = 6;
+
 export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, onCancel, onClear, onCompact, onStatus, onInit}: {
 	modelPreferences: ModelPreferences;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
@@ -177,7 +179,7 @@ export function InputBar({modelPreferences, onSelectModel, operation, onSubmit, 
 			</Box>
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
-				<TextInput placeholder={'Okay, what did you do this time?'.slice(0, Math.max(0, columns - 6))} key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} onSubmit={submitDraft} />
+				<TextInput placeholder={'Okay, what did you do this time?'.slice(0, Math.max(0, columns - VISIBLE_COMMAND_COUNT))} key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} onSubmit={submitDraft} />
 			</Box>
 		</Box>
 	);

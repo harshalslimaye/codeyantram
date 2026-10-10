@@ -13,6 +13,11 @@ import {
 	type UserMessage,
 } from '@codeyantram/shared';
 
+const PERCENT_SCALE = 100;
+const ESTIMATED_BYTES_PER_TOKEN = 4;
+const ESTIMATED_MESSAGE_OVERHEAD_TOKENS = 6;
+const ESTIMATED_SUMMARY_OVERHEAD_TOKENS = 32;
+
 export type ConversationMessage = UserMessage | (AssistantMessage & {
 	status?: CompactAssistantStatus | 'streaming';
 });
@@ -38,8 +43,8 @@ export function getContextStatus(modelId: string, messages: readonly ChatMessage
 	const model = findSupportedChatModel(modelId);
 	if (!model) throw new Error(`Model "${modelId}" is not supported.`);
 	const usedTokens = estimateContextTokens(buildChatContext(messages, compacted));
-	const usedPercent = usedTokens / model.contextWindow * 100;
-	return {modelId, usedTokens, contextWindow: model.contextWindow, usedPercent, remainingPercent: Math.max(0, 100 - usedPercent)};
+	const usedPercent = usedTokens / model.contextWindow * PERCENT_SCALE;
+	return {modelId, usedTokens, contextWindow: model.contextWindow, usedPercent, remainingPercent: Math.max(0, PERCENT_SCALE - usedPercent)};
 }
 
 /** Reject stale/out-of-range boundaries and boundaries that split a user-led turn. */
@@ -50,7 +55,7 @@ export function getContextStartIndex(messages: readonly ChatMessage[], compacted
 	if (!Number.isInteger(index) || index < 0 || index > messages.length) {
 		throw new Error('The compacted context boundary is outside the transcript.');
 	}
-	if (index > 0 && index < messages.length && messages[index]!.role !== 'user') {
+	if (index > 0 && index < messages.length && messages[index].role !== 'user') {
 		throw new Error('The compacted context boundary splits a conversation turn.');
 	}
 	return index;
@@ -93,10 +98,10 @@ export function estimateContextTokens(context: {
 	messages: readonly RequestMessage[];
 	contextSummary?: string;
 }): number {
-	const textEstimate = (text: string) => Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
+	const textEstimate = (text: string) => Math.ceil(Buffer.byteLength(text, 'utf8') / ESTIMATED_BYTES_PER_TOKEN);
 	const messages = context.messages.reduce((total, message) =>
-		total + textEstimate(message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part)).join('')) + 6, 0);
-	return messages + (context.contextSummary === undefined ? 0 : textEstimate(context.contextSummary) + 32);
+		total + textEstimate(message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part)).join('')) + ESTIMATED_MESSAGE_OVERHEAD_TOKENS, 0);
+	return messages + (context.contextSummary === undefined ? 0 : textEstimate(context.contextSummary) + ESTIMATED_SUMMARY_OVERHEAD_TOKENS);
 }
 
 /** Canonical serialized model content; includes the real summary wrapper, excludes IDs/status/usage.

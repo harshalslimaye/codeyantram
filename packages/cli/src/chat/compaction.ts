@@ -9,10 +9,13 @@ import {
 	type ConversationMessage,
 } from './context.js';
 
+const PERCENT_SCALE = 100;
+const ESTIMATED_BYTES_PER_TOKEN = 4;
+
 export const KEEP_RECENT_TURNS = 2;
 export const MIN_PREFIX_ESTIMATED_TOKENS = 1_500;
 export const MIN_CONTEXT_REDUCTION_PERCENT = 20;
-export const MAX_COMPACT_REQUEST_BYTES = 4 * 1024 * 1024;
+export const MAX_COMPACT_REQUEST_BYTES = 4_194_304;
 // Reserve 4,096 output tokens plus 4,096 for instructions and estimation error.
 export const COMPACTION_CONTEXT_MARGIN_TOKENS = 8_192;
 
@@ -22,7 +25,7 @@ export function assessCompactionReduction(previous: ChatContext, summary: string
 	const afterBytes = measureContextBytes({messages: [], contextSummary: summary});
 	return {
 		beforeBytes, afterBytes,
-		sufficient: afterBytes * 100 <= beforeBytes * (100 - MIN_CONTEXT_REDUCTION_PERCENT),
+		sufficient: afterBytes * PERCENT_SCALE <= beforeBytes * (PERCENT_SCALE - MIN_CONTEXT_REDUCTION_PERCENT),
 	};
 }
 
@@ -31,7 +34,7 @@ export function getCompactionSizeError(request: CompactRequest): string | undefi
 	const bytes = Buffer.byteLength(JSON.stringify(request), 'utf8');
 	if (bytes > MAX_COMPACT_REQUEST_BYTES) return 'The compaction request exceeds the 4 MB limit. Previous context has been kept.';
 	const model = findSupportedChatModel(request.model);
-	if (model && Math.ceil(bytes / 4) + COMPACTION_CONTEXT_MARGIN_TOKENS > model.contextWindow) {
+	if (model && Math.ceil(bytes / ESTIMATED_BYTES_PER_TOKEN) + COMPACTION_CONTEXT_MARGIN_TOKENS > model.contextWindow) {
 		return 'The compaction request is estimated to exceed this model’s context window. Try a larger-context model. Previous context has been kept.';
 	}
 	return undefined;
@@ -70,7 +73,7 @@ export function planCompaction(
 		throw new Error('The active transcript must start with a user-led turn.');
 	}
 
-	const coveredMessageCount = turnStarts[turnStarts.length - KEEP_RECENT_TURNS]!;
+	const coveredMessageCount = turnStarts[turnStarts.length - KEEP_RECENT_TURNS];
 	const messages: CompactMessage[] = transcript.slice(start, coveredMessageCount)
 		.filter(message => message.parts.some(part => part.type !== 'text' || part.text.trim().length > 0))
 		.map((message): CompactMessage => {

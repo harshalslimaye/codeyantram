@@ -4,11 +4,14 @@ import {markedTerminal} from 'marked-terminal';
 import wrapAnsi from 'wrap-ansi';
 import type {InkThemePalette} from '../theme/provider.js';
 
+const TRUE_COLOR_LEVEL = 3;
+const MIN_TABLE_CELL_WIDTH = 5;
+
 /** Render the accumulated source before wrapping, so Markdown can span stream chunks. */
 export function createMarkdownRenderer(columns: number, palette: InkThemePalette): (source: string) => string[] {
 	const width = Math.max(1, columns);
 	const colors = Object.values(palette).filter((color): color is string => color !== undefined);
-	const chalk = new Chalk({level: colors.some(color => color.startsWith('#')) ? 3 : colors.length ? 2 : 0});
+	const chalk = new Chalk({level: colors.some(color => color.startsWith('#')) ? TRUE_COLOR_LEVEL : colors.length ? 2 : 0});
 	const style = (color: string | undefined): ChalkInstance => {
 		if (!color) return chalk;
 		const indexed = /^ansi256\((\d+)\)$/.exec(color);
@@ -53,7 +56,7 @@ export function createMarkdownRenderer(columns: number, palette: InkThemePalette
 				const longWord = [...token.header, ...token.rows.flat()].some(cell =>
 					cell.text.split(/\s+/).some(word => wrapAnsi(word, Math.max(1, cellWidth), {hard: true}).includes('\n')),
 				);
-				if (width < count * 5 + 1 || longWord) {
+				if (width < count * MIN_TABLE_CELL_WIDTH + 1 || longWord) {
 					// cli-table truncates words wider than a column. Stack labeled
 					// cells when needed to retain the entire reply in narrow terminals.
 					const headers = token.header.map(cell => this.parser.parseInline(cell.tokens));

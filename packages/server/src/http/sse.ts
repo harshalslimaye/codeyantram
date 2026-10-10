@@ -2,8 +2,11 @@ import {once} from 'node:events';
 import type {Response} from 'express';
 import type {ChatStreamEvent, CompactStreamEvent} from '@codeyantram/shared';
 
+const HTTP_OK = 200;
+const HEARTBEAT_INTERVAL_MS = 15_000;
+
 export function openEventStream(response: Response): void {
-  response.status(200).set({
+  response.status(HTTP_OK).set({
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
@@ -28,5 +31,5 @@ export function startHeartbeat(response: Response): NodeJS.Timeout {
     if (!response.destroyed && !response.writableEnded && !response.writableNeedDrain) {
       response.write(': keep-alive\n\n');
     }
-  }, 15_000).unref();
+  }, HEARTBEAT_INTERVAL_MS).unref();
 }

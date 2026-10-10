@@ -4,6 +4,8 @@ import type {GraphFreshness, GraphInitialization, GraphReconcileOptions} from '.
 import type {ChangeJournal, OperationState, ReconcileWorkspace} from './ports.js';
 import {GraphCoordinatorError} from './errors.js';
 
+const MAX_RECONCILIATION_PASSES = 3;
+
 /** Establishes a complete baseline and records conservative freshness observations. */
 export class GraphReconciler implements ReconcileWorkspace {
   private readonly epoch = randomUUID();
@@ -27,7 +29,7 @@ export class GraphReconciler implements ReconcileWorkspace {
     try {
       // A newer notification is never cleared by an older pass. Bound retries
       // so a continuously changing workspace cannot starve the queue forever.
-      for (let pass = 0; pass < 3; pass++) {
+      for (let pass = 0; pass < MAX_RECONCILIATION_PASSES; pass++) {
         options.signal?.throwIfAborted();
         const generation = this.changes.version;
         const status = this.graph.getStatus();

@@ -15,10 +15,11 @@ export function formatOutput(document: TransportDocument, format: WebFormat, ori
     filtering: selection.filtering,
   };
   const setContent = (characters: number) => {
-    if (/[\uD800-\uDBFF]/.test(source[characters - 1] ?? '') && /[\uDC00-\uDFFF]/.test(source[characters] ?? '')) characters--;
-    output.truncation.returnedCharacters = characters;
-    output.truncation.truncated = characters < source.length;
-    output.content = `${BEGIN}\n${source.slice(0, characters)}\n${END}${output.truncation.truncated ? '\n[Output truncated by the host; additional source content exists.]' : ''}`;
+    let returnedCharacters = characters;
+    if (/[\uD800-\uDBFF]/.test(source[returnedCharacters - 1] ?? '') && /[\uDC00-\uDFFF]/.test(source[returnedCharacters] ?? '')) returnedCharacters--;
+    output.truncation.returnedCharacters = returnedCharacters;
+    output.truncation.truncated = returnedCharacters < source.length;
+    output.content = `${BEGIN}\n${source.slice(0, returnedCharacters)}\n${END}${output.truncation.truncated ? '\n[Output truncated by the host; additional source content exists.]' : ''}`;
   };
   setContent(Math.min(source.length, MAX_CONTENT_CHARACTERS));
   if (Buffer.byteLength(JSON.stringify(output), 'utf8') > MAX_OUTPUT_BYTES) {

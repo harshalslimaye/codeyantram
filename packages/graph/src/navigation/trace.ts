@@ -7,13 +7,19 @@ import {budget, fits, integer, requireFits} from './budget.js';
 import {NAVIGATION_COVERAGE} from './coverage.js';
 import {GraphNavigationError} from './errors.js';
 
+const MAX_TRACE_DEPTH = 3;
+const DEFAULT_RESULT_LIMIT = 20;
+const MAX_RESULT_LIMIT = 50;
+const MAX_RELATIONSHIPS = 100;
+const MAX_EDGE_METADATA_CHARACTERS = 1024;
+
 export class TraceQuery {
   constructor(private readonly backend: TraceBackend, private readonly sources: SourceFingerprints,
     private readonly symbols: SymbolResolver & VerifiedSymbols) {}
 
   async execute(reference: SymbolReference, options: GraphTraceOptions): Promise<GraphTraceResult> {
     if (!['callers', 'callees'].includes(options.direction)) throw new GraphNavigationError('invalid_input', 'Trace direction must be callers or callees.');
-    const depth = integer(options.depth ?? 1, 1, 3), limit = integer(options.limit ?? 20, 1, 50), maxCharacters = budget(options.maxCharacters);
+    const depth = integer(options.depth ?? 1, 1, MAX_TRACE_DEPTH), limit = integer(options.limit ?? DEFAULT_RESULT_LIMIT, 1, MAX_RESULT_LIMIT), maxCharacters = budget(options.maxCharacters);
     const target = await this.symbols.resolve(reference);
     const subgraph = this.backend.traverse(target.id, {direction: options.direction === 'callers' ? 'incoming' : 'outgoing',
       maxDepth: depth, limit: limit + 2, includeStart: true, edgeKinds: ['calls', 'instantiates']});
@@ -31,8 +37,8 @@ export class TraceQuery {
     const ids = new Set([target.id, ...result.symbols.map(symbol => symbol.id)]);
     for (const edge of subgraph.edges) {
       if (!ids.has(edge.source) || !ids.has(edge.target)) continue;
-      if (result.relationships.length >= 100) {result.truncated = true; break;}
-      if (edge.metadata && JSON.stringify(edge.metadata).length > 1024) result.truncated = true;
+      if (result.relationships.length >= MAX_RELATIONSHIPS) {result.truncated = true; break;}
+      if (edge.metadata && JSON.stringify(edge.metadata).length > MAX_EDGE_METADATA_CHARACTERS) result.truncated = true;
       result.relationships.push(this.relationship(edge));
     }
     await this.sources.verifyFiles(hashes);
@@ -48,7 +54,7 @@ export class TraceQuery {
   }
 
   private relationship(edge: Edge): GraphTraceResult['relationships'][number] {
-    const metadata = edge.metadata && JSON.stringify(edge.metadata).length <= 1024 ? JSON.parse(JSON.stringify(edge.metadata)) as Record<string, unknown> : undefined;
+    const metadata = edge.metadata && JSON.stringify(edge.metadata).length <= MAX_EDGE_METADATA_CHARACTERS ? JSON.parse(JSON.stringify(edge.metadata)) as Record<string, unknown> : undefined;
     return {source: edge.source, target: edge.target, kind: edge.kind,
       ...(edge.line === undefined ? {} : {line: edge.line}), ...(edge.column === undefined ? {} : {column: edge.column}),
       ...(metadata ? {metadata} : {})};

@@ -53,7 +53,7 @@ export async function* requestEventStream<TEvent extends StreamEvent>(
 	}
 
 	if (!response.ok) {
-		const event = schema.safeParse(await response.json().catch(() => undefined));
+		const event = schema.safeParse(await response.json().catch(() => {}));
 		signal.throwIfAborted();
 		if (event.success && event.data.type === 'error') {
 			yield event.data;

@@ -1,7 +1,7 @@
 export const DEFAULT_TIMEOUT_SECONDS = 30;
 export const MAX_TIMEOUT_SECONDS = 120;
 export const MAX_REDIRECTS = 5;
-export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+export const MAX_RESPONSE_BYTES = 5_242_880;
 export const MAX_CONTENT_CHARACTERS = 24_000;
 export const MAX_OUTPUT_BYTES = 60_000;
 export const MAX_URL_CHARACTERS = 4096;

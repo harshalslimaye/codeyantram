@@ -34,12 +34,15 @@ const factory = `    // Codeyantram extension: keep source and database paths in
     }
 `;
 
+/** @param {string} source @param {string} before @param {string} after */
 function replaceOnce(source, before, after) {
   if (source.split(before).length !== 2) throw new Error('Unexpected CodeGraph 1.6.2 source; review the storage extension.');
   return source.replace(before, after);
 }
 
-/** Exported for compatibility tests; installation calls patchCodeGraph below. */
+/** Exported for compatibility tests; installation calls patchCodeGraph below.
+ * @param {string} source
+ */
 export function extendCodeGraphSource(source) {
   const patched = source.includes(factory);
   let original = source;
@@ -71,7 +74,9 @@ function isMissingWorkingTreeFile(rootDir, filePath) {
 }
 `;
 
-/** Git still lists unstaged deletions; neither index nor sync should read them. */
+/** Git still lists unstaged deletions; neither index nor sync should read them.
+ * @param {string} source
+ */
 export function extendCodeGraphExtractionSource(source) {
   const patched = source.includes(missingFileHelper);
   let original = source;
@@ -91,7 +96,7 @@ export function extendCodeGraphExtractionSource(source) {
 
 export function patchCodeGraph(root = fileURLToPath(new URL('../', import.meta.url))) {
   const require = createRequire(path.join(root, 'package.json'));
-  const main = require('@colbymchenry/codegraph/package.json');
+  const main = /** @type {{version: string}} */ (require('@colbymchenry/codegraph/package.json'));
   if (main.version !== VERSION) throw new Error(`CodeGraph storage extension requires ${VERSION}; found ${main.version}.`);
   const updates = [];
   for (const platform of platforms) {
@@ -99,12 +104,12 @@ export function patchCodeGraph(root = fileURLToPath(new URL('../', import.meta.u
     try {
       packageFile = require.resolve(`@colbymchenry/codegraph-${platform}/package.json`);
     } catch (error) {
-      if (error.code === 'MODULE_NOT_FOUND') continue;
+      if (/** @type {NodeJS.ErrnoException} */ (error).code === 'MODULE_NOT_FOUND') continue;
       throw error;
     }
-    const metadata = JSON.parse(readFileSync(packageFile, 'utf8'));
+    const metadata = /** @type {{version: string}} */ (JSON.parse(readFileSync(packageFile, 'utf8')));
     if (metadata.version !== VERSION) throw new Error(`CodeGraph ${platform} bundle must be ${VERSION}; found ${metadata.version}.`);
-    for (const [relative, extend] of [['index.js', extendCodeGraphSource], ['extraction/index.js', extendCodeGraphExtractionSource]]) {
+    for (const [relative, extend] of /** @type {[string, (source: string) => string][]} */ ([['index.js', extendCodeGraphSource], ['extraction/index.js', extendCodeGraphExtractionSource]])) {
       const filename = path.join(path.dirname(packageFile), 'lib', 'dist', relative);
       const source = readFileSync(filename, 'utf8');
       updates.push({filename, source, extended: extend(source)});

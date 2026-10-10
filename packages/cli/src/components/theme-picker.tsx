@@ -4,6 +4,8 @@ import {Picker} from './picker.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 
+const VISIBLE_THEME_COUNT = 18;
+
 export function ThemePicker() {
 	const [attempt, setAttempt] = useState(0);
 	const [isSaving, setIsSaving] = useState(false);
@@ -14,7 +16,7 @@ export function ThemePicker() {
 		.sort((left, right) => Number(right.theme.id === selectedId) - Number(left.theme.id === selectedId))
 		.map(entry => ({
 			value: entry.theme.id,
-			label: `${entry.theme.name.padEnd(18)}${entry.theme.id === selectedId ? 'active' : entry.source}`,
+			label: `${entry.theme.name.padEnd(VISIBLE_THEME_COUNT)}${entry.theme.id === selectedId ? 'active' : entry.source}`,
 		})), [themes, selectedId]);
 
 	async function saveTheme(id: string) {

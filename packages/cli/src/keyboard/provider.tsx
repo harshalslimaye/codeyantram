@@ -31,15 +31,15 @@ export function KeyboardProvider({children}: {children: ReactNode}) {
 	}
 
 	function isOwner(candidate: KeyboardOwner): boolean {
-		return currentStack.current[currentStack.current.length - 1]! === candidate;
+		return currentStack.current[currentStack.current.length - 1] === candidate;
 	}
 
 	function getOwner(): KeyboardOwner {
-		return currentStack.current[currentStack.current.length - 1]!;
+		return currentStack.current[currentStack.current.length - 1];
 	}
 
 	return (
-		<KeyboardContext.Provider value={{owner: stack[stack.length - 1]!, getOwner, isOwner, push, pop}}>
+		<KeyboardContext.Provider value={{owner: stack[stack.length - 1], getOwner, isOwner, push, pop}}>
 			{children}
 		</KeyboardContext.Provider>
 	);

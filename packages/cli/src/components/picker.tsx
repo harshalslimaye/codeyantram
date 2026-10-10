@@ -32,7 +32,7 @@ export function Picker<Value extends string>({
 	const handleChange = useCallback((value: string) => {
 		const current = interaction.current;
 		if (!current.isOwner(current.pickerOwner) || current.isDisabled) return;
-		const option = current.options.find(option => option.value === value);
+		const option = current.options.find(candidate => candidate.value === value);
 		if (option) current.onSelect(option.value);
 	}, []);
 

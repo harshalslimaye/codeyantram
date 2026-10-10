@@ -1,7 +1,6 @@
 import {anthropicModels} from './anthropic.js';
 import {googleModels} from './google.js';
 import {openaiModels} from './openai.js';
-import {SUPPORTED_PROVIDERS} from '../types.js';
 import type {EffortLevel, SupportedChatModelDefinition, SupportedProvider} from '../types.js';
 
 export * from '../types.js';

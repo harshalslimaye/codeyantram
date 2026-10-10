@@ -2,6 +2,10 @@ import {z} from 'zod';
 import {EvaluationError} from './errors.js';
 import type {EvaluationInput, EvaluationQuestions} from './types.js';
 
+const MAX_CHOICE_CRITERIA = 255;
+const MAX_SCORE_CRITERIA = 10;
+const MAX_QUESTION_ID_CHARACTERS = 128;
+
 export const MAX_EVALUATION_QUESTIONS = 64;
 export const MAX_EVALUATION_INPUT_BYTES = 1_048_576;
 
@@ -15,13 +19,13 @@ const question = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z.literal('choice'), instructions,
-    criteria: z.record(z.string().min(1), description).refine(value => Object.keys(value).length >= 1 && Object.keys(value).length <= 255),
+    criteria: z.record(z.string().min(1), description).refine(value => Object.keys(value).length >= 1 && Object.keys(value).length <= MAX_CHOICE_CRITERIA),
   }),
-  z.strictObject({type: z.literal('score'), instructions, criteria: z.array(description).min(2).max(10)}),
+  z.strictObject({type: z.literal('score'), instructions, criteria: z.array(description).min(2).max(MAX_SCORE_CRITERIA)}),
 ]);
 const inputSchema = z.strictObject({
   state: content,
-  questions: z.record(z.string().min(1).max(128).refine(id => Boolean(id.trim())), question)
+  questions: z.record(z.string().min(1).max(MAX_QUESTION_ID_CHARACTERS).refine(id => Boolean(id.trim())), question)
     .refine(value => Object.keys(value).length >= 1 && Object.keys(value).length <= MAX_EVALUATION_QUESTIONS),
 });
 

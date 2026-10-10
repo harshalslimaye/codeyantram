@@ -7,6 +7,8 @@ import type {SourceBackend} from '../sdk/ports.js';
 import type {SourceFingerprints} from './ports.js';
 import {GraphNavigationError} from './errors.js';
 
+const MAX_SOURCE_BYTES = 1_048_576;
+
 /** Verifies indexed source content and workspace containment around reads. */
 export class SourceVerifier implements SourceFingerprints {
   constructor(private readonly backend: SourceBackend, private readonly storage: Readonly<GraphStoragePaths>) {}
@@ -21,9 +23,9 @@ export class SourceVerifier implements SourceFingerprints {
       if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
         throw new GraphNavigationError('invalid_input', 'The indexed source must remain inside the workspace.');
       }
-      if ((await stat(absolute)).size > 1024 * 1024) throw new GraphNavigationError('source_too_large', 'Navigation source exceeds the 1 MB file limit.');
+      if ((await stat(absolute)).size > MAX_SOURCE_BYTES) throw new GraphNavigationError('source_too_large', 'Navigation source exceeds the 1 MB file limit.');
       const contents = await readFile(absolute);
-      if (contents.length > 1024 * 1024) throw new GraphNavigationError('source_too_large', 'Navigation source exceeds the 1 MB file limit.');
+      if (contents.length > MAX_SOURCE_BYTES) throw new GraphNavigationError('source_too_large', 'Navigation source exceeds the 1 MB file limit.');
       const hash = createHash('sha256').update(contents).digest('hex');
       if (hash !== record.contentHash) throw new GraphNavigationError('stale_reference', 'Source differs from the index. Run find or explore again.');
       return hash;

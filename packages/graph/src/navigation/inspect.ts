@@ -7,12 +7,15 @@ import {NAVIGATION_COVERAGE} from './coverage.js';
 import {GraphNavigationError} from './errors.js';
 import {toNavigationSymbol} from './symbols.js';
 
+const DEFAULT_RESULT_LIMIT = 20;
+const MAX_RESULT_LIMIT = 50;
+
 export class InspectQuery {
   constructor(private readonly backend: InspectBackend, private readonly sources: SourceFingerprints,
     private readonly symbols: SymbolResolver & SymbolReferenceFactory) {}
 
   async execute(target: GraphInspectTarget, options: GraphInspectOptions = {}): Promise<GraphInspectResult> {
-    const maxCharacters = budget(options.maxCharacters), limit = integer(options.limit ?? 20, 1, 50);
+    const maxCharacters = budget(options.maxCharacters), limit = integer(options.limit ?? DEFAULT_RESULT_LIMIT, 1, MAX_RESULT_LIMIT);
     if (target.reference) {
       const symbol = await this.symbols.resolve(target.reference);
       const source = await this.backend.getCode(symbol.id);
@@ -30,10 +33,10 @@ export class InspectQuery {
       return result;
     }
     if (!navigationFilePathSchema.safeParse(target.filePath).success) throw new GraphNavigationError('invalid_input', 'Use an indexed workspace-relative file path.');
-    if (!this.backend.getFile(target.filePath!)) throw new GraphNavigationError('not_found', 'The file is not indexed. Check its path and indexed scope.');
-    const hash = await this.sources.fingerprint(target.filePath!);
-    const nodes = this.backend.getNodesInFile(target.filePath!).sort((a, b) => a.startLine - b.startLine || a.id.localeCompare(b.id));
-    const result: GraphInspectResult = {type: 'file', filePath: target.filePath!, contentHash: hash,
+    if (!this.backend.getFile(target.filePath)) throw new GraphNavigationError('not_found', 'The file is not indexed. Check its path and indexed scope.');
+    const hash = await this.sources.fingerprint(target.filePath);
+    const nodes = this.backend.getNodesInFile(target.filePath).sort((a, b) => a.startLine - b.startLine || a.id.localeCompare(b.id));
+    const result: GraphInspectResult = {type: 'file', filePath: target.filePath, contentHash: hash,
       symbols: nodes.slice(0, limit).map(node => toNavigationSymbol(node, this.symbols.reference(node, hash))), truncated: nodes.length > limit, coverage: NAVIGATION_COVERAGE};
     await this.sources.verifyFiles(new Map([[result.filePath, hash]]));
     result.truncated ||= result.symbols.some(symbol => symbol.metadataTruncated);

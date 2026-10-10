@@ -7,6 +7,8 @@ import {OperationQueue} from './operation-queue.js';
 import {GraphReconciler} from './reconciler.js';
 import {withGraphReader} from './query-session.js';
 
+const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
+
 /** Orchestrates initialization, navigation, and edits in one workspace slot. */
 export class GraphCoordinator {
   readonly storage: CoordinatedGraph['storage'];
@@ -17,7 +19,7 @@ export class GraphCoordinator {
 
   constructor(private readonly graph: CoordinatedGraph, options: {cleanupTimeoutMs?: number} = {}) {
     this.storage = graph.storage;
-    this.cleanupTimeoutMs = options.cleanupTimeoutMs ?? 30_000;
+    this.cleanupTimeoutMs = options.cleanupTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     if (!Number.isInteger(this.cleanupTimeoutMs) || this.cleanupTimeoutMs < 1) {
       throw new Error('Graph cleanup timeout must be a positive integer.');
     }

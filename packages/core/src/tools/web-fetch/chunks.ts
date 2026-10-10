@@ -1,6 +1,9 @@
 import {createHash} from 'node:crypto';
 import {MAX_CHUNK_CHARACTERS, MAX_CHUNKS} from './limits.js';
 
+const MAX_HEADING_DEPTH = 16;
+const MAX_HEADING_CHARACTERS = 256;
+
 export class ChunkLimitError extends Error {}
 
 export interface ContentChunk {
@@ -34,10 +37,10 @@ export function chunkContent(content: string, sourceUrl: string): ContentChunk[]
         const space = content.lastIndexOf(' ', next - 1);
         const boundary = Math.max(line, space);
         if (boundary > start + MAX_CHUNK_CHARACTERS / 2) next = boundary + 1;
-        if (/[\uD800-\uDBFF]/.test(content[next - 1]!) && /[\uDC00-\uDFFF]/.test(content[next]!)) next--;
+        if (/[\uD800-\uDBFF]/.test(content[next - 1]) && /[\uDC00-\uDFFF]/.test(content[next]!)) next--;
       }
       const text = content.slice(start, next);
-      chunks.push({id: createHash('sha256').update(`${sourceUrl}\0${start}\0${text}`).digest('hex').slice(0, 16),
+      chunks.push({id: createHash('sha256').update(`${sourceUrl}\0${start}\0${text}`).digest('hex').slice(0, MAX_HEADING_DEPTH),
         sourceUrl, position: chunks.length, start, end: next, sectionPath: [...sectionPath], headingPositions: [...headingPositions],
         ...(codeBlock === undefined ? {} : {codeBlock}), text});
       start = next;
@@ -48,9 +51,9 @@ export function chunkContent(content: string, sourceUrl: string): ContentChunk[]
     const heading = !fence && /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line.trimEnd());
     if (heading) {
       flush(cursor);
-      const level = heading[1]!.length;
+      const level = heading[1].length;
       while (headings.length && headings.at(-1)!.level >= level) headings.pop();
-      headings.push({level, title: heading[2]!.slice(0, 256), position: chunks.length});
+      headings.push({level, title: heading[2].slice(0, MAX_HEADING_CHARACTERS), position: chunks.length});
       sectionPath = headings.map(entry => entry.title);
       headingPositions = headings.map(entry => entry.position);
     }

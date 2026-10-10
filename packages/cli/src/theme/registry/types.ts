@@ -15,8 +15,8 @@ export type HexColor = `#${string}`;
 export type AnsiColor = number;
 export type ThemeColorValue = HexColor | AnsiColor | 'none';
 export type ThemeColor =
-	| ThemeColorValue
-	| {dark: ThemeColorValue | string; light: ThemeColorValue | string}
+	| AnsiColor
+	| {dark: AnsiColor | string; light: AnsiColor | string}
 	| string;
 
 export type ThemePalette = Record<ThemeRole, ThemeColor>;

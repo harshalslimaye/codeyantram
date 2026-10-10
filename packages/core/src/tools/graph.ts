@@ -2,6 +2,8 @@ import {tool} from 'ai';
 import {z} from 'zod';
 import type {NavigationExecutor, NavigationGraphService} from './types.js';
 
+const MAX_PENDING_PATHS = 20;
+
 export const graphInputSchema = z.strictObject({});
 
 export function createGraphTool(service: NavigationGraphService, execute: NavigationExecutor) {
@@ -12,8 +14,8 @@ export function createGraphTool(service: NavigationGraphService, execute: Naviga
       const status = service.getStatus();
       const graph = status.graph;
       return {lifecycle: status.lifecycle, watcher: 'disabled', reconciliation: 'before-every-query',
-        graph: graph && {...graph, pendingPaths: graph.pendingPaths.slice(0, 20),
-          pendingPathsTruncated: graph.pendingPaths.length > 20,
+        graph: graph && {...graph, pendingPaths: graph.pendingPaths.slice(0, MAX_PENDING_PATHS),
+          pendingPathsTruncated: graph.pendingPaths.length > MAX_PENDING_PATHS,
           lastError: graph.lastError ? {code: graph.lastError.code, message: 'Graph reconciliation failed. Run /init to retry.'} : null}};
     }),
   });

@@ -1,5 +1,9 @@
 import {APICallError, InvalidResponseDataError, JSONParseError, TypeValidationError} from 'ai';
 
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+const HTTP_TOO_MANY_REQUESTS = 429;
+
 export type EvaluationErrorCode = 'missing_credentials' | 'invalid_input' | 'cancelled' | 'timeout'
   | 'authentication_failed' | 'rate_limited' | 'invalid_response' | 'provider_error';
 
@@ -17,10 +21,10 @@ export function toEvaluationError(error: unknown): EvaluationError {
     return new EvaluationError('invalid_response', 'JEV returned an invalid evaluation response.');
   }
   if (APICallError.isInstance(error)) {
-    if (error.statusCode === 401 || error.statusCode === 403) {
+    if (error.statusCode === HTTP_UNAUTHORIZED || error.statusCode === HTTP_FORBIDDEN) {
       return new EvaluationError('authentication_failed', 'JEV authentication failed. Update the TypeSafe API key through /connect.');
     }
-    if (error.statusCode === 429) return new EvaluationError('rate_limited', 'JEV is rate limited. Try again later.');
+    if (error.statusCode === HTTP_TOO_MANY_REQUESTS) return new EvaluationError('rate_limited', 'JEV is rate limited. Try again later.');
     if (TypeValidationError.isInstance(error.cause) || JSONParseError.isInstance(error.cause)) {
       return new EvaluationError('invalid_response', 'JEV returned an invalid evaluation response.');
     }

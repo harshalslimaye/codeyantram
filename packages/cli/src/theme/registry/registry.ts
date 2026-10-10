@@ -11,7 +11,7 @@ export interface RegisteredTheme {
 export interface ThemeRegistry {
 	list(): RegisteredTheme[];
 	get(id: string): RegisteredTheme | undefined;
-	resolve(id: string | undefined, fallbackId?: string): {
+	resolve(id?: string, fallbackId?: string): {
 		selected: RegisteredTheme;
 		requestedId?: string;
 		usedFallback: boolean;

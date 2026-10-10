@@ -3,9 +3,11 @@ import { Box, Text } from 'ink';
 import BigText from 'ink-big-text';
 import { useTheme } from '../theme/provider.js';
 
+const WELCOME_WIDTH = 48;
+
 export function Welcome({ width }: { width: number }) {
 	const { palette } = useTheme();
-	const showBanner = width >= 48;
+	const showBanner = width >= WELCOME_WIDTH;
 
 	return (
 		<Box flexDirection="column" flexShrink={0}>

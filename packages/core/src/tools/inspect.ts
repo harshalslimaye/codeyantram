@@ -3,11 +3,15 @@ import {z} from 'zod';
 import {navigationFilePathSchema, symbolReferenceSchema} from '@codeyantram/shared';
 import type {NavigationExecutor, NavigationGraphService} from './types.js';
 
+const MAX_RESULTS = 50;
+const MIN_CONTEXT_CHARACTERS = 2048;
+const MAX_CONTEXT_CHARACTERS = 24_000;
+
 export const inspectInputSchema = z.strictObject({
   reference: symbolReferenceSchema.optional(),
   filePath: navigationFilePathSchema.optional(),
-  limit: z.number().int().min(1).max(50).optional(),
-  maxCharacters: z.number().int().min(2048).max(24_000).optional(),
+  limit: z.number().int().min(1).max(MAX_RESULTS).optional(),
+  maxCharacters: z.number().int().min(MIN_CONTEXT_CHARACTERS).max(MAX_CONTEXT_CHARACTERS).optional(),
 }).refine(input => Boolean(input.reference) !== Boolean(input.filePath), 'Supply exactly one of reference or filePath.');
 
 export function createInspectTool(service: NavigationGraphService, execute: NavigationExecutor) {

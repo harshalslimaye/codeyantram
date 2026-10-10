@@ -1,6 +1,8 @@
 import {AISDKError, APICallError} from 'ai';
 import type {ChatErrorCode, ChatStreamEvent} from '@codeyantram/shared';
 
+const HTTP_TOO_MANY_REQUESTS = 429;
+
 export class ChatError extends Error {
   constructor(readonly code: ChatErrorCode, message: string) {
     super(message);
@@ -17,7 +19,7 @@ export function toChatErrorEvent(
   if (error instanceof ChatError) {
     return {type: 'error', code: error.code, message: error.message};
   }
-  if (APICallError.isInstance(error) && error.statusCode === 429) {
+  if (APICallError.isInstance(error) && error.statusCode === HTTP_TOO_MANY_REQUESTS) {
     return {type: 'error', code: 'rate_limited', message: 'The provider rate limit was reached. Try again later.'};
   }
   if (AISDKError.isInstance(error) || fallback === 'provider_error') {

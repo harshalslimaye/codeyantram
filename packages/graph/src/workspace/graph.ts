@@ -14,6 +14,8 @@ import {GraphIndexing} from './indexing.js';
 import {WorkspaceLifecycle} from './lifecycle.js';
 import {GraphLookups} from './lookups.js';
 
+const DEFAULT_SEARCH_LIMIT = 20;
+
 /** Public composition facade; synchronization policy belongs to the coordinator. */
 export class WorkspaceGraph implements CoordinatedGraph {
   private readonly lifecycle: WorkspaceLifecycle;
@@ -58,7 +60,7 @@ export class WorkspaceGraph implements CoordinatedGraph {
     return this.lifecycle.run(() => this.indexing.sync(options));
   }
 
-  search(query: string, limit = 20) {
+  search(query: string, limit = DEFAULT_SEARCH_LIMIT) {
     this.lifecycle.assertQueryable();
     return this.lookups.search(query, limit);
   }

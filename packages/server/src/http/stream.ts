@@ -3,6 +3,8 @@ import type {ChatStreamOptions, ProviderCredentials} from '@codeyantram/core';
 import type {ChatStreamEvent, CompactStreamEvent} from '@codeyantram/shared';
 import {openEventStream, startHeartbeat, writeStreamEvent} from './sse.js';
 
+const HTTP_INTERNAL_SERVER_ERROR = 500;
+
 interface EventStreamOptions<TRequest extends {model: string}> {
   request: TRequest;
   readCredentials: (modelId: string) => Promise<ProviderCredentials>;
@@ -49,7 +51,7 @@ export async function serveEventStream<TRequest extends {model: string}>(
       if (response.headersSent) {
         await writeStreamEvent(response, event, controller.signal).catch(() => {});
       } else {
-        response.status(500).json(event);
+        response.status(HTTP_INTERNAL_SERVER_ERROR).json(event);
       }
     }
   } finally {

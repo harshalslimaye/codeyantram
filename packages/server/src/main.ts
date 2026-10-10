@@ -1,8 +1,11 @@
 import {createApp} from './app.js';
 import {createServerShutdown} from './http/lifecycle.js';
 
-const port = Number(process.env.CODEYANTRAM_PORT ?? 43187);
-if (!Number.isInteger(port) || port < 1 || port > 65535) {
+const DEFAULT_PORT = 43187;
+const MAX_PORT = 65535;
+
+const port = Number(process.env.CODEYANTRAM_PORT ?? DEFAULT_PORT);
+if (!Number.isInteger(port) || port < 1 || port > MAX_PORT) {
   throw new Error('CODEYANTRAM_PORT must be an integer between 1 and 65535.');
 }
 
@@ -19,7 +22,7 @@ server.on('error', error => {
 const close = createServerShutdown(server, () => app.close());
 let shuttingDown: Promise<void> | undefined;
 function shutdown(): void {
-  shuttingDown ??= close().catch(error => {
+  shuttingDown ??= close().catch((error: unknown) => {
     process.stderr.write(`Could not close the server: ${error instanceof Error ? error.message : 'Unknown cleanup error.'}\n`);
     process.exitCode = 1;
   });

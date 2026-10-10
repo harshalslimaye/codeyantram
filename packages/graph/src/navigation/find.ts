@@ -5,13 +5,17 @@ import {budget, fits, integer, requireFits} from './budget.js';
 import {NAVIGATION_COVERAGE} from './coverage.js';
 import {GraphNavigationError} from './errors.js';
 
+const MAX_QUERY_CHARACTERS = 1024;
+const DEFAULT_RESULT_LIMIT = 20;
+const MAX_RESULT_LIMIT = 50;
+
 export class FindQuery {
   constructor(private readonly backend: FindBackend, private readonly sources: SourceFingerprints,
     private readonly symbols: VerifiedSymbols) {}
 
   async execute(query: string, options: GraphFindOptions = {}): Promise<GraphFindResult> {
-    if (!query.trim() || query.length > 1024) throw new GraphNavigationError('invalid_input', 'Find requires between 1 and 1024 characters.');
-    const limit = integer(options.limit ?? 20, 1, 50), maxCharacters = budget(options.maxCharacters);
+    if (!query.trim() || query.length > MAX_QUERY_CHARACTERS) throw new GraphNavigationError('invalid_input', 'Find requires between 1 and 1024 characters.');
+    const limit = integer(options.limit ?? DEFAULT_RESULT_LIMIT, 1, MAX_RESULT_LIMIT), maxCharacters = budget(options.maxCharacters);
     const candidates = this.backend.searchNodes(query, {limit: limit + 1});
     const result: GraphFindResult = {query, matches: [], truncated: candidates.length > limit, coverage: NAVIGATION_COVERAGE};
     const hashes = new Map<string, string>();

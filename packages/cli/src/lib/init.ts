@@ -1,5 +1,10 @@
 import {acquireGraphCoordinator, GraphCoordinatorError, type GraphCoordinatorLease, type GraphIndexReport, type GraphProgress, type GraphStatus, type GraphInitialization, type GraphReconcileOptions} from '@codeyantram/graph';
 
+const SIGINT_EXIT_CODE = 130;
+const SIGTERM_EXIT_CODE = 143;
+const PROGRESS_INTERVAL_MS = 1000;
+const MAX_INDEX_DIAGNOSTICS = 20;
+
 interface InitOutput {
   stdout?: {write(text: string): unknown};
   stderr?: {write(text: string): unknown};
@@ -20,8 +25,8 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
     interruptedExitCode ??= exitCode;
     controller.abort();
   };
-  const onInterrupt = () => interrupt(130);
-  const onTerminate = () => interrupt(143);
+  const onInterrupt = () => interrupt(SIGINT_EXIT_CODE);
+  const onTerminate = () => interrupt(SIGTERM_EXIT_CODE);
   if (output.handleSignals !== false) {
     process.on('SIGINT', onInterrupt);
     process.on('SIGTERM', onTerminate);
@@ -35,7 +40,7 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
   const onProgress = (progress: GraphProgress) => {
     if (signal.aborted) return;
     const now = Date.now();
-    if (progress.phase !== lastPhase || now - lastProgressAt >= 1000) {
+    if (progress.phase !== lastPhase || now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
       stdout.write(`  ${progress.phase}: ${progress.current}/${progress.total}\n`);
       lastPhase = progress.phase;
       lastProgressAt = now;
@@ -43,10 +48,10 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
     }
   };
   const diagnostics = (report: GraphIndexReport) => {
-    for (const error of report.errors.slice(0, 20)) {
+    for (const error of report.errors.slice(0, MAX_INDEX_DIAGNOSTICS)) {
       stderr.write(`${error.severity}: ${error.filePath ? `${error.filePath}: ` : ''}${error.message}\n`);
     }
-    if (report.errors.length > 20) stderr.write(`${report.errors.length - 20} additional indexing diagnostics omitted.\n`);
+    if (report.errors.length > MAX_INDEX_DIAGNOSTICS) stderr.write(`${report.errors.length - MAX_INDEX_DIAGNOSTICS} additional indexing diagnostics omitted.\n`);
   };
 
   try {
@@ -74,7 +79,7 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
     if (!signal.aborted) {
       if (error instanceof GraphCoordinatorError && error.report) {
         if ('errors' in error.report) diagnostics(error.report);
-        else for (const file of error.report.failedFilePaths.slice(0, 20)) stderr.write(`Failed to index: ${file}\n`);
+        else for (const file of error.report.failedFilePaths.slice(0, MAX_INDEX_DIAGNOSTICS)) stderr.write(`Failed to index: ${file}\n`);
       }
       stderr.write(`Could not initialize graph: ${error instanceof Error ? error.message : 'Unknown indexing error.'}\n`);
       exitCode = 1;
@@ -93,7 +98,7 @@ export async function runInit(workspaceRoot: string, output: InitOutput = {}): P
   }
   if (signal.aborted) {
     stderr.write('Graph initialization cancelled. Run init again to complete it.\n');
-    return interruptedExitCode ?? 130;
+    return interruptedExitCode ?? SIGINT_EXIT_CODE;
   }
   if (!exitCode && completed && readyStatus) {
     stdout.write(completed);
@@ -119,8 +124,8 @@ export async function initializeGraphForUI(
     signal.throwIfAborted();
     if (error instanceof GraphCoordinatorError && error.report) {
       const details = 'errors' in error.report
-        ? error.report.errors.slice(0, 20).map(item => `${item.filePath ? `${item.filePath}: ` : ''}${item.message}`)
-        : error.report.failedFilePaths.slice(0, 20).map(file => `Failed to index: ${file}`);
+        ? error.report.errors.slice(0, MAX_INDEX_DIAGNOSTICS).map(item => `${item.filePath ? `${item.filePath}: ` : ''}${item.message}`)
+        : error.report.failedFilePaths.slice(0, MAX_INDEX_DIAGNOSTICS).map(file => `Failed to index: ${file}`);
       throw new Error([error.message, ...details].join('\n'), {cause: error});
     }
     throw error;

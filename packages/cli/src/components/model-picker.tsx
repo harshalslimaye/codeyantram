@@ -13,6 +13,8 @@ import {Picker} from './picker.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
 
+const VISIBLE_MODEL_COUNT = 10;
+
 export function ModelPicker({preferences, onSelect}: {
 	preferences: ModelPreferences;
 	onSelect: (id: string, effort?: EffortLevel) => Promise<void>;
@@ -27,7 +29,7 @@ export function ModelPicker({preferences, onSelect}: {
 		.sort((left, right) => Number(right.id === preferences.modelId) - Number(left.id === preferences.modelId))
 		.map(model => ({
 			value: model.id,
-			label: `${model.provider.padEnd(10)} ${model.id}${model.id === preferences.modelId ? ' · active' : ''}`,
+			label: `${model.provider.padEnd(VISIBLE_MODEL_COUNT)} ${model.id}${model.id === preferences.modelId ? ' · active' : ''}`,
 		})), [preferences.modelId]);
 
 	async function saveModel(model: SupportedChatModelDefinition, effort?: EffortLevel) {

@@ -16,7 +16,7 @@ export function createServerShutdown(
       server.closeAllConnections();
     });
     const results = await Promise.allSettled([application, http]);
-    const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+    const failures = results.flatMap<unknown>(result => result.status === 'rejected' ? [result.reason as unknown] : []);
     if (failures.length === 1) throw failures[0];
     if (failures.length > 1) throw new AggregateError(failures, 'Could not close the HTTP server and workspace graph.');
   })();

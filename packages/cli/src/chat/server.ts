@@ -28,7 +28,7 @@ export async function startChatServer(options: ServerAppOptions = {}) {
 		compactUrl: new URL('/compact', baseUrl).href,
 		workspaceGraph: app.workspaceGraph,
 		initializeGraph: (signal: AbortSignal, onProgress: (message: string) => void) =>
-			initializeGraphForUI(options => app.workspaceGraph.initialize(options), signal, onProgress),
+			initializeGraphForUI(graphOptions => app.workspaceGraph.initialize(graphOptions), signal, onProgress),
 		close,
 	};
 }

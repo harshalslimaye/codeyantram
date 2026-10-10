@@ -2,10 +2,15 @@ import {tool} from 'ai';
 import {z} from 'zod';
 import type {NavigationExecutor, NavigationGraphService} from './types.js';
 
+const MAX_QUERY_CHARACTERS = 1024;
+const MAX_RESULTS = 50;
+const MIN_CONTEXT_CHARACTERS = 2048;
+const MAX_CONTEXT_CHARACTERS = 24_000;
+
 export const findInputSchema = z.strictObject({
-  query: z.string().min(1).max(1024).refine(value => Boolean(value.trim()), 'A nonblank query is required.'),
-  limit: z.number().int().min(1).max(50).optional(),
-  maxCharacters: z.number().int().min(2048).max(24_000).optional(),
+  query: z.string().min(1).max(MAX_QUERY_CHARACTERS).refine(value => Boolean(value.trim()), 'A nonblank query is required.'),
+  limit: z.number().int().min(1).max(MAX_RESULTS).optional(),
+  maxCharacters: z.number().int().min(MIN_CONTEXT_CHARACTERS).max(MAX_CONTEXT_CHARACTERS).optional(),
 });
 
 export function createFindTool(service: NavigationGraphService, execute: NavigationExecutor) {

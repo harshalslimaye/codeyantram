@@ -1,7 +1,9 @@
 import {z} from 'zod';
 
+const MAX_TOOL_NAME_CHARACTERS = 64;
+
 // Tool names are stable identifiers, separate from their human-readable descriptions.
-export const toolNameSchema = z.string().min(1).max(64).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/);
+export const toolNameSchema = z.string().min(1).max(MAX_TOOL_NAME_CHARACTERS).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/);
 export const toolCallIdSchema = z.string().refine(id => id.trim().length > 0, {
   message: 'A tool call ID must contain nonblank text',
 });

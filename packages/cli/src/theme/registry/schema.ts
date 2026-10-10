@@ -1,5 +1,7 @@
 import {THEME_ROLES, type ThemeColor, type ThemeColorValue, type ThemeDefinition, type ThemeRole} from './types.js';
 
+const MAX_ANSI_COLOR = 255;
+
 const HEX_COLOR_PATTERN = /^#[\da-fA-F]{6}$/;
 const DEFINITION_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const THEME_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
@@ -17,7 +19,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isColorValue(value: unknown): value is ThemeColorValue {
 	return value === 'none'
 		|| (typeof value === 'string' && HEX_COLOR_PATTERN.test(value))
-		|| (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 255);
+		|| (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_ANSI_COLOR);
 }
 
 function isDefinitionReference(value: unknown, definitions: Record<string, ThemeColorValue>): value is string {

@@ -11,6 +11,12 @@ import {SessionStatus} from './session-status.js';
 import {ScrollBlock} from './scroll-block.js';
 import type {StatusEntry} from '../chat/session.js';
 
+const MAX_TOOL_SUMMARY_CHARACTERS = 160;
+const MAX_WARNING_CHARACTERS = 240;
+const RESERVED_TERMINAL_ROWS = 5;
+const NEGATIVE_SCROLL_LINES = -3;
+const SCROLL_LINES = 3;
+
 type ConversationLine = {kind: string; text: string};
 type ConversationBlock = {id: string; start: number; height: number; lines?: ConversationLine[]; status?: StatusEntry};
 
@@ -18,7 +24,7 @@ function toolInputSummary(input: ToolInput): string {
 	const reference = input.reference;
 	const filePath = reference && typeof reference === 'object' && !Array.isArray(reference) ? reference.filePath : input.filePath;
 	const target = typeof input.url === 'string' ? input.url : typeof input.query === 'string' ? input.query : typeof filePath === 'string' ? filePath : JSON.stringify(input);
-	return [target, typeof input.direction === 'string' ? input.direction : ''].filter(Boolean).join(' · ').slice(0, 160);
+	return [target, typeof input.direction === 'string' ? input.direction : ''].filter(Boolean).join(' · ').slice(0, MAX_TOOL_SUMMARY_CHARACTERS);
 }
 
 function toolResultSummary(result: ToolResult): string {
@@ -28,7 +34,7 @@ function toolResultSummary(result: ToolResult): string {
 	const {warnings, truncation, filtering} = result.output;
 	if (filtering && typeof filtering === 'object' && !Array.isArray(filtering) && filtering.status === 'completed') details.push('JEV filtered');
 	if (truncation && typeof truncation === 'object' && !Array.isArray(truncation) && truncation.truncated === true) details.push('output truncated');
-	if (Array.isArray(warnings)) details.push(...warnings.filter((warning): warning is string => typeof warning === 'string').map(warning => warning.slice(0, 240)));
+	if (Array.isArray(warnings)) details.push(...warnings.filter((warning): warning is string => typeof warning === 'string').map(warning => warning.slice(0, MAX_WARNING_CHARACTERS)));
 	return details.join(' · ');
 }
 
@@ -37,10 +43,10 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 	const {isOwner} = useKeyboardOwner();
 	const {columns, rows} = useWindowSize();
 	const viewport = useRef<DOMElement>(null);
-	const [height, setHeight] = useState(Math.max(1, rows - 5));
+	const [height, setHeight] = useState(Math.max(1, rows - RESERVED_TERMINAL_ROWS));
 	const [blockHeights, setBlockHeights] = useState<Record<string, number>>({});
-	const measureBlock = useCallback((id: string, height: number) => {
-		setBlockHeights(previous => previous[id] === height ? previous : {...previous, [id]: height});
+	const measureBlock = useCallback((id: string, measuredHeight: number) => {
+		setBlockHeights(previous => previous[id] === measuredHeight ? previous : {...previous, [id]: measuredHeight});
 	}, []);
 	// null follows the newest output; a fixed end preserves the reading position
 	// when more text arrives while the user is looking at earlier lines.
@@ -67,7 +73,7 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 		}).join('') || (pending ? 'Waiting for response…' : '');
 		return [
 			{kind: message.role, text: message.role === 'user' ? 'You' : 'Assistant'},
-			...renderMessage(message, text).map(text => ({kind: 'text', text})),
+			...renderMessage(message, text).map(lineText => ({kind: 'text', text: lineText})),
 			{kind: 'text', text: ''},
 		];
 	}), [messages, isStreaming, renderMessage]);
@@ -78,14 +84,14 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 		let entryIndex = 0;
 		for (let index = 0; index <= messages.length; index++) {
 			while (statusEntries[entryIndex]?.afterMessageCount === index) {
-				const entry = statusEntries[entryIndex++]!;
-				const height = blockHeights[entry.id] ?? 0;
-				result.push({id: entry.id, start, height, status: entry});
-				start += height;
+				const entry = statusEntries[entryIndex++];
+				const blockHeight = blockHeights[entry.id] ?? 0;
+				result.push({id: entry.id, start, height: blockHeight, status: entry});
+				start += blockHeight;
 			}
 			if (index < messages.length) {
 				const lines = messageLines[index]!;
-				result.push({id: messages[index]!.id, start, height: lines.length, lines});
+				result.push({id: messages[index].id, start, height: lines.length, lines});
 				start += lines.length;
 			}
 		}
@@ -108,7 +114,7 @@ export function Conversation({messages, statusEntries, isStreaming}: {messages: 
 		if (event.x <= bounds.x || event.x > bounds.x + bounds.width || event.y <= bounds.y || event.y > bounds.y + bounds.height) return;
 		setEnd(previous => {
 			const current = Math.min(totalLines, previous ?? totalLines);
-			const next = Math.max(Math.min(height, totalLines), Math.min(totalLines, current + (event.direction === 'up' ? -3 : 3)));
+			const next = Math.max(Math.min(height, totalLines), Math.min(totalLines, current + (event.direction === 'up' ? NEGATIVE_SCROLL_LINES : SCROLL_LINES)));
 			return next === totalLines ? null : next;
 		});
 	});

@@ -6,9 +6,10 @@
     "jsx": "react-jsx",
     "types": ["node", "react"],
     "strict": true,
+    "allowJs": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["packages/**/*.ts", "packages/**/*.tsx", "vitest.config.mts"]
+  "include": ["packages/**/*.ts", "packages/**/*.tsx", "vitest.config.mts", "scripts/**/*.mjs", "scripts/**/*.cjs", "oxlint.config.mjs"]
 }

@@ -37,7 +37,7 @@ export class WorkspaceGraphService {
     return this.opening ??= Promise.resolve().then(() => this.acquire(this.workspaceRoot!)).then(lease => {
       this.lease = lease;
       return lease;
-    }, error => {
+    }, (error: unknown) => {
       this.opening = undefined;
       throw error;
     });

@@ -6,6 +6,9 @@ import {chunkContent, ChunkLimitError, type ContentChunk} from './chunks.js';
 import {EVALUATION_BATCH_SIZE, EVALUATION_CONCURRENCY, FILTER_TIMEOUT_MS, IRRELEVANT_PROBABILITY, MAX_EVALUATED_CHUNKS, MIN_FILTER_CHARACTERS} from './limits.js';
 import type {FilteringMetadata, JevCapability, WebFormat} from './types.js';
 
+const MAX_OBJECTIVE_CHARACTERS = 2048;
+const CONTEXT_PROBABILITY_THRESHOLD = 0.5;
+
 export interface Selection {content: string; filtering: FilteringMetadata; warnings: string[]}
 
 export async function selectContent(content: string, sourceUrl: string, format: WebFormat, options: {
@@ -22,7 +25,7 @@ export async function selectContent(content: string, sourceUrl: string, format: 
     ? 'JEV filtering skipped: configure TypeSafe through /connect. Normal content returned.'
     : 'JEV filtering skipped: evaluation could not be initialized. Normal content returned.');
   if (format === 'html') return skip('raw_html');
-  const objective = options.objective?.trim().slice(0, 2048);
+  const objective = options.objective?.trim().slice(0, MAX_OBJECTIVE_CHARACTERS);
   if (!objective) return skip('no_objective');
   if (content.length < MIN_FILTER_CHARACTERS) return skip('small_document');
   let chunks: ContentChunk[];
@@ -46,7 +49,7 @@ export async function selectContent(content: string, sourceUrl: string, format: 
       }]));
       try {
         const result = await abortable(evaluator.evaluate({
-          state: {objective, chunks: batch.map(({id, sourceUrl, sectionPath, position, text}) => ({id, sourceUrl, sectionPath, position, text}))},
+          state: {objective, chunks: batch.map(({id, sourceUrl: chunkSourceUrl, sectionPath, position, text}) => ({id, sourceUrl: chunkSourceUrl, sectionPath, position, text}))},
           questions, abortSignal: scope.signal,
         }), scope.signal);
         for (const chunk of batch) {
@@ -72,7 +75,7 @@ export async function selectContent(content: string, sourceUrl: string, format: 
       retained.add(chunk.position);
       chunk.headingPositions.forEach(position => retained.add(position));
       // Keep adjacent context for positively identified evidence; uncertainty still retains itself and headings.
-      if (probability !== undefined && probability >= 0.5) {
+      if (probability !== undefined && probability >= CONTEXT_PROBABILITY_THRESHOLD) {
         for (const offset of [-1, 1]) if (chunks[chunk.position + offset]?.sectionPath.join('\0') === chunk.sectionPath.join('\0')) retained.add(chunk.position + offset);
       }
     }

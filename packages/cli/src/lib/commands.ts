@@ -1,3 +1,5 @@
+
+const MAX_COMMAND_SUGGESTIONS = 12;
 interface Command {
     command: string;
     description: string;
@@ -26,6 +28,6 @@ export function getCommandOptions(query: string = '') {
 function getCommand(item: Command): { value: string, label: string } {
     return {
         value: item.command,
-        label: `${item.command.padEnd(12)}${item.description}`,
+        label: `${item.command.padEnd(MAX_COMMAND_SUGGESTIONS)}${item.description}`,
     }
 }

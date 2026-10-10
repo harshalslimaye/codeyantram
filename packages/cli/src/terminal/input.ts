@@ -1,6 +1,10 @@
 import {PassThrough} from 'node:stream';
 import {StringDecoder} from 'node:string_decoder';
 
+const MOUSE_WHEEL_FLAG = 64;
+const MOUSE_BUTTON_MASK = 3;
+const ESCAPE_FLUSH_DELAY_MS = 30;
+
 export interface MouseWheelEvent {
 	direction: 'up' | 'down';
 	x: number;
@@ -62,7 +66,7 @@ export function createTerminalInput(source: NodeJS.ReadStream, stdout: NodeJS.Wr
 			if (mouse && !pasted) {
 				const button = Number(mouse[1]);
 				// Ignore clicks, releases, motion, and horizontal wheel reports.
-				if (sequence.endsWith('M') && (button & 64) !== 0 && (button & 3) < 2) {
+				if (sequence.endsWith('M') && (button & MOUSE_WHEEL_FLAG) !== 0 && (button & MOUSE_BUTTON_MASK) < 2) {
 					const event: MouseWheelEvent = {direction: (button & 1) === 0 ? 'up' : 'down', x: Number(mouse[2]), y: Number(mouse[3])};
 					for (const listener of listeners) listener(event);
 				}
@@ -77,7 +81,7 @@ export function createTerminalInput(source: NodeJS.ReadStream, stdout: NodeJS.Wr
 				pending = '';
 				flushTimer = undefined;
 				if (!remainder.startsWith('\x1b[<')) stream.write(remainder);
-			}, 30);
+			}, ESCAPE_FLUSH_DELAY_MS);
 		}
 	}
 

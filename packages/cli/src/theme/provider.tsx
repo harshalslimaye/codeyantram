@@ -36,7 +36,7 @@ export function ThemeProvider({
 	const [selectedId, setSelectedId] = React.useState(initialThemeId);
 	const [notice, setNotice] = React.useState<string>();
 	const [noticeTone, setNoticeTone] = React.useState<ThemeNoticeTone>('success');
-	const selected = registry.get(selectedId) ?? registry.resolve(undefined).selected;
+	const selected = registry.get(selectedId) ?? registry.resolve().selected;
 	const palette = useMemo(() => Object.fromEntries(
 		THEME_ROLES.map(role => [role, resolveThemeColor(selected.theme, role, colorDepth, mode)]),
 	) as InkThemePalette, [selected.theme, colorDepth, mode]);

@@ -37,8 +37,8 @@ export function App({
 	});
 	useEffect(() => () => session.cancel(), [session]);
 	const branch = getGitBranch(workspaceRoot);
-	async function selectModel(id: string, effort?: EffortLevel) {
-		setModelPreferences(await saveModelPreference(id, effort));
+	async function selectModel(id: string, selectedEffort?: EffortLevel) {
+		setModelPreferences(await saveModelPreference(id, selectedEffort));
 	}
 
 	return (

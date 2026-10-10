@@ -6,6 +6,8 @@ import {confidenceSchema, parseEvaluationInput} from './schemas.js';
 import {toEvaluationUsage} from './usage.js';
 import type {EvaluationInput, EvaluationQuestions, EvaluationResult, JevEvaluator, JevEvaluatorOptions} from './types.js';
 
+const MAX_MODEL_ID_CHARACTERS = 128;
+
 export const DEFAULT_JEV_MODEL_ID = 'jev-latest';
 export const DEFAULT_JEV_TIMEOUT_MS = 5_000;
 export const MAX_JEV_TIMEOUT_MS = 30_000;
@@ -16,7 +18,7 @@ export function createJevEvaluator(options: JevEvaluatorOptions): JevEvaluator {
   if (!apiKey) throw new EvaluationError('missing_credentials', 'Configure a TypeSafe API key through /connect before using JEV.');
   const modelId = options.modelId ?? DEFAULT_JEV_MODEL_ID;
   const timeoutMs = options.timeoutMs ?? DEFAULT_JEV_TIMEOUT_MS;
-  if (typeof modelId !== 'string' || !modelId.trim() || modelId.length > 128) {
+  if (typeof modelId !== 'string' || !modelId.trim() || modelId.length > MAX_MODEL_ID_CHARACTERS) {
     throw new EvaluationError('invalid_input', 'Provide a nonblank JEV model ID of at most 128 characters.');
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_JEV_TIMEOUT_MS) {
@@ -54,10 +56,10 @@ export function createJevEvaluator(options: JevEvaluatorOptions): JevEvaluator {
       signal.throwIfAborted();
       const metadata = result.providerMetadata?.typesafe?.confidence;
       const confidence = metadata === undefined ? undefined : confidenceSchema.safeParse(metadata);
-      if (confidence && (!confidence.success || Object.keys(confidence.data).some(id => !Object.hasOwn(parsed.questions, id) || parsed.questions[id]!.type === 'boolean'))) {
+      if (confidence && (!confidence.success || Object.keys(confidence.data).some(id => !Object.hasOwn(parsed.questions, id) || parsed.questions[id].type === 'boolean'))) {
         throw new EvaluationError('invalid_response', 'JEV returned invalid evaluation confidence.');
       }
-      if (!result.response.modelId.trim() || result.response.modelId.length > 128) {
+      if (!result.response.modelId.trim() || result.response.modelId.length > MAX_MODEL_ID_CHARACTERS) {
         throw new EvaluationError('invalid_response', 'JEV returned an invalid model ID.');
       }
       const usage = toEvaluationUsage(result.usage);
