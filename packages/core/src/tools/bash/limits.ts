@@ -1,0 +1,7 @@
+export const MAX_COMMAND_CHARACTERS = 8192;
+export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+export const MAX_COMMAND_TIMEOUT_MS = 120_000;
+export const MAX_CAPTURE_BYTES = 12_000;
+export const MAX_CAPTURE_JSON_BYTES = 48_000;
+export const MAX_PROCESS_BYTES = 8_388_608;
+export const PIPE_DRAIN_TIMEOUT_MS = 250;

@@ -204,7 +204,7 @@ const config = {
   },
   "overrides": [
     {
-      files: ['packages/core/src/tools/read/filesystem.ts', 'packages/core/src/tools/workspace/paths.ts', 'packages/core/src/tools/glob/paths.ts', 'packages/core/src/tools/apply-patch/filesystem.ts', 'packages/core/src/tools/apply-patch/write.ts', 'packages/core/src/tools/apply-patch/service.ts'],
+      files: ['packages/core/src/tools/read/filesystem.ts', 'packages/core/src/tools/workspace/paths.ts', 'packages/core/src/tools/glob/paths.ts', 'packages/core/src/tools/apply-patch/filesystem.ts', 'packages/core/src/tools/apply-patch/write.ts', 'packages/core/src/tools/apply-patch/service.ts', 'packages/core/src/tools/bash/paths.ts'],
       rules: {'security/detect-non-literal-fs-filename': 'off'},
     },
     {

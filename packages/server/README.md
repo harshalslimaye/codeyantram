@@ -75,6 +75,15 @@ are not transactional: re-read every target after failure or interruption. See
 the [core patch contract](../core/README.md#workspace-patches)
 for supported syntax, limits, and filesystem guarantees. The default CLI/server
 does not supply an approval UI or callback and stays read-only.
+`bash` is likewise disabled unless the host supplies `approveCommand`; optional
+`commandEnvironment` passes explicit build environment without automatically
+inheriting provider keys. Future Talk/Build/Yolo mode policy can use this hook.
+Commands execute unchanged, without JEV, under bounded deadlines/output and
+best-effort POSIX process-group termination. Initial cwd is workspace-bound,
+but command execution is **not sandboxed** and can access resources outside it.
+Hosts requiring isolation must supply it. See the
+[core command contract](../core/README.md#workspace-commands) for execution and
+environment limits. Clients cannot enable command execution through JSON.
 The request body limit is 4 MB.
 An optional `contextSummary` supplies compacted historical context; core replays
 it as a labeled user message before `messages`.

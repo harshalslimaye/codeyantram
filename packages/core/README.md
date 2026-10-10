@@ -351,7 +351,7 @@ to verify discovered files.
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
 to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting graph,
-web-fetch, read, grep, glob, and applyPatch capabilities keeps chat without tool definitions.
+web-fetch, read, grep, glob, applyPatch, and bash capabilities keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 
@@ -465,6 +465,53 @@ callback receives an isolated copy of the exact patch, objective, and before/aft
 hashes, and must return literal `true` to authorize it. Returns changed
 paths/actions/new hashes and warnings, never file contents. Approval and source
 validation are not proof of correctness or test success; run tests separately.
+
+## Workspace commands
+
+`createBashService({workspaceRoot, approve, environment?, shellPath?})` enables
+host-controlled commands. Chat hosts supply `bash`; direct hosts can use
+`createBashTool(service, execute, objective?)` with the shared per-turn executor.
+The server registers it only with an explicit `ServerAppOptions.approveCommand`
+callback and workspace root. `commandEnvironment` supplies optional host variables.
+The default CLI/server has no command capability. Talk/Build/Yolo policy and
+approval UI remain deferred; the callback is the integration point for that policy.
+
+Arguments are `command` (nonblank, up to 8,192 characters), optional `workdir`
+(existing workspace-relative directory, default `.`), and `timeoutMs` (1–120,000,
+default 30,000). The host receives an isolated copy of the exact command,
+canonical relative directory, timeout, and latest objective, and must return
+literal `true` to permit execution. Directory containment is checked before and
+after permission; roots, environment, executable, and permission overrides are
+never model arguments. Commands are passed unchanged to host-selected absolute
+Bash (default `/bin/bash`) with `--noprofile --norc -c`, `shell:false`, no stdin,
+and no TTY. This implementation requires a POSIX host.
+
+Child environment is **not inherited wholesale**: only host PATH plus explicit
+host variables are passed. Bash startup variables such as BASH_ENV and ENV are
+removed. Providers' credentials are never automatically forwarded. Hosts must
+explicitly supply HOME, build variables, or other environment when required.
+
+Results contain separate stdout/stderr prefixes, exit code, signal, termination
+(`exit`, `timeout`, `output_limit`), execution duration, truncation, untrusted-data
+label, and warnings. Nonzero exits are normal command results; tool
+`status:success` does not mean tests passed. Combined capture is bounded to
+12,000 raw bytes and 48,000 escaped JSON bytes, preserving UTF-8 boundaries;
+malformed UTF-8 uses replacement characters. Capture truncation alone does not
+stop a command. More than 8 MiB of process output, timeout, or cancellation kills
+the POSIX process group. Successful shell exit also terminates ordinary background
+descendants; inherited pipes are closed after a 250 ms drain grace if necessary,
+marking output truncated. Timers and cancellation listeners are cleaned up.
+Persistent services/background jobs are unsupported.
+
+**This is not a sandbox.** Workdir containment applies only to the initial
+directory: commands can change directories, read/write outside the workspace,
+access network or host credentials, and escape process groups. Filesystem races
+and termination of descendants remain best effort. A host requiring isolation
+must supply an OS/container sandbox; permission alone does not provide it.
+Side effects are not rolled back after any failure, timeout, or interruption;
+inspect the workspace before retrying. Prefer structured read/grep/glob and
+apply_patch tools for their operations. Bash has no JEV layer, command rewriting,
+or output filtering by relevance. Treat command output as untrusted data.
 
 Assistant history can interleave text, calls, and results. Replay converts them
 to SDK assistant/tool roles and preserves opaque provider options such as Gemini
