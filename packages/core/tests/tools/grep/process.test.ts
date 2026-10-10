@@ -5,6 +5,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {runRipgrep} from '../../../src/tools/grep/process.js';
 import {parseMatch} from '../../../src/tools/grep/matches.js';
 import {MAX_PROCESS_BYTES} from '../../../src/tools/grep/limits.js';
+import {runRipgrepRecords} from '../../../src/tools/workspace/ripgrep.js';
 
 vi.mock('node:child_process', () => ({spawn: vi.fn<typeof spawn>()}));
 
@@ -21,6 +22,29 @@ function message(text = 'needle', path = 'file.ts', line = 1) {
 beforeEach(() => vi.clearAllMocks());
 
 describe('bounded ripgrep process', () => {
+  it('supports NUL-delimited paths including embedded newlines', async () => {
+    const child = backend();
+    const pending = runRipgrepRecords({root: '/workspace', args: ['--files', '--null'], limit: 10,
+      signal: new AbortController().signal, separator: '\0', parseRecord: text => ({record: text})});
+    child.stdout.write('line\nbreak.ts\0unsupported\0');
+    child.emit('close', 0);
+    expect(await pending).toEqual({records: ['line\nbreak.ts', 'unsupported'], truncated: false, incomplete: false});
+  });
+
+  it('rejects malformed UTF-8 and incomplete records rather than inventing paths', async () => {
+    const child = backend();
+    const pending = runRipgrepRecords({root: '/workspace', args: [], limit: 10,
+      signal: new AbortController().signal, separator: '\0', parseRecord: text => ({record: text})});
+    child.stdout.write(Buffer.from([0xff, 0]));
+    await expect(pending).rejects.toMatchObject({code: 'execution_failed'});
+    const partial = backend();
+    const incomplete = runRipgrepRecords({root: '/workspace', args: [], limit: 10,
+      signal: new AbortController().signal, separator: '\0', parseRecord: text => ({record: text})});
+    partial.stdout.write('unfinished');
+    partial.emit('close', 0);
+    await expect(incomplete).rejects.toMatchObject({code: 'execution_failed'});
+  });
+
   it('uses a literal executable, no shell, and streaming UTF-8 decoding', async () => {
     const child = backend();
     const pending = runRipgrep('/workspace', ['--', 'needle', '.'], 10, new AbortController().signal);

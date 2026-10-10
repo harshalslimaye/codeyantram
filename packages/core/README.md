@@ -305,11 +305,53 @@ slots; missing, failed, or all-negative judgments preserve evidence. `filter:fal
 restores retrieval order. `filtering` reports ranking status, counts, completeness,
 duration, and available usage independently of search truncation/coverage.
 
+## Workspace glob
+
+Supply `glob: createGlobService({workspaceRoot, jev?})` to `streamChat` to discover
+file paths independently of graph indexing. The server enables it for a configured
+host workspace and shares the existing JEV opt-in/evaluator. The default backend
+requires **ripgrep (`rg`) on the server's PATH**. A trusted `GlobTransport` can be
+injected, and `createGlobTool(service, execute, objective?)` supports direct hosts
+with the same shared per-turn execution budget as other tools.
+
+Arguments are `pattern` (a ripgrep glob of 1–1,024 characters, such as `**/*.ts`
+or `**/*.{ts,tsx}`), optional workspace-relative directory `path` (default `.`),
+`ignoreCase`, `hidden`, `limit` (1–200; default 100), relevance `query`, and
+`filter`. Discovery returns files, not directories or contents. Binary and large
+files can be listed because no contents are read. Paths are lexical before optional
+JEV ranking. Explicit ripgrep globs can override ignore rules, including
+`.gitignore`; this is not a guarantee of gitignore-only discovery. Hidden paths
+require `hidden:true`, and Git internals are excluded even with that opt-in.
+Canonical scopes must remain inside the host workspace, and recursive discovery
+does not follow symlinks. These checks are not an OS sandbox against a hostile
+process racing filesystem mutations.
+
+Grep and glob share workspace path resolution and bounded, shell-free ripgrep
+process handling in `src/tools/workspace`. NUL-separated discovery records preserve
+filenames containing newlines. Invalid UTF-8 or incomplete backend records fail
+rather than manufacturing paths; unsupported portable paths mark incomplete
+coverage. Discovery has a ten-second deadline, an 8 MiB process-output budget,
+and a 48,000-byte returned-path budget. Reaching limits terminates the child and
+reports `truncated`, `incomplete`, and warnings. Empty results do not prove absence;
+coverage explains exclusions and discovery is not an atomic filesystem snapshot.
+
+Enabled JEV ranks up to 32 paths in bounded batches with a separate five-second
+deadline, using `query` or the latest user objective. Only that objective, the
+pattern, and relative paths reach TypeSafe—not file contents or conversation
+history. Private filenames can still reveal repository information; hosts must
+honor the user's JEV preference. Naming-based judgments cannot verify contents
+or correctness. All returned paths survive, including negative or missing judgments;
+unevaluated paths retain their original positions. Failures return the original
+order, and `filter:false` bypasses ranking. `filtering` reports counts, status,
+completeness, duration, and available usage separately from discovery limits.
+Caller cancellation terminates discovery or evaluation; use `read` or `grep`
+to verify discovered files.
+
 ## Workspace navigation
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
 to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting graph,
-web-fetch, read, and grep capabilities keeps chat without tool definitions.
+web-fetch, read, grep, and glob capabilities keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 

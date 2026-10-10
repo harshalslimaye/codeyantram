@@ -1,15 +1,10 @@
-import {realpath} from 'node:fs/promises';
-import {isAbsolute, relative, resolve, sep} from 'node:path';
+import {resolveWorkspaceLocation, WorkspacePathError} from '../workspace/paths.js';
 import {GrepError, mapGrepError} from './errors.js';
 
 export async function searchLocation(workspaceRoot: string, path: string) {
-  try {
-    const root = await realpath(workspaceRoot);
-    const target = await realpath(resolve(root, path));
-    const fromRoot = relative(root, target);
-    if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-      throw new GrepError('permission_denied', 'Grep is restricted to the host workspace.');
-    }
-    return {root, target: fromRoot === '' ? '.' : `.${sep}${fromRoot}`};
-  } catch (error) {throw mapGrepError(error);}
+  try {return await resolveWorkspaceLocation(workspaceRoot, path);}
+  catch (error) {
+    if (error instanceof WorkspacePathError) throw new GrepError(error.code, error.message);
+    throw mapGrepError(error);
+  }
 }

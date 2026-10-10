@@ -4,6 +4,7 @@ import {mapGraphError} from './codegraph/graph-errors.js';
 import {WebFetchError} from './web-fetch/errors.js';
 import {ReadError} from './read/errors.js';
 import {GrepError} from './grep/errors.js';
+import {GlobError} from './glob/errors.js';
 
 const MAX_TOOL_EXECUTIONS = 12;
 const MAX_TOOL_OUTPUT_BYTES = 80_000;
@@ -31,7 +32,8 @@ export function createToolExecutor(): ToolExecutor {
 }
 
 function mapToolFailure(name: string, failure: unknown): Extract<ToolResult, {status: 'error'}>['error'] {
-  if (failure instanceof WebFetchError || failure instanceof ReadError || failure instanceof GrepError) return {code: failure.code, message: failure.message};
+  if (failure instanceof WebFetchError || failure instanceof ReadError || failure instanceof GrepError || failure instanceof GlobError) return {code: failure.code, message: failure.message};
+  if (name === 'glob') return {code: 'execution_failed', message: 'Workspace file discovery could not complete safely.'};
   if (name === 'grep') return {code: 'execution_failed', message: 'Workspace search could not complete safely.'};
   if (name === 'read') return {code: 'execution_failed', message: 'The file could not be read safely.'};
   if (name === 'web_fetch') return {code: 'execution_failed', message: 'Web fetch could not complete the request.'};
