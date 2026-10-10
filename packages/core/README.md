@@ -224,6 +224,32 @@ web-fetch capabilities keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 
+Pass an optional host-resolved `jev: JevCapability` to `streamChat` to evaluate
+`explore` and `find` results. The server shares the existing JEV opt-in and
+evaluator with web-fetch. Direct hosts can use
+`createNavigationTools(service, execute, {jev, objective})`; the objective is the
+latest user request, falling back to the tool query, never conversation history.
+Enabled evaluation sends retrieved symbol metadata and, for explore, source
+snippets and relationships to the TypeSafe provider. Repository content remains
+untrusted data. Credentials and raw provider errors never enter tool results.
+
+Both tools accept `filter:false` to bypass JEV. Results with fewer than two
+candidates skip evaluation. Up to 32 candidates are evaluated in batches of eight,
+with concurrency two and a five-second overall deadline. Results include
+`filtering` metadata (mode, status, candidate counts, completeness, duration, and
+available usage) and warnings. Evaluation failure returns normal graph results;
+missing judgments are retained and caller cancellation still cancels the tool.
+
+Explore removes only symbols with relevance probability below 0.05, retaining
+whole snippets and all graph-connected context of surviving symbols. An all-negative
+evaluation returns original context. When symbols are omitted, related files are
+rebuilt and the original summary is cleared. Find only ranks evaluated candidates
+within their original slots: no matches are dropped, unevaluated candidates stay
+in place, and original graph scores and symbol references remain unchanged.
+Freshness, coverage, and retrieval truncation are never rewritten by JEV;
+evaluation cannot recover evidence that retrieval omitted. Inspect, trace, and
+graph remain unevaluated.
+
 Each tool owns its schema, description, and handler in a separate file:
 `src/tools/codegraph/explore.ts`, `graph.ts`, `find.ts`, `inspect.ts`, and `trace.ts`. `src/tools/codegraph/index.ts` assembles
 the tools with a shared per-turn executor from `execution.ts`; host-service

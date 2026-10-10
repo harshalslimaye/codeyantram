@@ -1,6 +1,7 @@
 import {requireValue, requestBody, parseJson, type ProviderRequest} from '../../../shared/tests/helpers.js';
 import {describe, expect, it, vi} from 'vitest';
-import {streamChat, type NavigationGraphService} from '../../src/index.js';
+import {streamChat, type NavigationGraphService, type JevEvaluator} from '../../src/index.js';
+import {reference} from '../tools/helpers.js';
 import {chatStreamEventSchema, type ChatStreamEvent} from '@codeyantram/shared';
 import {sseResponse, openaiEvents, openaiToolEvents, anthropicEvents, anthropicToolEvents, googleEvents} from './fixtures.js';
 function service() {
@@ -13,6 +14,33 @@ async function collect(stream: AsyncIterable<ChatStreamEvent>) {
 const messages = [{id: 'u1', role: 'user' as const, parts: [{type: 'text' as const, text: 'Where is greet?'}]}];
 
 describe('provider navigation loop', () => {
+  it.each(['explore', 'find'] as const)('passes host JEV and only the latest user objective into %s', async tool => {
+    const symbols = ['greet', 'other'].map(id => ({id, name: id, qualifiedName: id, kind: 'function', language: 'typescript',
+      filePath: 'src/helper.ts', startLine: 1, endLine: 3, reference: {...reference, symbolId: id}, metadataTruncated: false}));
+    const value = tool === 'explore'
+      ? {query: 'greet', summary: '', symbols, snippets: [], relationships: [], relatedFiles: ['src/helper.ts'], truncated: false, coverage: 'indexed scope'}
+      : {query: 'greet', matches: symbols.map(symbol => ({symbol, score: 1})), truncated: false, coverage: 'indexed scope'};
+    const workspaceGraph = service();
+    const query = vi.fn<NavigationGraphService['query']>().mockResolvedValue({value, freshness: {epoch: 'e', revision: 1, reconciledAt: 1}});
+    workspaceGraph.query = query as NavigationGraphService['query'];
+    const evaluate = vi.fn<JevEvaluator['evaluate']>().mockResolvedValue({modelId: 'fixture', durationMs: 1,
+      answers: {greet: {type: 'boolean', probability: 0.9}, other: {type: 'boolean', probability: 0.01}},
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(sseResponse(openaiToolEvents(tool, {query: 'greet'})))
+      .mockResolvedValueOnce(sseResponse(openaiEvents));
+    const prior = {id: 'prior', role: 'user' as const, parts: [{type: 'text' as const, text: 'Private prior conversation'}]};
+    const events = await collect(streamChat({model: 'gpt-6.1-sol', messages: [prior, ...messages]}, {
+      credentials: {openai: 'test'}, fetch, workspaceGraph, jev: {status: 'available', evaluator: {evaluate} as JevEvaluator},
+    }));
+    expect(evaluate).toHaveBeenCalledOnce();
+    const input = requireValue(evaluate.mock.calls[0])[0];
+    if (typeof input.state !== 'string') throw new Error('Expected serialized graph evidence.');
+    expect(parseJson<{objective: string; query: string}>(input.state)).toMatchObject({objective: 'Where is greet?', query: 'greet'});
+    expect(input.state).not.toContain('Private prior conversation');
+    expect(events[2]).toMatchObject({type: 'tool-result', result: {status: 'success', output: {filtering: {status: 'completed'}}}});
+    expect(events.at(-1)?.type).toBe('done');
+  });
+
   it.each(['openai', 'anthropic', 'google'])('executes %s calls, streams results, and continues to text with aggregate usage', async provider => {
     const workspaceGraph = service();
     const googleTool = [{candidates: [{content: {role: 'model', parts: [{functionCall: {name: 'graph', args: {}}, thoughtSignature: 'fixture-signature'}]}, finishReason: 'STOP'}],

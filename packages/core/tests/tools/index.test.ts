@@ -6,7 +6,7 @@ import {GraphSourceChangedError} from '@codeyantram/graph';
 import {reference} from './helpers.js';
 
 function setup() {
-  const query = vi.fn<(callback: (reader: Pick<GraphReader, "explore">) => unknown) => Promise<{value: unknown; freshness: GraphFreshness}>>().mockResolvedValue({value: {symbols: [], truncated: false}, freshness: {epoch: 'epoch', revision: 1, reconciledAt: 1}});
+  const query = vi.fn<(callback: (reader: Pick<GraphReader, "explore">) => unknown) => Promise<{value: unknown; freshness: GraphFreshness}>>().mockResolvedValue({value: {symbols: [], matches: [], truncated: false}, freshness: {epoch: 'epoch', revision: 1, reconciledAt: 1}});
   const getStatus = vi.fn<NavigationGraphService["getStatus"]>().mockReturnValue({lifecycle: 'unopened', graph: null});
   const tools = createNavigationTools({query, getStatus} as unknown as NavigationGraphService);
   return {query, getStatus, tools};

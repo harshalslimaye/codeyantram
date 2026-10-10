@@ -133,6 +133,7 @@ describe('POST /chat', () => {
     expect(stream).toHaveBeenCalledWith(request, {
       credentials: {openai: 'test-openai-key'}, abortSignal: asymmetric.any(AbortSignal),
       webFetch: {fetch: asymmetric.any(Function)},
+      jev: {status: 'disabled'},
     });
   });
 

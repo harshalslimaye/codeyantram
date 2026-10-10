@@ -28,10 +28,12 @@ export function createApp(options: ServerAppOptions = {}) {
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),
     readOptions: async (modelId, signal) => {
       const config = await (options.readConfig ?? readConfig)();
+      const jev = resolveJevCapability(config, signal, options.createJevEvaluator);
       return {
         credentials: await readProviderCredentials(modelId, async () => config),
+        jev,
         webFetch: createWebFetchService({transport: options.webTransport,
-          jev: resolveJevCapability(config, signal, options.createJevEvaluator)}),
+          jev}),
       };
     },
     // Tests can supply a fake stream to avoid calling AI providers.

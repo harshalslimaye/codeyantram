@@ -5,6 +5,7 @@ import {toChatErrorEvent} from './errors.js';
 import type {ProviderCredentials} from './models.js';
 import type {NavigationGraphService, WebFetchService} from '../tools/index.js';
 import {createChatStream} from './stream-options.js';
+import type {JevCapability} from '../evaluation/index.js';
 import {translateProviderEvents} from './provider-events.js';
 
 export interface ChatStreamOptions {
@@ -13,6 +14,7 @@ export interface ChatStreamOptions {
   fetch?: typeof globalThis.fetch;
   workspaceGraph?: NavigationGraphService;
   webFetch?: WebFetchService;
+  jev?: JevCapability;
 }
 
 /** Streams the shared chat events; cancellation ends without a terminal event. */
