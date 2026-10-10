@@ -65,7 +65,9 @@ are text-only. Duplicate IDs, mismatched results, and unresolved calls are rejec
 The host-selected root enables core's `explore`/`graph`/`find`/`inspect`/`trace` loop.
 `web_fetch` is available independently of the graph, including before `/init`. Clients cannot
 select graph roots or storage through requests. There is no tool HTTP endpoint.
-Workspace roots also enable read, grep, and glob. File mutations remain disabled
+Workspace roots also enable read, grep, glob, and read-only Git status, diff,
+log, and show tools. Git inspection requires the workspace root to match the
+repository root; optional JEV only ranks results. File mutations remain disabled
 unless the host supplies `createApp({workspaceRoot, approvePatch})`. That trusted
 callback must approve each exact patch; clients cannot enable it or select a root
 through JSON. Apply patch does not use JEV; it relies on deterministic validation

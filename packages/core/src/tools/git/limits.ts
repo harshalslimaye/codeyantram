@@ -1,0 +1,10 @@
+export const GIT_TIMEOUT_MS = 10_000;
+export const MAX_GIT_OUTPUT_BYTES = 48_000;
+export const MAX_GIT_ENTRIES = 100;
+export const MAX_EVALUATED_GIT_ENTRIES = 32;
+export const MIN_EVALUATED_GIT_ENTRIES = 2;
+export const MAX_GIT_EVALUATION_CHARACTERS = 2000;
+export const MAX_GIT_LOG_ENTRIES = 50;
+export const DEFAULT_GIT_LOG_ENTRIES = 20;
+export const MAX_GIT_ERROR_BYTES = 2048;
+export const MAX_GIT_REVISION_CHARACTERS = 64;

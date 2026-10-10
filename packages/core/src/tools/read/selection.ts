@@ -1,5 +1,6 @@
 import {performance} from 'node:perf_hooks';
-import {evaluateCandidates, evaluationCapability, evaluationObjective, evaluationStatus, retainUncertainEvidence} from '../../evaluation/index.js';
+import {chunkEvaluationMetadata, evaluateCandidates, evaluationSetup, recordEvaluationMetadata, retainUncertainEvidence,
+  skippedEvaluation} from '../../evaluation/index.js';
 import type {JevCapability} from '../../evaluation/index.js';
 import {IRRELEVANT_PROBABILITY, MAX_EVALUATED_CHUNKS, MIN_FILTER_CHARACTERS} from './limits.js';
 import type {ReadChunk} from './chunks.js';
@@ -9,16 +10,15 @@ export async function selectReadChunks(chunks: ReadChunk[], options: {
   jev?: JevCapability; objective?: string; filter?: boolean; signal?: AbortSignal; filePath: string;
 }) {
   options.signal?.throwIfAborted();
-  const filtering: ReadFilteringMetadata = {status: 'skipped', totalChunks: chunks.length,
-    evaluatedChunks: 0, retainedChunks: chunks.length, incomplete: false};
-  const capability = evaluationCapability(options.jev, options.filter);
-  if (capability.status === 'skipped') return skipped(chunks, filtering, capability.reason);
-  const objective = evaluationObjective(options.objective);
-  if (objective === undefined) return skipped(chunks, filtering, 'no_objective');
-  if (chunks.reduce((total, chunk) => total + chunk.text.length, 0) < MIN_FILTER_CHARACTERS) return skipped(chunks, filtering, 'small_content');
+  const filtering: ReadFilteringMetadata = chunkEvaluationMetadata(chunks.length);
+  const setup = evaluationSetup({jev: options.jev, enabled: options.filter, objective: options.objective,
+    small: {when: () => chunks.reduce((total, chunk) => total + chunk.text.length, 0) < MIN_FILTER_CHARACTERS, reason: 'small_content'}});
+  if (setup.status === 'skipped') return {chunks, ...skippedEvaluation(filtering, setup.reason,
+    'JEV evaluation unavailable; original read page returned.')};
+  const {objective, evaluator} = setup;
   const candidates = chunks.slice(0, MAX_EVALUATED_CHUNKS);
   const started = performance.now();
-  const result = await evaluateCandidates(candidates, capability.evaluator, {
+  const result = await evaluateCandidates(candidates, evaluator, {
     signal: options.signal,
     buildInput: batch => ({state: {objective, filePath: options.filePath, chunks: batch.map(chunk => ({...chunk}))},
       questions: Object.fromEntries(batch.map(chunk => [chunk.id, {type: 'boolean' as const,
@@ -26,11 +26,7 @@ export async function selectReadChunks(chunks: ReadChunk[], options: {
       }])),
     }),
   });
-  filtering.status = evaluationStatus(chunks.length, result.judgments.size);
-  filtering.evaluatedChunks = result.judgments.size;
-  filtering.incomplete = result.judgments.size < chunks.length;
-  filtering.durationMs = performance.now() - started;
-  if (Object.keys(result.usage).length > 0) filtering.usage = result.usage;
+  recordEvaluationMetadata(filtering, result, started);
   const retainedIds = new Set(chunks.filter(chunk => retainUncertainEvidence(result.judgments.get(chunk.id), IRRELEVANT_PROBABILITY)).map(chunk => chunk.id));
   if (retainedIds.size === 0) return {chunks, filtering: {...filtering, reason: 'no_evidence'}, warnings: ['JEV selected no evidence; original read page returned.']};
   retainContext(chunks, result.judgments, retainedIds);
@@ -54,10 +50,4 @@ function retainContext(chunks: ReadChunk[], judgments: Map<string, number>, reta
       if (neighbor) retained.add(neighbor.id);
     }
   }
-}
-
-function skipped(chunks: ReadChunk[], filtering: ReadFilteringMetadata, reason: string) {
-  const warnings = reason === 'missing_credentials' || reason === 'initialization_failed'
-    ? ['JEV evaluation unavailable; original read page returned.'] : [];
-  return {chunks, filtering: {...filtering, reason}, warnings};
 }

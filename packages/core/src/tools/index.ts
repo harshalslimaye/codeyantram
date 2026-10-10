@@ -6,3 +6,4 @@ export * from './grep/index.js';
 export * from './glob/index.js';
 export * from './apply-patch/index.js';
 export * from './bash/index.js';
+export * from './git/index.js';

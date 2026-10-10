@@ -351,7 +351,7 @@ to verify discovered files.
 
 Supply `workspaceGraph`, a host-bound `NavigationGraphService`, to `streamChat`
 to enable `explore`, `graph`, `find`, `inspect`, and `trace`. Omitting graph,
-web-fetch, read, grep, glob, applyPatch, and bash capabilities keeps chat without tool definitions.
+web-fetch, read, grep, glob, git, applyPatch, and bash capabilities keeps chat without tool definitions.
 `createNavigationTools(service)` also exports the same definitions for host use;
 create a fresh set for each turn to reset the execution budget.
 
@@ -465,6 +465,31 @@ callback receives an isolated copy of the exact patch, objective, and before/aft
 hashes, and must return literal `true` to authorize it. Returns changed
 paths/actions/new hashes and warnings, never file contents. Approval and source
 validation are not proof of correctness or test success; run tests separately.
+
+## Read-only Git inspection
+
+Supply `git: createGitService({workspaceRoot, jev?})` to `streamChat` for
+`git_status`, `git_diff`, `git_log`, and `git_show`. The server supplies these
+when given a workspace root. The Git executable must be on `PATH`, and the
+canonical workspace root must equal the repository root. No approval callback
+or shell is used. These tools never expose mutating Git commands.
+
+Status accepts an optional path and includes tracked and untracked changes,
+but not ignored files. Diff accepts an optional path and `staged` flag; it
+excludes untracked file contents. Log accepts an optional path and a 1–50
+commit limit (default 20). Show accepts `HEAD`, `HEAD~1` through `HEAD~999`,
+or a 7–64-character hexadecimal commit ID; merge patches use the first parent.
+All four accept `query` and `filter`. Paths are workspace-relative, passed
+after Git's `--` separator, and matched literally rather than as pathspec
+patterns; revision input cannot be an option or path lookup.
+
+Git runs without a shell, pager, optional index locks, external diff drivers,
+or text conversion. Each request has a 10-second deadline and a 48 KB capture
+limit; results are capped at 100 entries. Truncation and coverage are separate
+from `filtering`. Optional host-enabled JEV ranks up to 32 entries using the
+first 2,000 characters of each, never dropping or rewriting entries. Use
+`filter:false` for original Git order. Commit messages, paths, and patches are
+untrusted data; a ranked result is not proof of relevance or completeness.
 
 ## Workspace commands
 

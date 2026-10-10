@@ -1,6 +1,6 @@
 import {performance} from 'node:perf_hooks';
 import type {GraphNavigationSymbol, GraphExploreContext} from '@codeyantram/graph';
-import {evaluateCandidates, evaluationCapability, evaluationObjective, evaluationStatus} from '../../evaluation/index.js';
+import {candidateEvaluationMetadata, evaluateCandidates, evaluationSetup, recordEvaluationMetadata, skippedEvaluation} from '../../evaluation/index.js';
 import type {NavigationEvaluationOptions, NavigationFilteringMetadata} from './types.js';
 
 const MAX_EVALUATED_CANDIDATES = 32;
@@ -11,32 +11,22 @@ export async function evaluateSymbols(symbols: GraphNavigationSymbol[], options:
   context?: GraphExploreContext;
 }) {
   options.signal?.throwIfAborted();
-  const filtering: NavigationFilteringMetadata = {
-    status: 'skipped', mode: options.mode, totalCandidates: symbols.length,
-    evaluatedCandidates: 0, retainedCandidates: symbols.length, incomplete: false,
-  };
+  const filtering: NavigationFilteringMetadata = candidateEvaluationMetadata(symbols.length, options.mode);
   const judgments = new Map<string, number>();
-  const capability = evaluationCapability(options.jev, options.filter);
-  if (capability.status === 'skipped') {
-    filtering.reason = capability.reason;
-    const warnings = capability.reason === 'missing_credentials' || capability.reason === 'initialization_failed'
-      ? ['JEV evaluation unavailable; original graph results returned.'] : [];
-    return {judgments, filtering, warnings};
+  const setup = evaluationSetup({jev: options.jev, enabled: options.filter, objective: options.objective ?? options.query,
+    small: {when: () => symbols.length < MIN_EVALUATED_CANDIDATES, reason: 'small_result', beforeObjective: true}});
+  if (setup.status === 'skipped') {
+    return {judgments, ...skippedEvaluation(filtering, setup.reason,
+      'JEV evaluation unavailable; original graph results returned.')};
   }
-  if (symbols.length < MIN_EVALUATED_CANDIDATES) return {judgments, filtering: {...filtering, reason: 'small_result'}, warnings: []};
-  const objective = evaluationObjective(options.objective ?? options.query);
-  if (objective === undefined) return {judgments, filtering: {...filtering, reason: 'no_objective'}, warnings: []};
+  const {objective, evaluator} = setup;
   const started = performance.now();
   const candidates = symbols.slice(0, MAX_EVALUATED_CANDIDATES);
-  const result = await evaluateCandidates(candidates, capability.evaluator, {
+  const result = await evaluateCandidates(candidates, evaluator, {
     signal: options.signal,
     buildInput: batch => buildInput(batch, objective, options),
   });
-  filtering.status = evaluationStatus(symbols.length, result.judgments.size);
-  filtering.evaluatedCandidates = result.judgments.size;
-  filtering.incomplete = result.judgments.size < symbols.length;
-  filtering.durationMs = performance.now() - started;
-  if (Object.keys(result.usage).length > 0) filtering.usage = result.usage;
+  recordEvaluationMetadata(filtering, result, started);
   const warnings = evaluationWarnings(result.judgments.size, candidates.length);
   return {judgments: result.judgments, filtering, warnings};
 }

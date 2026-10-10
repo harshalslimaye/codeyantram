@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {evaluateCandidates, evaluationCapability, evaluationObjective, evaluationStatus, retainUncertainEvidence} from '../../src/evaluation/index.js';
+import {candidateEvaluationMetadata, chunkEvaluationMetadata, evaluateCandidates, evaluationCapability, evaluationObjective,
+  evaluationSetup, evaluationStatus, recordEvaluationMetadata, retainUncertainEvidence, skippedEvaluation} from '../../src/evaluation/index.js';
 import type {EvaluationInput, EvaluationQuestions, EvaluationResult, JevEvaluator} from '../../src/evaluation/index.js';
 
 type Evaluate = (input: EvaluationInput<EvaluationQuestions>) => Promise<EvaluationResult<EvaluationQuestions>>;
@@ -83,5 +84,48 @@ describe('shared relevance policy', () => {
     expect(evaluationStatus(3, 3)).toBe('completed');
     expect(retainUncertainEvidence(undefined, 0.05)).toBe(true);
     expect(retainUncertainEvidence(0.01, 0.05)).toBe(false);
+  });
+});
+
+describe('shared evaluation setup and metadata', () => {
+  it('preserves capability, objective, and size-check precedence', () => {
+    const jev = {status: 'available' as const, evaluator: evaluator(vi.fn())};
+    const when = vi.fn<() => boolean>(() => true);
+    expect(evaluationSetup({jev, enabled: false, objective: ' ', small: {when, reason: 'small_result'}}))
+      .toEqual({status: 'skipped', reason: 'disabled_for_request'});
+    expect(when).not.toHaveBeenCalled();
+    expect(evaluationSetup({jev, objective: ' ', small: {when, reason: 'small_result'}}))
+      .toEqual({status: 'skipped', reason: 'no_objective'});
+    expect(when).not.toHaveBeenCalled();
+    expect(evaluationSetup({jev, objective: ' ', small: {when, reason: 'small_result', beforeObjective: true}}))
+      .toEqual({status: 'skipped', reason: 'small_result'});
+    expect(when).toHaveBeenCalledOnce();
+    expect(evaluationSetup({jev, objective: ' task ', small: {when: () => false, reason: 'small_result'}}))
+      .toEqual({status: 'ready', evaluator: jev.evaluator, objective: 'task'});
+  });
+
+  it('records candidate and chunk counts without adding empty usage', () => {
+    const candidateMetadata = candidateEvaluationMetadata(3, 'rank');
+    recordEvaluationMetadata(candidateMetadata, {judgments: new Map([['first', 0.8]]), usage: {}}, performance.now());
+    expect(candidateMetadata).toMatchObject({status: 'partial', mode: 'rank', totalCandidates: 3,
+      evaluatedCandidates: 1, retainedCandidates: 3, incomplete: true});
+    expect(candidateMetadata).not.toHaveProperty('usage');
+
+    const chunks = chunkEvaluationMetadata(2);
+    recordEvaluationMetadata(chunks, {judgments: new Map([['first', 0.8], ['second', 0.9]]), usage: {inputTokens: 3}}, performance.now());
+    expect(chunks).toMatchObject({status: 'completed', totalChunks: 2,
+      evaluatedChunks: 2, retainedChunks: 2, incomplete: false, usage: {inputTokens: 3}});
+  });
+
+  it('adds warnings only when evaluation is unavailable', () => {
+    const filtering = candidateEvaluationMetadata(2, 'rank');
+    expect(skippedEvaluation(filtering, 'no_objective', 'unavailable')).toEqual({
+      filtering: {...filtering, reason: 'no_objective'}, warnings: [],
+    });
+    expect(skippedEvaluation(filtering, 'missing_credentials', 'unavailable')).toEqual({
+      filtering: {...filtering, reason: 'missing_credentials'}, warnings: ['unavailable'],
+    });
+    expect(skippedEvaluation(filtering, 'initialization_failed', 'unavailable').warnings).toEqual(['unavailable']);
+    expect(filtering).not.toHaveProperty('reason');
   });
 });

@@ -1,5 +1,7 @@
 import express from 'express';
-import {compactChat, streamChat, createWebFetchService, createReadService, createGrepService, createGlobService, createApplyPatchService, createBashService, type BashApprover, type PatchApprover, type createJevEvaluator, type WebTransport} from '@codeyantram/core';
+import {compactChat, streamChat, createWebFetchService, createReadService, createGrepService, createGlobService,
+  createApplyPatchService, createBashService, createGitService, type BashApprover, type PatchApprover,
+  type createJevEvaluator, type WebTransport} from '@codeyantram/core';
 import {readConfig, readProviderCredentials} from '@codeyantram/shared';
 import {handleError} from './middlewares/index.js';
 import {createChatRouter} from './routers/chat.js';
@@ -39,6 +41,7 @@ export function createApp(options: ServerAppOptions = {}) {
           ? {read: createReadService({workspaceRoot: options.workspaceRoot, jev}),
             grep: createGrepService({workspaceRoot: options.workspaceRoot, jev}),
             glob: createGlobService({workspaceRoot: options.workspaceRoot, jev}),
+            git: createGitService({workspaceRoot: options.workspaceRoot, jev}),
             ...(options.approvePatch ? {applyPatch: createApplyPatchService({workspaceRoot: options.workspaceRoot, approve: options.approvePatch})} : {}),
             ...(options.approveCommand ? {bash: createBashService({workspaceRoot: options.workspaceRoot, approve: options.approveCommand, environment: options.commandEnvironment})} : {})} : {}),
         webFetch: createWebFetchService({transport: options.webTransport,

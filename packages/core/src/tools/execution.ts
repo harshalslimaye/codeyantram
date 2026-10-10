@@ -7,6 +7,7 @@ import {GrepError} from './grep/errors.js';
 import {GlobError} from './glob/errors.js';
 import {ApplyPatchError} from './apply-patch/errors.js';
 import {BashError} from './bash/errors.js';
+import {GitError} from './git/errors.js';
 
 const MAX_TOOL_EXECUTIONS = 12;
 const MAX_TOOL_OUTPUT_BYTES = 80_000;
@@ -34,12 +35,16 @@ export function createToolExecutor(): ToolExecutor {
 }
 
 function mapToolFailure(name: string, failure: unknown): Extract<ToolResult, {status: 'error'}>['error'] {
-  if (failure instanceof WebFetchError || failure instanceof ReadError || failure instanceof GrepError || failure instanceof GlobError || failure instanceof ApplyPatchError || failure instanceof BashError) return {code: failure.code, message: failure.message};
+  if (failure instanceof WebFetchError || failure instanceof ReadError || failure instanceof GrepError || failure instanceof GlobError || failure instanceof ApplyPatchError || failure instanceof BashError || failure instanceof GitError) return {code: failure.code, message: failure.message};
   const message = new Map([
     ['apply_patch', 'The patch could not complete safely. Re-read every target before retrying.'],
     ['bash', 'Command execution failed. Side effects may have occurred; inspect the workspace before retrying.'],
     ['glob', 'Workspace file discovery could not complete safely.'],
     ['grep', 'Workspace search could not complete safely.'],
+    ['git_status', 'Git status could not complete safely.'],
+    ['git_diff', 'Git diff could not complete safely.'],
+    ['git_log', 'Git log could not complete safely.'],
+    ['git_show', 'Git show could not complete safely.'],
     ['read', 'The file could not be read safely.'],
     ['web_fetch', 'Web fetch could not complete the request.'],
   ]).get(name);
