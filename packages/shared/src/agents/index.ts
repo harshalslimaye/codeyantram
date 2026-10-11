@@ -8,6 +8,7 @@ export {
   customAgentIdSchema,
   resolvedAgentSchema,
 } from './schemas.js';
+export {parseAgentMarkdown} from './markdown.js';
 export type {
   AgentApprovalPolicy,
   AgentDefinition,

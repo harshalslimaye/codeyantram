@@ -1,26 +1,26 @@
-import {resolvedAgentSchema, type ResolvedAgent} from '@codeyantram/shared';
+import {resolvedAgentSchema, type AgentApprovalPolicy, type BuiltinAgentId, type ResolvedAgent} from '@codeyantram/shared';
 import {TOOL_CATALOG} from '../tools/catalog.js';
-import {composeAgentInstructions} from './instructions.js';
+import {builtinAgentDefinition, composeAgentInstructions} from './instructions.js';
 
-const readTools = TOOL_CATALOG.filter(entry => entry.capability === 'workspace_read' || entry.capability === 'network_read')
-  .map(entry => entry.name);
-const buildTools = TOOL_CATALOG.map(entry => entry.name);
+function resolveBuiltin(id: BuiltinAgentId, approval: AgentApprovalPolicy): ResolvedAgent {
+  const definition = builtinAgentDefinition(id);
+  for (const name of definition.tools) {
+    const tool = TOOL_CATALOG.find(entry => entry.name === name);
+    if (tool === undefined) throw new Error(`Bundled agent ${id} references an unknown tool.`);
+    if (approval === 'none' && tool.capability !== 'workspace_read' && tool.capability !== 'network_read') {
+      throw new Error(`Read-only bundled agent ${id} cannot use mutation tools.`);
+    }
+  }
+  return resolvedAgentSchema.parse({
+    id, name: definition.name, description: definition.description,
+    source: 'builtin', approval, tools: definition.tools,
+    instructions: composeAgentInstructions(id),
+  });
+}
 
-/** Definitions only: host authorization and tool availability are resolved later. */
+/** Bundled Markdown defines content and tool lists; the host owns approval. */
 export const BUILTIN_AGENTS: readonly ResolvedAgent[] = [
-  resolvedAgentSchema.parse({
-    id: 'ask', name: 'Ask', description: 'Explore the workspace and answer questions without changing files.',
-    source: 'builtin', approval: 'none', tools: readTools,
-    instructions: composeAgentInstructions('ask'),
-  }),
-  resolvedAgentSchema.parse({
-    id: 'build', name: 'Build', description: 'Make changes after approval for each patch or command.',
-    source: 'builtin', approval: 'prompt', tools: buildTools,
-    instructions: composeAgentInstructions('build'),
-  }),
-  resolvedAgentSchema.parse({
-    id: 'yolo', name: 'Yolo', description: 'Make changes without per-action prompts when the host enables it.',
-    source: 'builtin', approval: 'automatic', tools: buildTools,
-    instructions: composeAgentInstructions('yolo'),
-  }),
+  resolveBuiltin('ask', 'none'),
+  resolveBuiltin('build', 'prompt'),
+  resolveBuiltin('yolo', 'automatic'),
 ];

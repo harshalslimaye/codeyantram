@@ -34,22 +34,26 @@ custom agent's list stays within its base agent's tools.
 Built-in IDs are `ask`, `build`, and `yolo`. Custom IDs are source-qualified,
 such as `user:reviewer` and `project:reviewer`; custom files cannot override a
 built-in. Authoring data can omit `name`, `description`, `extends`, and `tools`.
-The future file loader derives the ID and default name from the filename, and
-an omitted `extends` means Ask. The three built-in definitions already use the
+The file loader derives the ID and default name from the filename, and
+an omitted `extends` means Ask. The three built-in definitions use the
 resolved schema and catalog-derived tool lists.
 
-The built-in instructions live in `src/agents/instructions.ts`: a shared base
-prompt plus one mode prompt. `composeAgentInstructions` is also available for
+The built-in instructions and display metadata live in `src/agents/*.md`:
+`base.md` holds the shared prompt, and `ask.md`, `build.md`, and `yolo.md`
+hold each mode's prompt, display metadata, and tool list. `instructions.ts`
+loads these bundled files through the same Markdown parser used for custom
+agents. `builtins.ts` validates the lists against the tool catalog, enforces
+Ask's read-only boundary, and assigns the host-owned approval policies.
+`composeAgentInstructions` is also available for
 custom agents, so their authored instructions follow the same base and selected
 mode. Chat adds guidance only for the tools actually available on that turn and
 sends the resulting instructions through the provider's instruction channel.
 
 `src/agents/registry.ts` validates custom definitions supplied by a host,
 checks tool subsets against the selected built-in base, records diagnostics,
-and returns immutable agent snapshots. File loading and HTTP agent resolution
-remain later phases. A chat request without `agentId` uses Ask. Direct core
-hosts must supply a matching resolved agent for any other ID. The default
-server and CLI do not yet select Build or Yolo.
+and returns immutable agent snapshots. The server loads custom files and
+resolves agent IDs before each chat turn. A chat request without `agentId` uses
+Ask. Direct core hosts must supply a matching resolved agent for any other ID.
 
 The resolved `approval` value is `none`, `prompt`, or `automatic`. It records
 the agent's requested behavior, not an authorization grant. A host must still

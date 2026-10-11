@@ -80,6 +80,8 @@ The picker shows each agent's source, approval behavior, availability, and
 effective tool count. The status bar shows the current agent, and assistant
 turns retain their agent label when you switch agents or compact history.
 Conversations stay in memory for the current CLI session.
+The built-in agent definitions are bundled Markdown files in
+`packages/core/src/agents/`; their approval policies remain host controlled.
 
 Custom agents are Markdown files in `~/.config/codeyantram/agents/` or
 `<workspace>/.codeyantram/agents/` (the user directory follows the platform
