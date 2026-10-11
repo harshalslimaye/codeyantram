@@ -1,7 +1,7 @@
 import {anthropicModels} from './anthropic.js';
 import {googleModels} from './google.js';
 import {openaiModels} from './openai.js';
-import type {EffortLevel, SupportedChatModelDefinition, SupportedProvider} from '../types.js';
+import {EFFORT_LEVELS, type EffortLevel, type SupportedChatModelDefinition, type SupportedProvider} from '../types.js';
 
 export * from '../types.js';
 export {
@@ -35,6 +35,16 @@ export function findSupportedChatModel(
   return SUPPORTED_CHAT_MODELS.find(model => model.id === modelId);
 }
 
+/** Recognizes model IDs saved by the earlier prefixed ChatGPT integration. */
+export function isChatGPTModelId(modelId: string): boolean {
+  return /^chatgpt:[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(modelId);
+}
+
+/** Model IDs are shared by OpenAI API-key and ChatGPT plan connections. */
+export function isOpenAIModelSlug(modelId: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(modelId);
+}
+
 export function modelHasEffortControl(
   model: SupportedChatModelDefinition,
 ): boolean {
@@ -46,6 +56,15 @@ export function modelSupportsEffort(
   effort: EffortLevel,
 ): boolean {
   return model.supportedEffortLevels.includes(effort);
+}
+
+/** The account catalog may omit effort metadata; use known OpenAI model capabilities then. */
+export function chatGPTSupportedEfforts(modelId: string, catalogEfforts?: readonly string[]): readonly EffortLevel[] {
+  if (catalogEfforts !== undefined) {
+    return catalogEfforts.filter((effort): effort is EffortLevel => EFFORT_LEVELS.some(level => level === effort));
+  }
+  const known = findSupportedChatModel(modelId);
+  return known?.provider === 'openai' ? known.supportedEffortLevels : [];
 }
 
 export function isModelAvailable(

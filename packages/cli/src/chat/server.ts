@@ -1,11 +1,13 @@
 import {once} from 'node:events';
 import {randomBytes} from 'node:crypto';
+import {spawn} from 'node:child_process';
 import {createServer} from 'node:http';
 import {createApp, createServerShutdown, loadAgentFiles, type ServerAppOptions} from '@codeyantram/server';
+import {ChatGPTSessionService} from '@codeyantram/core';
 import {initializeGraphForUI} from '../lib/init.js';
 import {ApprovalController} from './approval.js';
 import {AgentSessionController, type AgentSelection} from './agent-session.js';
-import type {ChatRequest} from '@codeyantram/shared';
+import {selectChatGPTConnection, type ChatRequest} from '@codeyantram/shared';
 
 const SESSION_TOKEN_BYTES = 32;
 
@@ -18,7 +20,9 @@ export async function startChatServer(options: ServerAppOptions & {
 	const initialAgents = await loadAgentFiles(options.workspaceRoot);
 	const agentSession = new AgentSessionController(options.automaticCapabilities ?? {patch: true, command: true},
 		options.workspaceRoot !== undefined && options.workspaceRoot !== '');
-	const app = createPrivateApp({...options, initialAgents,
+	const chatgptSession = options.chatgptSession ?? new ChatGPTSessionService({openBrowser: openSystemBrowser,
+		onLogin: selectChatGPTConnection});
+	const app = createPrivateApp({...options, chatgptSession, initialAgents,
 		reloadAgents: async () => {
 			const next = await loadAgentFiles(options.workspaceRoot);
 			agentSession.reconcile(next.registry.get(agentSession.getSnapshot().id)?.approval);
@@ -56,6 +60,18 @@ export async function startChatServer(options: ServerAppOptions & {
 			initializeGraphForUI(graphOptions => app.workspaceGraph.initialize(graphOptions), signal, onProgress),
 		close,
 	};
+}
+
+function openSystemBrowser(url: string): Promise<void> {
+	let command = 'xdg-open';
+	if (process.platform === 'darwin') command = 'open';
+	if (process.platform === 'win32') command = 'rundll32';
+	const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', url] : [url];
+	return new Promise((resolve, reject) => {
+		const child = spawn(command, args, {stdio: 'ignore', detached: true});
+		child.once('error', reject);
+		child.once('spawn', () => {child.unref(); resolve();});
+	});
 }
 
 function createPrivateApp(options: ServerAppOptions, sessionToken: string, approvals: ApprovalController,

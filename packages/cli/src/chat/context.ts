@@ -3,6 +3,7 @@ import {
 	contextSummarySchema,
 	formatContextSummary,
 	findSupportedChatModel,
+	isOpenAIModelSlug,
 	toRequestMessage,
 	type MessagePart,
 	type AssistantMessage,
@@ -41,12 +42,13 @@ export interface ContextStatus {
 }
 
 /** Estimates active input against catalog capacity, before response headroom. */
-export function getContextStatus(modelId: string, messages: readonly ChatMessage[], compacted?: CompactedContext): ContextStatus {
+export function getContextStatus(modelId: string, messages: readonly ChatMessage[], compacted?: CompactedContext, discoveredWindow?: number): ContextStatus {
 	const model = findSupportedChatModel(modelId);
-	if (!model) throw new Error(`Model "${modelId}" is not supported.`);
+	if (!model && !isOpenAIModelSlug(modelId)) throw new Error(`Model "${modelId}" is not supported.`);
 	const usedTokens = estimateContextTokens(buildChatContext(messages, compacted));
-	const usedPercent = usedTokens / model.contextWindow * PERCENT_SCALE;
-	return {modelId, usedTokens, contextWindow: model.contextWindow, usedPercent, remainingPercent: Math.max(0, PERCENT_SCALE - usedPercent)};
+	const contextWindow = model?.contextWindow ?? discoveredWindow ?? 0;
+	const usedPercent = contextWindow > 0 ? usedTokens / contextWindow * PERCENT_SCALE : 0;
+	return {modelId, usedTokens, contextWindow, usedPercent, remainingPercent: Math.max(0, PERCENT_SCALE - usedPercent)};
 }
 
 /** Reject stale/out-of-range boundaries and boundaries that split a user-led turn. */

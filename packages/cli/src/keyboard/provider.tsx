@@ -1,6 +1,6 @@
 import {createContext, useCallback, useContext, useRef, useState, type ReactNode} from 'react';
 
-export type KeyboardOwner = 'input-bar' | 'command-palette' | 'theme-picker' | 'model-picker' | 'effort-picker' | 'provider-picker' | 'api-key-input' | 'approval' | 'agent-picker' | 'yolo-confirmation';
+export type KeyboardOwner = 'input-bar' | 'command-palette' | 'theme-picker' | 'model-picker' | 'effort-picker' | 'provider-picker' | 'openai-auth-picker' | 'api-key-input' | 'approval' | 'agent-picker' | 'yolo-confirmation' | 'chatgpt-account-picker';
 
 const KeyboardContext = createContext<{
 	owner: KeyboardOwner;

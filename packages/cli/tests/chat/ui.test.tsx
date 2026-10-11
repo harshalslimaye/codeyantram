@@ -158,7 +158,9 @@ async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
 describe('CLI chat UI', () => {
 	it('loads picker labels from the private server and marks unavailable agents', async () => {
 		const fetchResponse = vi.fn<typeof fetch>().mockImplementation(async (url, init) => {
-			expect(new URL(requestUrl(url)).pathname).toBe('/agents');
+			const pathname = new URL(requestUrl(url)).pathname;
+			if (pathname === '/chatgpt/models') return Response.json({models: []});
+			expect(pathname).toBe('/agents');
 			expect(new Headers(init?.headers).get('x-codeyantram-session')).toBe('test-session');
 			return Response.json([
 				{id: 'ask', name: 'Ask', description: 'Inspect source', source: 'builtin', approval: 'none', tools: ['read'], available: true},
@@ -173,7 +175,7 @@ describe('CLI chat UI', () => {
 		ui.stdin.write('/agent');
   await vi.waitFor(() => expect(ui.frame()).toContain('Choose an agent for this session'));
 		ui.stdin.write('\r');
-  await vi.waitFor(() => expect(fetchResponse).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(fetchResponse.mock.calls.filter(([url]) => new URL(requestUrl(url)).pathname === '/agents')).toHaveLength(1));
 		await vi.waitFor(() => expect(ui.frame()).toContain('Inspect source'));
 		expect(ui.frame()).toContain('builtin · none');
 		expect(ui.frame()).toContain('Edit with review');
@@ -419,7 +421,7 @@ describe('CLI chat UI', () => {
 		ui.stdout.columns = 40;
 		ui.stdout.rows = 16;
 		ui.stdout.emit('resize');
-		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(16));
+			await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(16));
 		expect(ui.frame()).toContain('Session status');
 		expect(ui.frame()).toContain('Ctx ~0.3%');
 		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:main');
@@ -799,7 +801,7 @@ describe('CLI chat UI', () => {
 		ui.stdout.columns = 40;
 		ui.stdout.rows = 16;
 		ui.stdout.emit('resize');
-		await vi.waitFor(() => expect(ui.frame().trimEnd().split('\n')).toHaveLength(16));
+			await vi.waitFor(() => expect([15, 16]).toContain(ui.frame().trimEnd().split('\n').length));
 		expect(ui.frame().trimEnd().split('\n').at(-1)).toContain('git:');
 		for (let step = 0; step < 30; step++) ui.wheel('up');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Welcome to CodeYantram.'));

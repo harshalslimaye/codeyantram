@@ -1,12 +1,13 @@
 import {Router} from 'express';
-import type {compactChat, ProviderCredentials} from '@codeyantram/core';
-import {compactRequestSchema, type CompactStreamEvent} from '@codeyantram/shared';
+import type {compactChat, ProviderCredentials, ChatStreamOptions} from '@codeyantram/core';
+import {compactRequestSchema, type CompactRequest, type CompactStreamEvent} from '@codeyantram/shared';
 import {serveEventStream} from '../http/stream.js';
 
 const HTTP_BAD_REQUEST = 400;
 
 export interface CompactDependencies {
   readCredentials: (modelId: string) => Promise<ProviderCredentials>;
+  readOptions?: (request: CompactRequest, signal: AbortSignal) => Promise<ChatStreamOptions>;
   compactChat: typeof compactChat;
 }
 
@@ -24,6 +25,7 @@ export function createCompactRouter(dependencies: CompactDependencies): Router {
     await serveEventStream(response, {
       request: parsed.data,
       readCredentials: dependencies.readCredentials,
+      readOptions: dependencies.readOptions,
       generate: dependencies.compactChat,
       errorMessage: 'The compaction request could not be completed.',
     });

@@ -1,13 +1,14 @@
 import express from 'express';
 import {compactChat, streamChat, createAgentRegistry, type AgentRegistry, type AgentDiagnostic, type BashApprover, type PatchApprover,
-  type createJevEvaluator, type WebTransport} from '@codeyantram/core';
-import {readProviderCredentials, type readConfig, type ChatRequest, type AgentApprovalPolicy} from '@codeyantram/shared';
+  type createJevEvaluator, type WebTransport, type ChatGPTSessionService} from '@codeyantram/core';
+import {readConfig, readProviderCredentials, usesChatGPTConnection, type ChatRequest, type AgentApprovalPolicy} from '@codeyantram/shared';
 import {handleError} from './middlewares/index.js';
 import {createChatRouter} from './routers/chat.js';
 import {createCompactRouter} from './routers/compact.js';
 import {WorkspaceGraphService} from './graph/workspace.js';
 import type {acquireGraphCoordinator} from '@codeyantram/graph';
 import {agentMetadata, readChatOptions} from './agents/host.js';
+import {createChatGPTRouter} from './routers/chatgpt.js';
 
 const HTTP_FORBIDDEN = 403;
 
@@ -35,8 +36,10 @@ export interface ServerAppOptions {
   agentStatus?: (id: string, approval: AgentApprovalPolicy) => {available: boolean; patch: boolean; command: boolean};
   /** Required on every CLI-owned HTTP route when set. */
   privateSessionToken?: string;
+  chatgptSession?: ChatGPTSessionService;
 }
 
+// oxlint-disable-next-line eslint/max-lines-per-function -- The app composes private and public routers in one place.
 export function createApp(options: ServerAppOptions = {}) {
   const app = express();
   const workspaceGraph = new WorkspaceGraphService(options.workspaceRoot, options.acquireGraphCoordinator);
@@ -69,6 +72,19 @@ export function createApp(options: ServerAppOptions = {}) {
   const compactRouter = createCompactRouter({
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),
     compactChat: options.compactChat ?? compactChat,
+    readOptions: async (request, signal) => {
+      const config = await (options.readConfig ?? readConfig)();
+      const credentials = await readProviderCredentials(request.model, async () => config);
+      if (!usesChatGPTConnection(config, request.model)) return {credentials};
+      const session = options.chatgptSession;
+      if (!session) throw new Error('ChatGPT login is unavailable in this server.');
+      const selected = await session.selected();
+      if (!selected) throw new Error('Sign in with ChatGPT first.');
+      await session.model(request.model, signal);
+      if ((await session.selected())?.clientId !== selected.clientId) throw new Error('ChatGPT account changed during model selection.');
+      return {credentials, chatgpt: {profileId: selected.clientId,
+        getAccessToken: (id: string, abortSignal?: AbortSignal) => session.accessToken(id, abortSignal)}};
+    },
   });
 
   app.disable('x-powered-by');
@@ -80,6 +96,7 @@ export function createApp(options: ServerAppOptions = {}) {
     next();
   });
   app.use(express.json({limit: '4mb'}));
+  if (options.privateSessionToken !== undefined && options.chatgptSession !== undefined) app.use(createChatGPTRouter(options.chatgptSession));
   app.use(chatRouter);
   app.use(compactRouter);
 

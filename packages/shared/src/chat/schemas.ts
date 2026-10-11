@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {effortLevelSchema, findSupportedChatModel, modelSupportsEffort} from '../providers/config/index.js';
+import {effortLevelSchema, findSupportedChatModel, isOpenAIModelSlug, modelSupportsEffort} from '../providers/config/index.js';
 import type {ChatMessage, RequestMessage} from './types.js';
 import {toolCallPartSchema, toolResultPartSchema} from '../tools/schemas.js';
 import {agentIdSchema} from '../agents/schemas.js';
@@ -76,7 +76,7 @@ export const chatRequestSchema = z.object({
     validateToolSequence(message, index, ids, ctx);
   }
   const model = findSupportedChatModel(request.model);
-  if (!model) {
+  if (!model && !isOpenAIModelSlug(request.model)) {
     ctx.addIssue({
       code: 'custom',
       message: 'This model is not supported',
@@ -85,7 +85,7 @@ export const chatRequestSchema = z.object({
     return;
   }
 
-  if (request.effort !== undefined && !modelSupportsEffort(model, request.effort)) {
+  if (request.effort !== undefined && model !== undefined && model.provider !== 'openai' && !modelSupportsEffort(model, request.effort)) {
     ctx.addIssue({
       code: 'custom',
       message: 'This model does not support the requested effort level',

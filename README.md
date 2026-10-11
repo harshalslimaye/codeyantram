@@ -9,6 +9,7 @@ A coding agent portfolio project organized as an npm workspace monorepo.
 | `packages/core` | Model communication and agent logic | Vercel AI SDK, TypeScript |
 | `packages/graph` | Workspace indexing and code navigation | CodeGraph, TypeScript |
 | `packages/shared` | Shared contracts and application utilities | Zod, Node.js, TypeScript |
+| `packages/ai-sdk-provider-chatgpt` | Private ChatGPT OAuth and AI SDK provider | TypeScript, jose, Zod |
 
 The root workspace holds shared TypeScript development tools. `core` owns model communication with OpenAI, Anthropic, and Google through the AI SDK. `shared` owns model catalogs, chat schemas, and application configuration utilities. The CLI starts a local server and sends chat requests to it; the server calls core. Core, server, and the CLI also use `shared`.
 
@@ -64,7 +65,7 @@ This command runs independently of the chat server, terminal UI, and provider ke
 The CLI starts its own server on a temporary localhost port and closes it on
 exit. Multiple CLI sessions can run at once; no separate server command is needed.
 
-Use `/connect` to save a provider API key and `/model` to select a model and
+Use `/connect` to choose a provider connection and `/model` to select a model and
 effort. Type a message and press Enter to see the assistant's answer as it streams.
 The default model is Google Gemma (`gemma-4-31b-it`); a saved model selection takes precedence.
 Follow-up messages include the conversation history. Escape cancels generation
@@ -82,6 +83,33 @@ turns retain their agent label when you switch agents or compact history.
 Conversations stay in memory for the current CLI session.
 The built-in agent definitions are bundled Markdown files in
 `packages/core/src/agents/`; their approval policies remain host controlled.
+
+### ChatGPT plan connection
+
+In the local CLI, open `/connect`, choose **OpenAI**, then choose **Login · ChatGPT plan**.
+Complete consent in the system browser. The **API key** choice in the same menu
+uses OpenAI API billing. OpenAI model IDs are shared between the two connection
+methods; `/model` shows the models available through the selected method. A
+successful login removes the saved OpenAI API key. Saving a new OpenAI API key
+removes local ChatGPT tokens and attempts remote revocation. The CLI's
+local server manages the OAuth callback and stores tokens under the user's
+CodeYantram configuration directory in a protected `chatgpt/profiles.json` file.
+The private provider package uses the public Responses API; CodeYantram still
+executes its own tools and approval workflow.
+
+Use `/chatgpt status` to see saved registrations and whether plan permission was
+granted. `/chatgpt logout` revokes the selected session when possible and removes
+local tokens while retaining its account registration. `/chatgpt login` can
+reuse a single signed-out registration; use `/chatgpt login <profile-id>` when
+more than one is saved. `/chatgpt login new` registers another account or
+workspace, and `/chatgpt use <profile-id>` switches between connected profiles.
+The CLI selects an available ChatGPT model after login or account switch.
+The status bar shows whether OpenAI requests use the ChatGPT plan or API key.
+
+This direct ChatGPT plan flow is intended for eligible locally run apps and
+accounts. The standalone HTTP server does not expose OAuth administration;
+start the CLI for sign-in. A live account consent and inference check is still
+required before relying on this integration outside mocked development flows.
 
 Custom agents are Markdown files in `~/.config/codeyantram/agents/` or
 `<workspace>/.codeyantram/agents/` (the user directory follows the platform

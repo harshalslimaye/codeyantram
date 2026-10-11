@@ -25,7 +25,8 @@
     "packages/cli",
     "packages/core",
     "packages/graph",
-    "packages/shared"
+    "packages/shared",
+    "packages/ai-sdk-provider-chatgpt"
   ],
   "devDependencies": {
     "@babel/core": "7.29.7",

@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {findSupportedChatModel} from '../providers/config/index.js';
+import {findSupportedChatModel, isOpenAIModelSlug} from '../providers/config/index.js';
 import {
   chatErrorCodeSchema,
   chatModelIdSchema,
@@ -30,7 +30,7 @@ export const compactRequestSchema = z.object({
   previousSummary: contextSummarySchema.optional(),
   messages: z.array(compactMessageSchema).min(1),
 }).superRefine((request, ctx) => {
-  if (!findSupportedChatModel(request.model)) {
+  if (!findSupportedChatModel(request.model) && !isOpenAIModelSlug(request.model)) {
     ctx.addIssue({
       code: 'custom',
       message: 'This model is not supported',

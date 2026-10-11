@@ -8,16 +8,23 @@ import {ProviderPicker} from './provider-picker.js';
 import {Help} from './help.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
-import {JevNotConfiguredError, toggleJevUsage, type AgentMetadata, type EffortLevel, type ModelPreferences} from '@codeyantram/shared';
+import {JevNotConfiguredError, toggleJevUsage, type AgentMetadata, type ConnectableProvider, type EffortLevel, type ModelPreferences} from '@codeyantram/shared';
 import type {SessionOperation} from '../chat/session.js';
 import {AgentSessionController} from '../chat/agent-session.js';
 import {AgentPicker} from './agent-picker.js';
 import {FALLBACK_AGENT_METADATA} from '../chat/agent-catalog.js';
+import {ChatGPTAccountPicker} from './chatgpt-account-picker.js';
+import {useChatGPTControls} from './use-chatgpt-controls.js';
+import type {ChatGPTAccount, ChatGPTAccountModel} from '../chat/chatgpt.js';
 
 const INPUT_RESERVED_COLUMNS = 6;
 
 type InputBarProps = {
 	modelPreferences: ModelPreferences;
+	chatgptModels?: readonly ChatGPTAccountModel[];
+	onChatGPTCommand?: (command: string, profileId?: string, signal?: AbortSignal) => Promise<string>;
+	onLoadChatGPTAccounts?: () => Promise<ChatGPTAccount[]>;
+	onSaveProviderKey?: (provider: ConnectableProvider, apiKey: string) => Promise<void>;
 	agentSession?: AgentSessionController;
 	availableAgents?: readonly AgentMetadata[];
 	agentDiagnostics?: readonly string[];
@@ -48,7 +55,7 @@ type DraftContext = {
 };
 
 export function InputBar(props: InputBarProps) {
-	const {modelPreferences, onSelectModel, operation, agentSession, availableAgents = FALLBACK_AGENT_METADATA, agentDiagnostics, refreshAgents} = props;
+	const {modelPreferences, chatgptModels = [], onSelectModel, operation, agentSession, availableAgents = FALLBACK_AGENT_METADATA, agentDiagnostics, refreshAgents} = props;
 	const [localAgentSession] = useState(() => new AgentSessionController({patch: false, command: false}));
 	const activeAgentSession = agentSession ?? localAgentSession;
 	const {columns} = useWindowSize();
@@ -58,7 +65,7 @@ export function InputBar(props: InputBarProps) {
 	return (
 		<Box flexDirection="column" width="100%">
 			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} />}
-			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} onSelectModel={onSelectModel} agentSession={activeAgentSession} availableAgents={availableAgents} agentDiagnostics={agentDiagnostics} refreshAgents={refreshAgents} />
+			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} chatgptModels={chatgptModels} chatgptAccounts={controller.chatgptAccounts} onSelectChatGPTAccount={controller.selectChatGPTAccount} onSelectChatGPTLogin={() => onSelectCommand('/chatgpt login')} onSaveProviderKey={props.onSaveProviderKey} onSelectModel={onSelectModel} agentSession={activeAgentSession} availableAgents={availableAgents} agentDiagnostics={agentDiagnostics} refreshAgents={refreshAgents} />
 			<InputStatus {...controller} operation={operation} />
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
@@ -68,7 +75,7 @@ export function InputBar(props: InputBarProps) {
 	);
 }
 
-function useInputBarController({operation, onSubmit, onCancel, onClear, onCompact, onStatus, onInit, reloadAgents}: InputBarProps) {
+function useInputBarController({operation, onSubmit, onCancel, onClear, onCompact, onStatus, onInit, reloadAgents, onChatGPTCommand, onLoadChatGPTAccounts}: InputBarProps) {
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
 	const [showHelp, setShowHelp] = useState(false);
@@ -76,7 +83,10 @@ function useInputBarController({operation, onSubmit, onCancel, onClear, onCompac
 	const {owner, isOwner, push, pop} = useKeyboardOwner();
 	const {exit} = useApp();
 	const {isSavingJev, savingJev, toggleJev} = useJevToggle(setNotice);
-	const isBusy = operation !== 'idle' || isSavingJev;
+	const chatgpt = useChatGPTControls({onCommand: onChatGPTCommand, onLoadAccounts: onLoadChatGPTAccounts});
+	const isRunningChatGPT = chatgpt.isRunning;
+	const isLoadingAccounts = chatgpt.isLoadingAccounts;
+	const isBusy = operation !== 'idle' || isSavingJev || isRunningChatGPT || isLoadingAccounts;
 	const isEditing = !isBusy && (owner === 'input-bar' || owner === 'command-palette');
 	const commandQuery = value.startsWith('/') && value.length > 1 && !value.includes(' ')
 		? value.slice(1)
@@ -94,14 +104,18 @@ function useInputBarController({operation, onSubmit, onCancel, onClear, onCompac
 		updateDraft('');
 		setNotice(undefined);
 		setShowHelp(false);
-		dispatchCommand(command, {onInit, onStatus, onClear, onCompact, exit, push, setShowHelp, toggleJev, setNotice, reloadAgents});
+		dispatchCommand(command, {onInit, onStatus, onClear, onCompact, exit, push, setShowHelp, toggleJev, setNotice, reloadAgents, runChatGPT: chatgpt.run, openChatGPTAccountPicker: chatgpt.openAccountPicker});
 	}
 
-	const submitDraft = createDraftSubmit({owner, isOwner, isBusy, savingJev, onSelectCommand, setNotice, setShowHelp, updateDraft, onSubmit});
+	const submitDraft = createDraftSubmit({owner, isOwner, isBusy, onSelectCommand, setNotice, setShowHelp, updateDraft, onSubmit});
 	const handleChange = createDraftChange({isOwner, push, pop, setValue, setShowHelp, setNotice});
 
-	useInputBarKeyboard({savingJev, isBusy, isEditing, isOwner, pop, setShowHelp, updateDraft, onCancel});
-	return {value, inputRevision, showHelp, isSavingJev, palette, notice, noticeTone, owner, isBusy, isEditing, commandQuery, onSelectCommand, handleChange, submitDraft};
+	useInputBarKeyboard({savingJev, isBusy, isEditing, isOwner, pop, setShowHelp, updateDraft, onCancel: () => {
+		if (chatgpt.isRunning) chatgpt.cancel(); else onCancel();
+	}});
+	return {value, inputRevision, showHelp, isSavingJev, isRunningChatGPT, isLoadingAccounts, chatgptAccounts: chatgpt.accounts,
+		selectChatGPTAccount: chatgpt.selectAccount,
+		palette, notice, noticeTone, owner, isBusy, isEditing, commandQuery, onSelectCommand, handleChange, submitDraft};
 }
 
 function useJevToggle(setNotice: ReturnType<typeof useTheme>['setNotice']) {
@@ -148,13 +162,13 @@ function useClosePickerOnBusy(isBusy: boolean, setShowHelp: DraftContext['setSho
 
 }
 
-function createDraftSubmit(context: Pick<DraftContext, 'owner' | 'isOwner' | 'isBusy' | 'savingJev' | 'onSelectCommand' | 'setNotice' | 'setShowHelp' | 'updateDraft' | 'onSubmit'>) {
-	const {owner, isOwner, isBusy, savingJev, onSelectCommand, setNotice, setShowHelp, updateDraft, onSubmit} = context;
+function createDraftSubmit(context: Pick<DraftContext, 'owner' | 'isOwner' | 'isBusy' | 'onSelectCommand' | 'setNotice' | 'setShowHelp' | 'updateDraft' | 'onSubmit'>) {
+	const {owner, isOwner, isBusy, onSelectCommand, setNotice, setShowHelp, updateDraft, onSubmit} = context;
 	function submitDraft(text: string) {
 		// The command palette owns Enter while it is open.
-		if (owner !== 'input-bar' || !isOwner('input-bar') || isBusy || savingJev.current || !text.trim()) return;
+		if (owner !== 'input-bar' || !isOwner('input-bar') || isBusy || !text.trim()) return;
 		if (text.trim().startsWith('/')) {
-			onSelectCommand(text.trim().toLowerCase());
+			onSelectCommand(text.trim());
 			return;
 		}
 		setNotice(undefined);
@@ -205,7 +219,14 @@ function useInputBarKeyboard(context: Pick<DraftContext, 'savingJev' | 'isBusy' 
 	}, {isActive: isEditing || isBusy});
 }
 
-function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' | 'onStatus' | 'onClear' | 'onCompact' | 'reloadAgents'> & Pick<DraftContext, 'push' | 'setShowHelp' | 'setNotice'> & {exit: () => void; toggleJev: () => Promise<void>}) {
+function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' | 'onStatus' | 'onClear' | 'onCompact' | 'reloadAgents'> & Pick<DraftContext, 'push' | 'setShowHelp' | 'setNotice'> & {exit: () => void; toggleJev: () => Promise<void>; runChatGPT: (command: string, profileId?: string) => Promise<void>; openChatGPTAccountPicker: () => Promise<void>}) {
+  const [base, sub, profileId] = command.trim().split(/\s+/);
+  if (base?.toLowerCase() === '/chatgpt') {
+    if (sub?.toLowerCase() === 'use' && profileId === undefined) void actions.openChatGPTAccountPicker();
+    else if (sub && ['login', 'logout', 'status', 'use'].includes(sub.toLowerCase())) void actions.runChatGPT(sub.toLowerCase(), profileId);
+    else actions.setNotice('Use /chatgpt login [new|profile-id], /chatgpt status, /chatgpt logout, or /chatgpt use <profile-id>.', 'error');
+    return;
+  }
   const commands = new Map<string, () => void>([
     ['/init', actions.onInit], ['/status', actions.onStatus], ['/help', () => {actions.setShowHelp(true);}],
     ['/model', () => {actions.push('model-picker');}], ['/connect', () => {actions.push('provider-picker');}],
@@ -217,16 +238,19 @@ function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' 
     ['/jev', () => {void actions.toggleJev();}], ['/theme', () => {actions.push('theme-picker');}],
     ['/clear', actions.onClear], ['/compact', actions.onCompact], ['/exit', actions.exit],
   ]);
-  const action = commands.get(command);
+  const action = commands.get(command.toLowerCase());
   if (action) action();
   else actions.setNotice(`Unknown command: ${command}. Use /help to see available commands.`, 'error');
 }
 
-function InputStatus({isBusy, isSavingJev, operation, showHelp, notice, noticeTone, palette}: Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'isSavingJev' | 'showHelp' | 'notice' | 'noticeTone' | 'palette'> & {operation: SessionOperation}) {
+// oxlint-disable-next-line eslint/complexity -- The status message follows the existing operation and authentication states.
+function InputStatus({isBusy, isSavingJev, isRunningChatGPT, isLoadingAccounts, operation, showHelp, notice, noticeTone, palette}: Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'isSavingJev' | 'isRunningChatGPT' | 'isLoadingAccounts' | 'showHelp' | 'notice' | 'noticeTone' | 'palette'> & {operation: SessionOperation}) {
 
 	let spinnerLabel = 'Generating · Esc to cancel';
 	if (isBusy) {
 		if (isSavingJev) spinnerLabel = 'Saving JEV preference…';
+		else if (isLoadingAccounts) spinnerLabel = 'Loading ChatGPT accounts…';
+		else if (isRunningChatGPT) spinnerLabel = 'Waiting for ChatGPT sign-in · Esc to cancel';
 		else if (operation === 'init') spinnerLabel = 'Initializing graph · Esc to cancel';
 		else if (operation === 'compact') spinnerLabel = 'Compacting conversation · Esc to cancel';
 	}
@@ -241,14 +265,16 @@ function InputStatus({isBusy, isSavingJev, operation, showHelp, notice, noticeTo
 	);
 }
 
-function InputPickers({isBusy, owner, modelPreferences, onSelectModel, agentSession, availableAgents, agentDiagnostics, refreshAgents}: Pick<InputBarProps, 'modelPreferences' | 'onSelectModel' | 'agentSession' | 'availableAgents' | 'agentDiagnostics' | 'refreshAgents'> & Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'owner'>) {
+function InputPickers({isBusy, owner, modelPreferences, chatgptModels, chatgptAccounts, onSelectChatGPTAccount, onSelectChatGPTLogin, onSaveProviderKey, onSelectModel, agentSession, availableAgents, agentDiagnostics, refreshAgents}: Pick<InputBarProps, 'modelPreferences' | 'chatgptModels' | 'onSaveProviderKey' | 'onSelectModel' | 'agentSession' | 'availableAgents' | 'agentDiagnostics' | 'refreshAgents'> & Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'owner'> & {chatgptAccounts: readonly ChatGPTAccount[]; onSelectChatGPTAccount: (id: string) => void; onSelectChatGPTLogin: () => void}) {
 	if (isBusy) return null;
 	return <>
 			{owner === 'theme-picker' && <ThemePicker />}
 			{(owner === 'model-picker' || owner === 'effort-picker') && (
-				<ModelPicker preferences={modelPreferences} onSelect={onSelectModel} />
+				<ModelPicker preferences={modelPreferences} chatgptModels={chatgptModels} onSelect={onSelectModel} />
 			)}
-			{(owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
+			{owner === 'chatgpt-account-picker' && <ChatGPTAccountPicker accounts={chatgptAccounts} onSelect={onSelectChatGPTAccount} />}
+			{(owner === 'provider-picker' || owner === 'openai-auth-picker' || owner === 'api-key-input') &&
+				<ProviderPicker onChatGPTLogin={onSelectChatGPTLogin} onSaveKey={onSaveProviderKey} openaiConnection={modelPreferences.openaiConnection} />}
 			<AgentPickerSlot owner={owner} agentSession={agentSession} availableAgents={availableAgents} agentDiagnostics={agentDiagnostics} refreshAgents={refreshAgents} />
 	</>;
 }

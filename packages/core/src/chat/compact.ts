@@ -4,6 +4,7 @@ import {
   compactRequestSchema,
   contextSummarySchema,
   findSupportedChatModel,
+  isOpenAIModelSlug,
   modelSupportsEffort,
   type CompactRequest,
   type CompactStreamEvent,
@@ -66,12 +67,13 @@ function generateSummary(request: CompactRequest, options: CompactChatOptions, s
     throw new ChatError('invalid_request', parsed.error.issues[0]?.message ?? 'Invalid compaction request.');
   }
   const definition = findSupportedChatModel(parsed.data.model);
-  if (!definition) throw new ChatError('invalid_request', 'Invalid compaction model.');
+  if (!definition && !isOpenAIModelSlug(parsed.data.model)) throw new ChatError('invalid_request', 'Invalid compaction model.');
   const resolved = resolveChatModel({
-    modelId: definition.id,
-    effort: modelSupportsEffort(definition, 'low') ? 'low' : undefined,
+    modelId: parsed.data.model,
+    effort: definition && modelSupportsEffort(definition, 'low') ? 'low' : undefined,
     credentials: options.credentials,
     fetch: options.fetch,
+    chatgpt: options.chatgpt,
   });
   // JSON keeps roles, partial-response status, and source boundaries explicit.
   // Historical messages are data in one user prompt, never live assistant turns.
@@ -86,7 +88,7 @@ function generateSummary(request: CompactRequest, options: CompactChatOptions, s
     ...resolved,
     instructions: SUMMARIZATION_PROMPT,
     prompt: JSON.stringify(source),
-    maxOutputTokens: MAX_SUMMARIZATION_OUTPUT_TOKENS,
+    ...(options.chatgpt === undefined ? {maxOutputTokens: MAX_SUMMARIZATION_OUTPUT_TOKENS} : {}),
     abortSignal: signal,
     maxRetries: 0,
   });

@@ -26,7 +26,7 @@ export function Welcome({ width }: { width: number }) {
 			<Box marginTop={1} flexDirection="column">
 				<Text color={palette.muted}>Type a message and press Enter to get started.</Text>
 				<Text color={palette.muted}>
-					<Text color={palette.prompt}>/connect</Text> add an API key · <Text color={palette.prompt}>/model</Text> choose a model · <Text color={palette.prompt}>/help</Text> all commands
+					<Text color={palette.prompt}>/connect</Text> connect a provider · <Text color={palette.prompt}>/model</Text> choose a model · <Text color={palette.prompt}>/help</Text> all commands
 				</Text>
 			</Box>
 		</Box>

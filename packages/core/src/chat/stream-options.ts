@@ -26,6 +26,7 @@ export function createChatStream(request: ChatRequest, options: ChatStreamOption
     effort: parsed.data.effort,
     credentials: options.credentials,
     fetch: options.fetch,
+    chatgpt: options.chatgpt,
   });
   const execute = createToolExecutor();
   const latestUser = [...parsed.data.messages].reverse().find(message => message.role === 'user');

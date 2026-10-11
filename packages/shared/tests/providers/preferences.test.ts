@@ -50,9 +50,10 @@ describe('model preferences', () => {
 		expect(writeConfig).toHaveBeenCalledExactlyOnceWith({...config, model: 'gpt-6.1-sol', effortByModel});
 	});
 
-	it('rejects an unknown model before accessing configuration', async () => {
+	it('rejects an unknown model without a ChatGPT connection', async () => {
+		vi.mocked(readConfig).mockResolvedValueOnce({});
 		await expect(saveModelPreference('missing')).rejects.toThrow('is not available');
-		expect(readConfig).not.toHaveBeenCalled();
+		expect(readConfig).toHaveBeenCalledOnce();
 		expect(writeConfig).not.toHaveBeenCalled();
 	});
 

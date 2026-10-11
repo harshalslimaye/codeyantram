@@ -2,6 +2,7 @@ import React, {useMemo, useRef, useState} from 'react';
 import {Spinner} from '@inkjs/ui';
 import {
 	findSupportedChatModel,
+	chatGPTSupportedEfforts,
 	modelHasEffortControl,
 	SUPPORTED_CHAT_MODELS,
 	type EffortLevel,
@@ -12,14 +13,16 @@ import {EffortPicker} from './effort-picker.js';
 import {Picker} from './picker.js';
 import {useTheme} from '../theme/provider.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
+import type {ChatGPTAccountModel} from '../chat/chatgpt.js';
 
 const VISIBLE_MODEL_COUNT = 10;
 
-export function ModelPicker({preferences, onSelect}: {
+export function ModelPicker({preferences, onSelect, chatgptModels = []}: {
 	preferences: ModelPreferences;
 	onSelect: (id: string, effort?: EffortLevel) => Promise<void>;
+	chatgptModels?: readonly ChatGPTAccountModel[];
 }) {
-	const {pendingModel, isSaving, attempt, saving, owner, pop, options, saveModel, selectModel} = useModelSelection(preferences, onSelect);
+	const {pendingModel, isSaving, attempt, saving, owner, pop, options, saveModel, selectModel} = useModelSelection(preferences, onSelect, chatgptModels);
 
 	return (
 		<>
@@ -46,16 +49,16 @@ export function ModelPicker({preferences, onSelect}: {
 	);
 }
 
-function useModelSelection(preferences: ModelPreferences, onSelect: (id: string, effort?: EffortLevel) => Promise<void>) {
+function useModelSelection(preferences: ModelPreferences, onSelect: (id: string, effort?: EffortLevel) => Promise<void>, chatgptModels: readonly ChatGPTAccountModel[]) {
 	const [pendingModel, setPendingModel] = useState<SupportedChatModelDefinition>();
 	const [isSaving, setIsSaving] = useState(false);
 	const [attempt, setAttempt] = useState(0);
 	const saving = useRef(false);
 	const {setNotice} = useTheme();
 	const {owner, isOwner, push, pop} = useKeyboardOwner();
-	const options = useMemo(() => modelOptions(preferences.modelId), [preferences.modelId]);
+	const options = useMemo(() => modelOptions(preferences, chatgptModels), [preferences, chatgptModels]);
 
-	async function saveModel(model: SupportedChatModelDefinition, effort?: EffortLevel) {
+	async function saveModel(model: Pick<SupportedChatModelDefinition, 'id'>, effort?: EffortLevel) {
 		if (saving.current || (!isOwner('model-picker') && !isOwner('effort-picker'))) return;
 		saving.current = true;
 		setIsSaving(true);
@@ -76,8 +79,14 @@ function useModelSelection(preferences: ModelPreferences, onSelect: (id: string,
 
 	function selectModel(id: string) {
 		if (!isOwner('model-picker') || saving.current) return;
-		const model = findSupportedChatModel(id);
-		if (!model) return;
+		const accountModel = preferences.openaiConnection === 'chatgpt' ? chatgptModels.find(item => item.id === id) : undefined;
+		const model: SupportedChatModelDefinition | undefined = accountModel === undefined ? findSupportedChatModel(id) : {
+			id, provider: 'openai', supportedEffortLevels: chatGPTSupportedEfforts(id, accountModel.supportedEffortLevels),
+			contextWindow: accountModel.contextWindow ?? 0,
+		};
+		if (!model) {
+			return;
+		}
 		setPendingModel(model);
 		if (modelHasEffortControl(model)) push('effort-picker');
 		else void saveModel(model);
@@ -86,11 +95,12 @@ function useModelSelection(preferences: ModelPreferences, onSelect: (id: string,
 	return {pendingModel, isSaving, attempt, saving, owner, pop, options, saveModel, selectModel};
 }
 
-function modelOptions(modelId: ModelPreferences['modelId']) {
-	return [...SUPPORTED_CHAT_MODELS]
-		.sort((left, right) => Number(right.id === modelId) - Number(left.id === modelId))
+function modelOptions(preferences: ModelPreferences, chatgptModels: readonly ChatGPTAccountModel[]) {
+	const models = SUPPORTED_CHAT_MODELS.filter(model => preferences.openaiConnection !== 'chatgpt' || model.provider !== 'openai');
+	return [...models, ...(preferences.openaiConnection === 'chatgpt' ? chatgptModels.map(model => ({id: model.id, provider: 'openai', displayName: model.displayName})) : [])]
+		.sort((left, right) => Number(right.id === preferences.modelId) - Number(left.id === preferences.modelId))
 		.map(model => ({
 			value: model.id,
-			label: `${model.provider.padEnd(VISIBLE_MODEL_COUNT)} ${model.id}${model.id === modelId ? ' · active' : ''}`,
+			label: `${model.provider.padEnd(VISIBLE_MODEL_COUNT)} ${'displayName' in model ? model.displayName : model.id}${model.id === preferences.modelId ? ' · active' : ''}`,
 		}));
 }

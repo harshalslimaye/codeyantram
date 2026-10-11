@@ -5,12 +5,13 @@ import {saveProviderApiKey, type ConnectableProvider} from '@codeyantram/shared'
 import {useKeyboardOwner} from '../keyboard/provider.js';
 import {useTheme} from '../theme/provider.js';
 
-export function ApiKeyInput({provider, providerName, onSaved}: {
+export function ApiKeyInput({provider, providerName, onSaved, onSaveKey = saveProviderApiKey}: {
 	provider: ConnectableProvider;
 	providerName: string;
 	onSaved: () => void;
+	onSaveKey?: (provider: ConnectableProvider, apiKey: string) => Promise<void>;
 }) {
-	const {isSaving, owner, palette, saveKey} = useApiKeyInput(provider, onSaved);
+	const {isSaving, owner, palette, saveKey} = useApiKeyInput(provider, onSaved, onSaveKey);
 
 	return (
 		<>
@@ -27,7 +28,8 @@ export function ApiKeyInput({provider, providerName, onSaved}: {
 	);
 }
 
-function useApiKeyInput(provider: ConnectableProvider, onSaved: () => void) {
+function useApiKeyInput(provider: ConnectableProvider, onSaved: () => void,
+	onSaveKey: (provider: ConnectableProvider, apiKey: string) => Promise<void>) {
 	const [isSaving, setIsSaving] = useState(false);
 	const saving = useRef(false);
 	const {owner, isOwner, pop} = useKeyboardOwner();
@@ -43,11 +45,12 @@ function useApiKeyInput(provider: ConnectableProvider, onSaved: () => void) {
 		setIsSaving(true);
 		setNotice(undefined);
 		try {
-			await saveProviderApiKey(provider, apiKey);
+			await onSaveKey(provider, apiKey);
 			pop('api-key-input');
 			onSaved();
-		} catch {
-			setNotice('Could not save the API key. Check your user config and try again.', 'error');
+		} catch (error) {
+			setNotice(provider === 'openai' && error instanceof Error ? error.message :
+				'Could not save the API key. Check your user config and try again.', 'error');
 		} finally {
 			saving.current = false;
 			setIsSaving(false);

@@ -2,8 +2,8 @@
 
 `KeyboardProvider` in `provider.tsx` keeps a stack of keyboard owners: `input-bar`,
 `command-palette`, `theme-picker`, `model-picker`, `effort-picker`,
-`provider-picker`, `api-key-input`, `approval`, `agent-picker`, or
-`yolo-confirmation`. It wraps the CLI in `App`. The input bar is
+`provider-picker`, `openai-auth-picker`, `api-key-input`, `approval`, `agent-picker`,
+`yolo-confirmation`, or `chatgpt-account-picker`. It wraps the CLI in `App`. The input bar is
 the permanent bottom entry; only the top entry receives input. Components use
 `useKeyboardOwner()` to access the same ownership state; the hook requires a provider.
 
@@ -107,10 +107,12 @@ Both pickers disable prompt editing and ignore input while saving. Save failures
 keep the picker open and allow retrying the same choice. Model and per-model effort
 preferences are saved to the global user config.
 
-Selecting `/connect` opens `ProviderPicker`. Selecting a provider opens a masked
-`ApiKeyInput` above the provider list. Escape returns to the list without saving;
-Escape in the list closes the flow. Enter saves a nonempty API key to
-`providers[provider].apiKey` in the global user config, then closes both steps.
+Selecting `/connect` opens `ProviderPicker`. Selecting OpenAI opens an API key or
+ChatGPT login choice. Login starts the browser flow and returns to the input bar.
+Selecting API key opens a masked `ApiKeyInput`. Escape returns to the previous
+choice without saving; Escape in the provider list closes the flow. Enter saves
+a nonempty API key to `providers[provider].apiKey` in the global user config,
+then closes the flow.
 The prompt stays disabled throughout the flow. Saving blocks additional input,
 and failures keep the key input open for retry. Provider labels show whether a
 key is configured; saving does not verify the key against the provider's API.

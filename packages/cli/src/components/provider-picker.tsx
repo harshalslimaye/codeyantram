@@ -1,6 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {Spinner} from '@inkjs/ui';
-import {readConfiguredProviders, readJevConfiguration, SUPPORTED_PROVIDERS, type ConnectableProvider} from '@codeyantram/shared';
+import {readConfiguredProviders, readJevConfiguration, SUPPORTED_PROVIDERS, type ConnectableProvider, type OpenAIConnection} from '@codeyantram/shared';
 import {Picker} from './picker.js';
 import {ApiKeyInput} from './api-key-input.js';
 import {useKeyboardOwner} from '../keyboard/provider.js';
@@ -14,21 +14,24 @@ const PROVIDER_NAMES: Record<ConnectableProvider, string> = {
 	typesafe: 'TypeSafe (JEV)',
 };
 
-export function ProviderPicker() {
+export function ProviderPicker({onChatGPTLogin, onSaveKey, openaiConnection = 'api-key'}: {onChatGPTLogin?: () => void;
+	openaiConnection?: OpenAIConnection;
+	onSaveKey?: (provider: ConnectableProvider, apiKey: string) => Promise<void>}) {
 	const {configuredProviders, isLoading} = useConfiguredProviders();
 	const [selectedProvider, setSelectedProvider] = useState<ConnectableProvider>();
 	const {owner, push, pop} = useKeyboardOwner();
 	const {setNotice} = useTheme();
 
-	const options = useMemo(() => CONNECTABLE_PROVIDERS.map(provider => ({
-		value: provider,
-		label: `${PROVIDER_NAMES[provider]}${configuredProviders.includes(provider) ? ' · configured' : ''}`, // oxlint-disable-line security/detect-object-injection -- Provider keys come from the supported provider union.
-	})), [configuredProviders]);
+	const options = useMemo(() => CONNECTABLE_PROVIDERS.map(provider => {
+		let state = configuredProviders.includes(provider) ? ' · configured' : '';
+		if (provider === 'openai' && openaiConnection === 'chatgpt') state = ' · ChatGPT plan';
+		return {value: provider, label: `${PROVIDER_NAMES[provider]}${state}`}; // oxlint-disable-line security/detect-object-injection -- Provider keys come from the supported provider union.
+	}), [configuredProviders, openaiConnection]);
 
 	function selectProvider(provider: ConnectableProvider) {
 		setNotice(undefined);
 		setSelectedProvider(provider);
-		push('api-key-input');
+		push(provider === 'openai' ? 'openai-auth-picker' : 'api-key-input');
 	}
 
 	return (
@@ -42,11 +45,14 @@ export function ProviderPicker() {
 				onCancel={() => pop('provider-picker')}
 			/>
 			{isLoading && <Spinner label="Loading providers…" />}
+			{owner === 'openai-auth-picker' && <OpenAIConnectionChoice onApiKey={() => push('api-key-input')} onChatGPTLogin={onChatGPTLogin} />}
 			{owner === 'api-key-input' && selectedProvider && (
 				<ApiKeyInput
 					provider={selectedProvider}
+					onSaveKey={onSaveKey}
 					providerName={PROVIDER_NAMES[selectedProvider]} // oxlint-disable-line security/detect-object-injection -- Provider keys come from the supported provider union.
 					onSaved={() => {
+						if (selectedProvider === 'openai') pop('openai-auth-picker');
 						pop('provider-picker');
 						setNotice(`${PROVIDER_NAMES[selectedProvider]} API key saved to user config.`); // oxlint-disable-line security/detect-object-injection -- Provider keys come from the supported provider union.
 					}}
@@ -54,6 +60,22 @@ export function ProviderPicker() {
 			)}
 		</>
 	);
+}
+
+function OpenAIConnectionChoice({onApiKey, onChatGPTLogin}: {onApiKey: () => void; onChatGPTLogin?: () => void}) {
+	const {pop} = useKeyboardOwner();
+	const {setNotice} = useTheme();
+	function select(method: 'api-key' | 'login') {
+		if (method === 'api-key') {onApiKey(); return;}
+		pop('openai-auth-picker');
+		pop('provider-picker');
+		if (onChatGPTLogin) onChatGPTLogin();
+		else setNotice('ChatGPT login is unavailable in this session.', 'error');
+	}
+	return <Picker owner="openai-auth-picker" title="Connect OpenAI · ↑/↓ navigate · Enter select · Esc back"
+		options={[{value: 'api-key', label: 'API key · OpenAI API billing'},
+			{value: 'login', label: 'Login · ChatGPT plan'}]}
+		onSelect={select} onCancel={() => pop('openai-auth-picker')} />;
 }
 
 function useConfiguredProviders() {

@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
 import type {ChatRequest, ChatStreamEvent, ResolvedAgent} from '@codeyantram/shared';
 import {toChatErrorEvent} from './errors.js';
-import type {ProviderCredentials} from './models.js';
+import type {ProviderCredentials, ResolveChatModelOptions} from './models.js';
 import type {ToolHostServices} from '../tools/catalog.js';
 import {createChatStream} from './stream-options.js';
 import {translateProviderEvents} from './provider-events.js';
@@ -12,6 +12,7 @@ export interface ChatStreamOptions extends ToolHostServices {
   agent?: ResolvedAgent;
   abortSignal?: AbortSignal;
   fetch?: typeof globalThis.fetch;
+  chatgpt?: ResolveChatModelOptions['chatgpt'];
 }
 
 /** Streams the shared chat events; cancellation ends without a terminal event. */

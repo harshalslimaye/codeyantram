@@ -1,8 +1,10 @@
 export * from './preferences.js';
+export * from './connection.js';
 
 import {readConfig, writeConfig} from '../../filesystem/config.js';
 import {asObject} from '../../utils/objects.js';
 import {findSupportedChatModel, SUPPORTED_PROVIDERS, type ConnectableProvider, type ProviderCredentials, type SupportedProvider} from '../config/index.js';
+import {openAIConnection} from './connection.js';
 
 function readApiKey(providers: Record<string, unknown>, provider: SupportedProvider): string | undefined {
 	const {apiKey} = asObject(providers[provider]); // oxlint-disable-line security/detect-object-injection -- Provider keys come from the fixed supported provider set.
@@ -12,7 +14,8 @@ function readApiKey(providers: Record<string, unknown>, provider: SupportedProvi
 export async function readConfiguredProviders(): Promise<SupportedProvider[]> {
 	const config = await readConfig();
 	const providers = asObject(config.providers);
-	return SUPPORTED_PROVIDERS.filter(provider => readApiKey(providers, provider) !== undefined);
+	return SUPPORTED_PROVIDERS.filter(provider =>
+		(provider !== 'openai' || openAIConnection(config) === 'api-key') && readApiKey(providers, provider) !== undefined);
 }
 
 export async function saveProviderApiKey(provider: ConnectableProvider, apiKey: string): Promise<void> {
@@ -23,6 +26,7 @@ export async function saveProviderApiKey(provider: ConnectableProvider, apiKey: 
 	const providers = asObject(config.providers);
 	await writeConfig({
 		...config,
+		...(provider === 'openai' && openAIConnection(config) === 'chatgpt' ? {openaiConnection: 'api-key'} : {}),
 		providers: {
 			...providers,
 			[provider]: {...asObject(providers[provider]), apiKey: key}, // oxlint-disable-line security/detect-object-injection -- Provider keys come from the fixed supported provider set.
@@ -39,6 +43,7 @@ export async function readProviderCredentials(
 	if (!model) return {};
 
 	const config = await readConfiguration();
+	if (model.provider === 'openai' && openAIConnection(config) === 'chatgpt') return {};
 	const apiKey = readApiKey(asObject(config.providers), model.provider);
 	return apiKey === undefined ? {} : {[model.provider]: apiKey};
 }

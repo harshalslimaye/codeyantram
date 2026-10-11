@@ -34,6 +34,7 @@ describe('private server lifecycle failures', () => {
 		fakeServer({port: 1234});
 		const running = await startChatServer({workspaceRoot: '/selected/project'});
 		expect(createApp).toHaveBeenCalledExactlyOnceWith({workspaceRoot: '/selected/project', privateSessionToken: asymmetric.any(String),
+			chatgptSession: asymmetric.any(Object),
 			initialAgents: asymmetric.any(Object), reloadAgents: asymmetric.any(Function),
 			approvePatch: asymmetric.any(Function), approveCommand: asymmetric.any(Function), authorizeAgent: asymmetric.any(Function),
 			approvePatchForTurn: asymmetric.any(Function), approveCommandForTurn: asymmetric.any(Function),
