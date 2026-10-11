@@ -71,7 +71,7 @@ Follow-up messages include the conversation history. Escape cancels generation
 and keeps any partial answer; use the mouse wheel or trackpad over the chat area
 to scroll through the conversation. The input and status bars stay at the bottom.
 Use `/clear` to reset the conversation, `/help` to list commands, or `/exit` to quit.
-Use `/agent` to select Ask, Build, or Yolo for the current CLI session. Build
+Use `/agent` to select Ask, Build, Yolo, or a custom agent for the current CLI session. Build
 asks you to review each exact patch or command. Yolo requires a separate
 activation and then runs permitted patches and commands without per-action
 prompts. Its Bash commands are not sandboxed. Switching away from Yolo resets
@@ -80,6 +80,37 @@ The picker shows each agent's source, approval behavior, availability, and
 effective tool count. The status bar shows the current agent, and assistant
 turns retain their agent label when you switch agents or compact history.
 Conversations stay in memory for the current CLI session.
+
+Custom agents are Markdown files in `~/.config/codeyantram/agents/` or
+`<workspace>/.codeyantram/agents/` (the user directory follows the platform
+config location). Create `reviewer.md` with an instruction body:
+
+```md
+---
+name: Reviewer
+description: Review code without editing it
+---
+Inspect the relevant code and report concrete problems with file references.
+```
+
+For an agent that can request edits, use a Build base and a subset of its tools:
+
+```md
+---
+name: Test Fixer
+extends: build
+tools: [read, grep, glob, git_status, git_diff, apply_patch, bash]
+---
+Find the smallest correct change and report the result of each command.
+```
+
+The filename supplies the source-qualified ID (`user:reviewer` or
+`project:reviewer`). Instructions guide the model; the tool list can only
+remove inherited tools. Build actions still need approval. An agent extending
+Yolo needs explicit session activation and stays under host capability limits.
+Use `/agent reload` after changing files. Invalid files appear as diagnostics
+in the picker and reload notice. If a selected file disappears, choose another
+agent before sending a message.
 
 Use `/connect` and select **TypeSafe (JEV)** to save its evaluation API key.
 Use `/jev` to toggle JEV usage on or off; the command appears in the palette

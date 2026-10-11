@@ -20,7 +20,9 @@ type InputBarProps = {
 	modelPreferences: ModelPreferences;
 	agentSession?: AgentSessionController;
 	availableAgents?: readonly AgentMetadata[];
+	agentDiagnostics?: readonly string[];
 	refreshAgents?: () => Promise<void>;
+	reloadAgents?: () => Promise<readonly {filePath?: string; message: string}[]>;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 	operation: SessionOperation;
 	onSubmit: (text: string) => void;
@@ -46,7 +48,7 @@ type DraftContext = {
 };
 
 export function InputBar(props: InputBarProps) {
-	const {modelPreferences, onSelectModel, operation, agentSession, availableAgents = FALLBACK_AGENT_METADATA, refreshAgents} = props;
+	const {modelPreferences, onSelectModel, operation, agentSession, availableAgents = FALLBACK_AGENT_METADATA, agentDiagnostics, refreshAgents} = props;
 	const [localAgentSession] = useState(() => new AgentSessionController({patch: false, command: false}));
 	const activeAgentSession = agentSession ?? localAgentSession;
 	const {columns} = useWindowSize();
@@ -56,7 +58,7 @@ export function InputBar(props: InputBarProps) {
 	return (
 		<Box flexDirection="column" width="100%">
 			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} />}
-			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} onSelectModel={onSelectModel} agentSession={activeAgentSession} availableAgents={availableAgents} refreshAgents={refreshAgents} />
+			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} onSelectModel={onSelectModel} agentSession={activeAgentSession} availableAgents={availableAgents} agentDiagnostics={agentDiagnostics} refreshAgents={refreshAgents} />
 			<InputStatus {...controller} operation={operation} />
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
@@ -66,7 +68,7 @@ export function InputBar(props: InputBarProps) {
 	);
 }
 
-function useInputBarController({operation, onSubmit, onCancel, onClear, onCompact, onStatus, onInit}: InputBarProps) {
+function useInputBarController({operation, onSubmit, onCancel, onClear, onCompact, onStatus, onInit, reloadAgents}: InputBarProps) {
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
 	const [showHelp, setShowHelp] = useState(false);
@@ -92,7 +94,7 @@ function useInputBarController({operation, onSubmit, onCancel, onClear, onCompac
 		updateDraft('');
 		setNotice(undefined);
 		setShowHelp(false);
-		dispatchCommand(command, {onInit, onStatus, onClear, onCompact, exit, push, setShowHelp, toggleJev, setNotice});
+		dispatchCommand(command, {onInit, onStatus, onClear, onCompact, exit, push, setShowHelp, toggleJev, setNotice, reloadAgents});
 	}
 
 	const submitDraft = createDraftSubmit({owner, isOwner, isBusy, savingJev, onSelectCommand, setNotice, setShowHelp, updateDraft, onSubmit});
@@ -203,11 +205,15 @@ function useInputBarKeyboard(context: Pick<DraftContext, 'savingJev' | 'isBusy' 
 	}, {isActive: isEditing || isBusy});
 }
 
-function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' | 'onStatus' | 'onClear' | 'onCompact'> & Pick<DraftContext, 'push' | 'setShowHelp' | 'setNotice'> & {exit: () => void; toggleJev: () => Promise<void>}) {
+function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' | 'onStatus' | 'onClear' | 'onCompact' | 'reloadAgents'> & Pick<DraftContext, 'push' | 'setShowHelp' | 'setNotice'> & {exit: () => void; toggleJev: () => Promise<void>}) {
   const commands = new Map<string, () => void>([
     ['/init', actions.onInit], ['/status', actions.onStatus], ['/help', () => {actions.setShowHelp(true);}],
     ['/model', () => {actions.push('model-picker');}], ['/connect', () => {actions.push('provider-picker');}],
     ['/agent', () => {actions.push('agent-picker');}],
+		['/agent reload', () => {void actions.reloadAgents?.().then(diagnostics => {
+			actions.setNotice(diagnostics.length ? `Agent reload: ${diagnostics.map(item => `${item.filePath ?? 'file'}: ${item.message}`).join('; ')}` : 'Agents reloaded.');
+			return null;
+		}).catch(() => actions.setNotice('Could not reload agents.', 'error'));}],
     ['/jev', () => {void actions.toggleJev();}], ['/theme', () => {actions.push('theme-picker');}],
     ['/clear', actions.onClear], ['/compact', actions.onCompact], ['/exit', actions.exit],
   ]);
@@ -235,7 +241,7 @@ function InputStatus({isBusy, isSavingJev, operation, showHelp, notice, noticeTo
 	);
 }
 
-function InputPickers({isBusy, owner, modelPreferences, onSelectModel, agentSession, availableAgents, refreshAgents}: Pick<InputBarProps, 'modelPreferences' | 'onSelectModel' | 'agentSession' | 'availableAgents' | 'refreshAgents'> & Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'owner'>) {
+function InputPickers({isBusy, owner, modelPreferences, onSelectModel, agentSession, availableAgents, agentDiagnostics, refreshAgents}: Pick<InputBarProps, 'modelPreferences' | 'onSelectModel' | 'agentSession' | 'availableAgents' | 'agentDiagnostics' | 'refreshAgents'> & Pick<ReturnType<typeof useInputBarController>, 'isBusy' | 'owner'>) {
 	if (isBusy) return null;
 	return <>
 			{owner === 'theme-picker' && <ThemePicker />}
@@ -243,12 +249,12 @@ function InputPickers({isBusy, owner, modelPreferences, onSelectModel, agentSess
 				<ModelPicker preferences={modelPreferences} onSelect={onSelectModel} />
 			)}
 			{(owner === 'provider-picker' || owner === 'api-key-input') && <ProviderPicker />}
-			<AgentPickerSlot owner={owner} agentSession={agentSession} availableAgents={availableAgents} refreshAgents={refreshAgents} />
+			<AgentPickerSlot owner={owner} agentSession={agentSession} availableAgents={availableAgents} agentDiagnostics={agentDiagnostics} refreshAgents={refreshAgents} />
 	</>;
 }
 
-function AgentPickerSlot({owner, agentSession, availableAgents, refreshAgents}: Pick<InputBarProps, 'agentSession' | 'availableAgents' | 'refreshAgents'> &
+function AgentPickerSlot({owner, agentSession, availableAgents, agentDiagnostics, refreshAgents}: Pick<InputBarProps, 'agentSession' | 'availableAgents' | 'agentDiagnostics' | 'refreshAgents'> &
 	Pick<ReturnType<typeof useInputBarController>, 'owner'>) {
 	if (!agentSession || (owner !== 'agent-picker' && owner !== 'yolo-confirmation')) return null;
-	return <AgentPicker session={agentSession} agents={availableAgents ?? FALLBACK_AGENT_METADATA} refresh={refreshAgents} />;
+	return <AgentPicker session={agentSession} agents={availableAgents ?? FALLBACK_AGENT_METADATA} diagnostics={agentDiagnostics} refresh={refreshAgents} />;
 }

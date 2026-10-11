@@ -171,9 +171,9 @@ describe('CLI chat UI', () => {
 			serverBaseUrl="http://localhost" serverSessionToken="test-session" workspaceRoot={process.cwd()} initializeGraph={initializeGraph} />);
 		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
 		ui.stdin.write('/agent');
-		await vi.waitFor(() => expect(ui.frame()).toContain('Choose Ask, Build, or Yolo'));
+  await vi.waitFor(() => expect(ui.frame()).toContain('Choose an agent for this session'));
 		ui.stdin.write('\r');
-		await vi.waitFor(() => expect(fetchResponse).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(fetchResponse).toHaveBeenCalledTimes(2));
 		await vi.waitFor(() => expect(ui.frame()).toContain('Inspect source'));
 		expect(ui.frame()).toContain('builtin · none');
 		expect(ui.frame()).toContain('Edit with review');
@@ -189,7 +189,7 @@ describe('CLI chat UI', () => {
 		const ui = renderWorkspace(session, {agentSession: agents});
 		await vi.waitFor(() => expect(ui.frame()).toContain('Ask'));
 		ui.stdin.write('/agent');
-		await vi.waitFor(() => expect(ui.frame()).toContain('Choose Ask, Build, or Yolo'));
+  await vi.waitFor(() => expect(ui.frame()).toContain('Choose an agent for this session'));
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Choose an agent for the next turn'));
 		ui.stdin.write('\x1b[B');

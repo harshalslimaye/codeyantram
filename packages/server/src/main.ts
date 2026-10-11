@@ -1,5 +1,6 @@
 import {createApp} from './app.js';
 import {createServerShutdown} from './http/lifecycle.js';
+import {loadAgentFiles} from './agents/files.js';
 
 const DEFAULT_PORT = 43187;
 const MAX_PORT = 65535;
@@ -9,7 +10,9 @@ if (!Number.isInteger(port) || port < 1 || port > MAX_PORT) {
   throw new Error('CODEYANTRAM_PORT must be an integer between 1 and 65535.');
 }
 
-const app = createApp({workspaceRoot: process.env.INIT_CWD ?? process.cwd()});
+const workspaceRoot = process.env.INIT_CWD ?? process.cwd();
+const initialAgents = await loadAgentFiles(workspaceRoot);
+const app = createApp({workspaceRoot, initialAgents, reloadAgents: () => loadAgentFiles(workspaceRoot)});
 const server = app.listen(port, '127.0.0.1', () => {
   process.stdout.write(`Codeyantram server listening at http://127.0.0.1:${port}\n`);
 });

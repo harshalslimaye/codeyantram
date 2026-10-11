@@ -1,7 +1,7 @@
 import express from 'express';
-import {compactChat, streamChat, createAgentRegistry, type BashApprover, type PatchApprover,
+import {compactChat, streamChat, createAgentRegistry, type AgentRegistry, type AgentDiagnostic, type BashApprover, type PatchApprover,
   type createJevEvaluator, type WebTransport} from '@codeyantram/core';
-import {readProviderCredentials, type readConfig, type ChatRequest} from '@codeyantram/shared';
+import {readProviderCredentials, type readConfig, type ChatRequest, type AgentApprovalPolicy} from '@codeyantram/shared';
 import {handleError} from './middlewares/index.js';
 import {createChatRouter} from './routers/chat.js';
 import {createCompactRouter} from './routers/compact.js';
@@ -12,6 +12,8 @@ import {agentMetadata, readChatOptions} from './agents/host.js';
 const HTTP_FORBIDDEN = 403;
 
 export interface ServerAppOptions {
+  initialAgents?: {registry: AgentRegistry; diagnostics: readonly AgentDiagnostic[]};
+  reloadAgents?: () => Promise<{registry: AgentRegistry; diagnostics: readonly AgentDiagnostic[]}>;
   /** Project root selected by the host; graph storage canonicalizes it on first use. */
   workspaceRoot?: string;
   acquireGraphCoordinator?: typeof acquireGraphCoordinator;
@@ -30,7 +32,7 @@ export interface ServerAppOptions {
   /** Optional per-turn approvers keep automatic decisions bound to the turn snapshot. */
   approvePatchForTurn?: (request: ChatRequest) => PatchApprover | undefined;
   approveCommandForTurn?: (request: ChatRequest) => BashApprover | undefined;
-  agentStatus?: (id: string) => {available: boolean; patch: boolean; command: boolean};
+  agentStatus?: (id: string, approval: AgentApprovalPolicy) => {available: boolean; patch: boolean; command: boolean};
   /** Required on every CLI-owned HTTP route when set. */
   privateSessionToken?: string;
 }
@@ -38,15 +40,27 @@ export interface ServerAppOptions {
 export function createApp(options: ServerAppOptions = {}) {
   const app = express();
   const workspaceGraph = new WorkspaceGraphService(options.workspaceRoot, options.acquireGraphCoordinator);
-  const agents = createAgentRegistry();
+  let agentState = options.initialAgents ?? {registry: createAgentRegistry(), diagnostics: []};
+  const turnRegistries = new WeakMap<ChatRequest, AgentRegistry>();
   app.locals.workspaceRoot = options.workspaceRoot;
   app.locals.workspaceGraph = workspaceGraph;
   const chatRouter = createChatRouter({
-    agents: () => agentMetadata(agents, options),
-    hasAgent: id => agents.get(id) !== undefined,
-    validateAgent: options.validateAgent,
+    agents: () => agentMetadata(agentState.registry, options),
+    diagnostics: () => agentState.diagnostics,
+    reloadAgents: options.reloadAgents === undefined ? undefined : async () => {
+      const next = await options.reloadAgents?.();
+      if (next === undefined) throw new Error('Reload is unavailable.');
+      agentState = next;
+      return next.diagnostics;
+    },
+    hasAgent: id => agentState.registry.get(id) !== undefined,
+    validateAgent: request => {
+      if (options.validateAgent?.(request) === false) return false;
+      turnRegistries.set(request, agentState.registry);
+      return true;
+    },
     readCredentials: modelId => readProviderCredentials(modelId, options.readConfig),
-    readOptions: (request, signal) => readChatOptions(request, signal, agents, options),
+    readOptions: (request, signal) => readChatOptions(request, signal, turnRegistries.get(request) ?? agentState.registry, options),
     // Tests can supply a fake stream to avoid calling AI providers.
     streamChat: (request, streamOptions) => (options.streamChat ?? streamChat)(request, {
       ...streamOptions, ...((options.workspaceRoot !== undefined && options.workspaceRoot !== '') ? {workspaceGraph} : {}),

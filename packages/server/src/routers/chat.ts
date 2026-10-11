@@ -1,14 +1,17 @@
 import {Router} from 'express';
-import type {streamChat, ProviderCredentials, ChatStreamOptions} from '@codeyantram/core';
+import type {streamChat, ProviderCredentials, ChatStreamOptions, AgentDiagnostic} from '@codeyantram/core';
 import {chatRequestSchema, type ChatRequest, type ChatStreamEvent, type AgentMetadata} from '@codeyantram/shared';
 import {serveEventStream} from '../http/stream.js';
 
 const HTTP_BAD_REQUEST = 400;
+const HTTP_SERVER_ERROR = 500;
 
 export interface ChatDependencies {
   readCredentials: (modelId: string) => Promise<ProviderCredentials>;
   readOptions?: (request: ChatRequest, signal: AbortSignal) => Promise<ChatStreamOptions>;
   agents?: () => readonly AgentMetadata[];
+  diagnostics?: () => readonly AgentDiagnostic[];
+  reloadAgents?: () => Promise<readonly AgentDiagnostic[]>;
   hasAgent?: (id: string) => boolean;
   validateAgent?: (request: ChatRequest) => boolean;
   streamChat: typeof streamChat;
@@ -18,6 +21,12 @@ export function createChatRouter(dependencies: ChatDependencies): Router {
   const router = Router();
 
   router.get('/agents', (_request, response) => response.json(dependencies.agents?.() ?? []));
+  router.get('/agents/diagnostics', (_request, response) => response.json(dependencies.diagnostics?.() ?? []));
+  router.post('/agents/reload', async (_request, response) => {
+    if (!dependencies.reloadAgents) {response.status(HTTP_BAD_REQUEST).json({message: 'Reload is unavailable.'}); return;}
+    try {response.json({diagnostics: await dependencies.reloadAgents(), agents: dependencies.agents?.() ?? []});}
+    catch {response.status(HTTP_SERVER_ERROR).json({message: 'Could not reload agents.'});}
+  });
 
   router.post('/chat', async (request, response) => {
     const parsed = chatRequestSchema.safeParse(request.body);

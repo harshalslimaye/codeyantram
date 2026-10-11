@@ -11,19 +11,24 @@ import type {ApprovalController} from '../chat/approval.js';
 import {ApprovalView} from './approval-view.js';
 import {AgentSessionController} from '../chat/agent-session.js';
 import {FALLBACK_AGENT_METADATA} from '../chat/agent-catalog.js';
+import {useTheme} from '../theme/provider.js';
 
-export function ChatWorkspace({session, approvals, agentSession, availableAgents = FALLBACK_AGENT_METADATA, refreshAgents, modelPreferences, effort, branch, onSelectModel}: {
+// oxlint-disable-next-line eslint/max-lines-per-function -- The workspace renders the conversation and input together.
+export function ChatWorkspace({session, approvals, agentSession, availableAgents = FALLBACK_AGENT_METADATA, agentDiagnostics, refreshAgents, reloadAgents, modelPreferences, effort, branch, onSelectModel}: {
 	session: ChatSession;
 	approvals?: ApprovalController;
 	agentSession?: AgentSessionController;
 	availableAgents?: readonly AgentMetadata[];
+	agentDiagnostics?: readonly string[];
 	refreshAgents?: () => Promise<void>;
+	reloadAgents?: () => Promise<readonly {filePath?: string; message: string}[]>;
 	modelPreferences: ModelPreferences;
 	effort?: EffortLevel;
 	branch: string;
 	onSelectModel: (id: string, effort?: EffortLevel) => Promise<void>;
 }) {
 	const {rows} = useWindowSize();
+	const {setNotice} = useTheme();
 	const {agents, selectedAgent} = useAgentSelection(agentSession);
 	const {messages, statusEntries, operation, isStreaming, compaction, error, notice} = useSyncExternalStore(session.subscribe, session.getSnapshot);
 	const pending = useSyncExternalStore(approvals?.subscribe ?? emptySubscribe, approvals?.getSnapshot ?? noApproval);
@@ -40,18 +45,26 @@ export function ChatWorkspace({session, approvals, agentSession, availableAgents
 					modelPreferences={modelPreferences}
 					agentSession={agents}
 					availableAgents={availableAgents}
+					agentDiagnostics={agentDiagnostics}
 					refreshAgents={refreshAgents}
+					reloadAgents={reloadAgents}
 					onSelectModel={onSelectModel}
 					operation={operation}
-					onSubmit={text => {void session.send(text, modelPreferences.modelId, effort,
-						selectedAgent.id === 'ask' ? undefined : selectedAgent.id);}}
+					onSubmit={text => {
+						if (selectedAgent.id !== 'ask' && !availableAgents.some(agent => agent.id === selectedAgent.id)) {
+							setNotice('Selected agent is unavailable. Choose another with /agent.', 'error');
+							return;
+						}
+						void session.send(text, modelPreferences.modelId, effort,
+							selectedAgent.id === 'ask' ? undefined : selectedAgent.id);
+					}}
 					onCancel={() => session.cancel()}
 					onClear={() => session.clear()}
 					onCompact={() => {void session.compact(modelPreferences.modelId);}}
 					onStatus={() => session.showStatus(modelPreferences.modelId)}
 					onInit={() => {void session.initialize();}}
 				/>
-				<StatusBar branch={branch} agent={selectedAgent.id} model={modelPreferences.modelId} effort={effort} contextTurnCount={contextTurnCount} contextStatus={contextStatus} />
+				<StatusBar branch={branch} agent={selectedAgent.id} automaticActive={selectedAgent.yoloActive} model={modelPreferences.modelId} effort={effort} contextTurnCount={contextTurnCount} contextStatus={contextStatus} />
 			</Box>
 		</Box>
 	);

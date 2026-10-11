@@ -1,6 +1,12 @@
 # Agents Implementation Plan
 
-Status: Phases 1–6 implemented. Phases 7–8 remain planned.
+Status: Phases 1–7 implemented. Phase 8 remains planned.
+
+Phase 7 result: the private CLI server loads bounded user and project Markdown
+agent files at startup and on `/agent reload`. Source-qualified IDs, strict
+frontmatter, tool subset validation, filename diagnostics, and symlink rejection
+keep custom definitions within the existing registry and host policy. The
+picker can select custom agents; automatic agents require session activation.
 
 Phase 1 result: `packages/shared/src/agents/` defines the validated authoring,
 resolved, and public metadata contracts; `packages/core/src/tools/catalog.ts`

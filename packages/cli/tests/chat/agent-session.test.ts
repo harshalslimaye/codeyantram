@@ -33,4 +33,16 @@ describe('host-owned agent selection', () => {
     expect(session.authorize(request('yolo'), snapshot)).toEqual({patch: true, command: false, automatic: true});
     expect(session.authorize(request('yolo'))).toEqual({patch: false, command: false, automatic: false});
   });
+
+  it('invalidates a changed custom approval policy without changing a running turn snapshot', () => {
+    const session = new AgentSessionController({patch: true, command: true});
+    session.activateYolo('project:fixer');
+    const snapshot = session.getSnapshot();
+    session.reconcile('prompt');
+    expect(session.isValid()).toBe(false);
+    expect(session.authorize(request('project:fixer'), snapshot).automatic).toBe(true);
+    session.select('project:fixer', 'prompt');
+    expect(session.isValid()).toBe(true);
+    expect(session.authorize(request('project:fixer')).automatic).toBe(false);
+  });
 });

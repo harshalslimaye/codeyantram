@@ -43,7 +43,8 @@ describe('standalone server entry point', () => {
     vi.stubEnv('CODEYANTRAM_PORT', undefined);
     await import('../src/main.js');
     expect(mocks.createApp).toHaveBeenCalledOnce();
-    expect(mocks.createApp).toHaveBeenCalledWith({workspaceRoot: process.env.INIT_CWD ?? process.cwd()});
+    expect(mocks.createApp).toHaveBeenCalledWith({workspaceRoot: process.env.INIT_CWD ?? process.cwd(),
+      initialAgents: asymmetric.any(Object), reloadAgents: asymmetric.any(Function)});
     expect(mocks.listen).toHaveBeenCalledExactlyOnceWith(43187, '127.0.0.1', asymmetric.any(Function));
     expect(process.stdout.write).toHaveBeenCalledExactlyOnceWith('Codeyantram server listening at http://127.0.0.1:43187\n');
     expect(process.stderr.write).not.toHaveBeenCalled();

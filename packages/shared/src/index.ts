@@ -5,3 +5,4 @@ export * from './filesystem/index.js';
 export * from './utils/objects.js';
 export * from './providers/index.js';
 export * from './integrations/jev.js';
+export {getUserConfigDirectory} from './filesystem/paths.js';

@@ -8,12 +8,12 @@ import type {ServerAppOptions} from '../app.js';
 export function agentMetadata(agents: AgentRegistry, options: ServerAppOptions): AgentMetadata[] {
   return agents.list().map(agent => ({id: agent.id, name: agent.name, description: agent.description,
     source: agent.source, approval: agent.approval,
-    available: options.agentStatus?.(agent.id).available ?? agent.approval !== 'automatic',
+    available: options.agentStatus?.(agent.id, agent.approval).available ?? agent.approval !== 'automatic',
     tools: agent.tools.filter(name => {
       const entry = TOOL_CATALOG.find(tool => tool.name === name);
       if (entry === undefined) return false;
-      if (entry.capability === 'workspace_write') return options.agentStatus?.(agent.id).patch === true;
-      if (entry.capability === 'command') return options.agentStatus?.(agent.id).command === true;
+      if (entry.capability === 'workspace_write') return options.agentStatus?.(agent.id, agent.approval).patch === true;
+      if (entry.capability === 'command') return options.agentStatus?.(agent.id, agent.approval).command === true;
       return entry.service === 'webFetch' || (options.workspaceRoot !== undefined && options.workspaceRoot !== '');
     })}));
 }
