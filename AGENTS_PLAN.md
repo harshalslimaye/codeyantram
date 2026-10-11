@@ -3,7 +3,7 @@
 Status: Phases 1–7 implemented. Phase 8 remains planned.
 
 Phase 7 result: the private CLI server loads bounded user and project Markdown
-agent files at startup and on `/agent reload`. Source-qualified IDs, strict
+agent files at startup and on `/discover`. Source-qualified IDs, strict
 frontmatter, tool subset validation, filename diagnostics, and symlink rejection
 keep custom definitions within the existing registry and host policy. The
 picker can select custom agents; automatic agents require session activation.
@@ -313,7 +313,7 @@ and report the result of every command that you run.
 ```
 
 **Completion condition:** Creating a custom agent requires one Markdown file
-and `/agent reload`; custom files use the same registry, tool policy, picker,
+and `/discover`; custom files use the same registry, tool policy, picker,
 and chat path as built-ins.
 
 ## Phase 8 — Integration, documentation, and release gates

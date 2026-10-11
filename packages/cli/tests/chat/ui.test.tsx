@@ -60,7 +60,7 @@ function renderUI(node: ReactNode, {debug = true}: {debug?: boolean} = {}) {
 	};
 }
 
-function renderInput(initialOperation: SessionOperation = 'idle') {
+function renderInput(initialOperation: SessionOperation = 'idle', reloadAgents?: () => Promise<readonly {filePath?: string; message: string}[]>) {
 	const onSubmit = vi.fn<(text: string) => void>();
 	const onCancel = vi.fn<() => void>();
 	const onClear = vi.fn<() => void>();
@@ -75,7 +75,7 @@ function renderInput(initialOperation: SessionOperation = 'idle') {
 		return (
 			<ThemeProvider registry={registry} initialThemeId="konkan" colorDepth={0}>
 				<KeyboardProvider>
-					<InputBar modelPreferences={preferences} onSelectModel={onSelectModel} operation={operation} onSubmit={onSubmit} onCancel={onCancel} onClear={onClear} onCompact={onCompact} onStatus={onStatus} onInit={onInit} />
+					<InputBar modelPreferences={preferences} onSelectModel={onSelectModel} operation={operation} reloadAgents={reloadAgents} onSubmit={onSubmit} onCancel={onCancel} onClear={onClear} onCompact={onCompact} onStatus={onStatus} onInit={onInit} />
 				</KeyboardProvider>
 			</ThemeProvider>
 		);
@@ -478,6 +478,18 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('Commands'));
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.onClear).toHaveBeenCalledOnce());
+		expect(ui.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('runs agent reload through /discover without sending chat text', async () => {
+		const reload = vi.fn<() => Promise<readonly {filePath?: string; message: string}[]>>(async () => []);
+		const ui = renderInput('idle', reload);
+		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
+		ui.stdin.write('/discover');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Reload custom agent files'));
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(ui.frame()).toContain('Agents reloaded.'));
 		expect(ui.onSubmit).not.toHaveBeenCalled();
 	});
 

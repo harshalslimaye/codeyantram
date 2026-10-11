@@ -210,7 +210,7 @@ function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' 
     ['/init', actions.onInit], ['/status', actions.onStatus], ['/help', () => {actions.setShowHelp(true);}],
     ['/model', () => {actions.push('model-picker');}], ['/connect', () => {actions.push('provider-picker');}],
     ['/agent', () => {actions.push('agent-picker');}],
-		['/agent reload', () => {void actions.reloadAgents?.().then(diagnostics => {
+		['/discover', () => {void actions.reloadAgents?.().then(diagnostics => {
 			actions.setNotice(diagnostics.length ? `Agent reload: ${diagnostics.map(item => `${item.filePath ?? 'file'}: ${item.message}`).join('; ')}` : 'Agents reloaded.');
 			return null;
 		}).catch(() => actions.setNotice('Could not reload agents.', 'error'));}],

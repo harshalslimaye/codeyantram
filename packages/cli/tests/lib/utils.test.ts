@@ -28,6 +28,7 @@ describe('command filtering', () => {
 		expect(getCommandOptions('INI')).toEqual([{value: '/init', label: asymmetric.stringContaining('Build or refresh the project code graph')}]);
 		expect(getCommandOptions('MoD')).toEqual([{value: '/model', label: asymmetric.stringContaining('/model')}]);
 		expect(getCommandOptions('JeV')).toEqual([{value: '/jev', label: asymmetric.stringContaining('Toggle JEV usage on or off')}]);
+		expect(getCommandOptions('dis')).toEqual([{value: '/discover', label: asymmetric.stringContaining('Reload custom agent files')}]);
 		expect(getCommandOptions('unknown')).toEqual([]);
 	});
 });

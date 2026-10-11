@@ -11,7 +11,7 @@ export const COMMANDS: Command[] = [
     { command: '/init', description: 'Build or refresh the project code graph' },
     { command: '/model', description: 'Change the active model' },
     { command: '/agent', description: 'Choose an agent for this session' },
-    { command: '/agent reload', description: 'Reload custom agent files' },
+    { command: '/discover', description: 'Reload custom agent files' },
     { command: '/connect', description: 'Configure a provider API key' },
     { command: '/jev', description: 'Toggle JEV usage on or off' },
     { command: '/theme', description: 'Choose a terminal theme' },

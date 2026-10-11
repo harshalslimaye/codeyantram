@@ -110,7 +110,7 @@ The filename supplies the source-qualified ID (`user:reviewer` or
 `project:reviewer`). Instructions guide the model; the tool list can only
 remove inherited tools. Build actions still need approval. An agent extending
 Yolo needs explicit session activation and stays under host capability limits.
-Use `/agent reload` after changing files. Invalid files appear as diagnostics
+Use `/discover` after changing files. Invalid files appear as diagnostics
 in the picker and reload notice. If a selected file disappears, choose another
 agent before sending a message.
 
