@@ -1,3 +1,4 @@
+import {exportChat} from './export.js';
 import {randomUUID} from 'node:crypto';
 import type {ChatTransport, CompactTransport, InitTransport, CompactionState, CompactionOutcome, ChatSnapshot} from './session-types.js';
 import {createChatEventHandler} from './chat-events.js';
@@ -66,6 +67,16 @@ export class ChatSession {
 		this.controller = undefined;
 		this.update({messages: [], statusEntries: [], operation: 'idle', compaction: undefined, compactionUsage: undefined, error: undefined, notice: undefined});
 		controller?.abort();
+	}
+
+	async exportMarkdown(filePath?: string): Promise<void> {
+		if (this.state.operation !== 'idle') return;
+		try {
+			const target = await exportChat(this.state.messages, filePath);
+			this.update({notice: `Chat exported to ${target}`, error: undefined});
+		} catch (error) {
+			this.update({error: error instanceof Error ? error.message : 'Could not export chat.', notice: undefined});
+		}
 	}
 
 	showStatus(modelId: string) {

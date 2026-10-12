@@ -16,6 +16,7 @@ export const COMMANDS: Command[] = [
     { command: '/jev', description: 'Toggle JEV usage on or off' },
     { command: '/theme', description: 'Choose a terminal theme' },
     { command: '/compact', description: 'Summarize older conversation context' },
+    { command: '/export', description: 'Export chat to Markdown: /export [path.md]' },
     { command: '/clear', description: 'Clear the conversation' },
     { command: '/exit', description: 'Exit Codeyantram' },
 ];

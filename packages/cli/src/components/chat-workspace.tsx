@@ -69,6 +69,7 @@ export function ChatWorkspace({session, approvals, agentSession, availableAgents
 							selectedAgent.id === 'ask' ? undefined : selectedAgent.id);
 					}}
 					onCancel={() => session.cancel()}
+					onExport={filePath => {void session.exportMarkdown(filePath);}}
 					onClear={() => session.clear()}
 					onCompact={() => {void session.compact(modelPreferences.modelId);}}
 					onStatus={() => session.showStatus(modelPreferences.modelId)}

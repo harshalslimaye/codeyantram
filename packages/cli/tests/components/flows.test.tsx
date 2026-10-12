@@ -48,6 +48,7 @@ function setup(modelId: SupportedChatModelId = 'gpt-6.1-sol') {
 	const registry = createThemeRegistry([{source: 'builtin', themes: BUILTIN_THEMES.map(theme => ({source: 'builtin', theme}))}]);
 	const onSelectModel = vi.fn<(model: string, effort?: string) => Promise<void>>(async (_id: string, _effort?: string) => {});
 	const onSubmit = vi.fn<(text: string) => void>();
+	const onExport = vi.fn<(filePath?: string) => void>();
 	let keyboard!: ReturnType<typeof useKeyboardOwner>;
 	let theme!: ReturnType<typeof useTheme>;
 	function Probe() {
@@ -61,11 +62,11 @@ function setup(modelId: SupportedChatModelId = 'gpt-6.1-sol') {
 			<KeyboardProvider>
 				<Probe />
 				<InputBar modelPreferences={{modelId, effortByModel: {}}} onSelectModel={onSelectModel} operation="idle"
-					onSubmit={onSubmit} onCancel={vi.fn<() => void>()} onClear={vi.fn<() => void>()} onCompact={vi.fn<() => void>()} onStatus={vi.fn<() => void>()} onInit={vi.fn<() => void>()} />
+					onSubmit={onSubmit} onExport={onExport} onCancel={vi.fn<() => void>()} onClear={vi.fn<() => void>()} onCompact={vi.fn<() => void>()} onStatus={vi.fn<() => void>()} onInit={vi.fn<() => void>()} />
 			</KeyboardProvider>
 		</ThemeProvider>,
 	);
-	return {...ui, onSelectModel, onSubmit, keyboard: () => keyboard, theme: () => theme};
+	return {...ui, onSelectModel, onSubmit, onExport, keyboard: () => keyboard, theme: () => theme};
 }
 
 type UI = ReturnType<typeof setup>;
@@ -471,5 +472,19 @@ describe('input commands', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('Commands ·'));
 		ui.stdin.write('\r');
 		await expect(ui.exited).resolves.toBeUndefined();
+	});
+});
+
+describe('chat export command', () => {
+	it('routes palette and explicit paths to export without submitting chat', async () => {
+		const ui = setup();
+		await command(ui, '/export', 'Enter to send');
+		await vi.waitFor(() => expect(ui.onExport).toHaveBeenCalledWith(undefined));
+		ui.stdin.write('/export my chat.md');
+		await vi.waitFor(() => expect(ui.frame()).toContain('/export my chat.md'));
+		await ui.flush();
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.onExport).toHaveBeenCalledWith('my chat.md'));
+		expect(ui.onSubmit).not.toHaveBeenCalled();
 	});
 });

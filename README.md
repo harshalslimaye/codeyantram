@@ -71,6 +71,11 @@ The default model is Google Gemma (`gemma-4-31b-it`); a saved model selection ta
 Follow-up messages include the conversation history. Escape cancels generation
 and keeps any partial answer; use the mouse wheel or trackpad over the chat area
 to scroll through the conversation. The input and status bars stay at the bottom.
+Use `/export` to save the full chat transcript as a timestamped `.md` file in the
+current directory, or `/export path/to/chat.md` to choose a destination (paths may
+contain spaces). Existing files are never overwritten. Exports include tool calls
+and results and retain older turns after compaction.
+
 Use `/clear` to reset the conversation, `/help` to list commands, or `/exit` to quit.
 Use `/agent` to select Ask, Build, Yolo, or a custom agent for the current CLI session. Build
 asks you to review each exact patch or command. Yolo requires a separate

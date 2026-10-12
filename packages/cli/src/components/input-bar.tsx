@@ -34,6 +34,7 @@ type InputBarProps = {
 	operation: SessionOperation;
 	onSubmit: (text: string) => void;
 	onCancel: () => void;
+	onExport?: (filePath?: string) => void;
 	onClear: () => void;
 	onCompact: () => void;
 	onStatus: () => void;
@@ -75,7 +76,7 @@ export function InputBar(props: InputBarProps) {
 	);
 }
 
-function useInputBarController({operation, onSubmit, onCancel, onClear, onCompact, onStatus, onInit, reloadAgents, onChatGPTCommand, onLoadChatGPTAccounts}: InputBarProps) {
+function useInputBarController({operation, onSubmit, onCancel, onExport, onClear, onCompact, onStatus, onInit, reloadAgents, onChatGPTCommand, onLoadChatGPTAccounts}: InputBarProps) {
 	const [value, setValue] = useState('');
 	const [inputRevision, setInputRevision] = useState(0);
 	const [showHelp, setShowHelp] = useState(false);
@@ -104,7 +105,7 @@ function useInputBarController({operation, onSubmit, onCancel, onClear, onCompac
 		updateDraft('');
 		setNotice(undefined);
 		setShowHelp(false);
-		dispatchCommand(command, {onInit, onStatus, onClear, onCompact, exit, push, setShowHelp, toggleJev, setNotice, reloadAgents, runChatGPT: chatgpt.run, openChatGPTAccountPicker: chatgpt.openAccountPicker});
+		dispatchCommand(command, {onInit, onStatus, onExport, onClear, onCompact, exit, push, setShowHelp, toggleJev, setNotice, reloadAgents, runChatGPT: chatgpt.run, openChatGPTAccountPicker: chatgpt.openAccountPicker});
 	}
 
 	const submitDraft = createDraftSubmit({owner, isOwner, isBusy, onSelectCommand, setNotice, setShowHelp, updateDraft, onSubmit});
@@ -219,9 +220,13 @@ function useInputBarKeyboard(context: Pick<DraftContext, 'savingJev' | 'isBusy' 
 	}, {isActive: isEditing || isBusy});
 }
 
-function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' | 'onStatus' | 'onClear' | 'onCompact' | 'reloadAgents'> & Pick<DraftContext, 'push' | 'setShowHelp' | 'setNotice'> & {exit: () => void; toggleJev: () => Promise<void>; runChatGPT: (command: string, profileId?: string) => Promise<void>; openChatGPTAccountPicker: () => Promise<void>}) {
-  const [base, sub, profileId] = command.trim().split(/\s+/);
-  if (base?.toLowerCase() === '/chatgpt') {
+function dispatchCommand(command: string, actions: Pick<InputBarProps, 'onInit' | 'onStatus' | 'onClear' | 'onExport' | 'onCompact' | 'reloadAgents'> & Pick<DraftContext, 'push' | 'setShowHelp' | 'setNotice'> & {exit: () => void; toggleJev: () => Promise<void>; runChatGPT: (command: string, profileId?: string) => Promise<void>; openChatGPTAccountPicker: () => Promise<void>}) {
+  const [base = '', sub, profileId] = command.trim().split(/\s+/);
+  if (base.toLowerCase() === '/export') {
+    dispatchExport(command, actions);
+    return;
+  }
+  if (base.toLowerCase() === '/chatgpt') {
     if (sub?.toLowerCase() === 'use' && profileId === undefined) void actions.openChatGPTAccountPicker();
     else if (sub && ['login', 'logout', 'status', 'use'].includes(sub.toLowerCase())) void actions.runChatGPT(sub.toLowerCase(), profileId);
     else actions.setNotice('Use /chatgpt login [new|profile-id], /chatgpt status, /chatgpt logout, or /chatgpt use <profile-id>.', 'error');
@@ -283,4 +288,10 @@ function AgentPickerSlot({owner, agentSession, availableAgents, agentDiagnostics
 	Pick<ReturnType<typeof useInputBarController>, 'owner'>) {
 	if (!agentSession || (owner !== 'agent-picker' && owner !== 'yolo-confirmation')) return null;
 	return <AgentPicker session={agentSession} agents={availableAgents ?? FALLBACK_AGENT_METADATA} diagnostics={agentDiagnostics} refresh={refreshAgents} />;
+}
+
+function dispatchExport(command: string, actions: Pick<InputBarProps, 'onExport'> & Pick<DraftContext, 'setNotice'>) {
+  const filePath = command.trim().slice('/export'.length).trim();
+  if (actions.onExport) actions.onExport(filePath || undefined);
+  else actions.setNotice('Chat export is unavailable.', 'error');
 }
