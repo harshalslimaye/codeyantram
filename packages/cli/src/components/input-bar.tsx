@@ -16,9 +16,9 @@ import {FALLBACK_AGENT_METADATA} from '../chat/agent-catalog.js';
 import {ChatGPTAccountPicker} from './chatgpt-account-picker.js';
 import {useChatGPTControls} from './use-chatgpt-controls.js';
 import type {ChatGPTAccount, ChatGPTAccountModel} from '../chat/chatgpt.js';
+import {useExportConfirmation} from './use-export-confirmation.js';
 
 const INPUT_RESERVED_COLUMNS = 6;
-
 type InputBarProps = {
 	modelPreferences: ModelPreferences;
 	chatgptModels?: readonly ChatGPTAccountModel[];
@@ -66,6 +66,7 @@ export function InputBar(props: InputBarProps) {
 	return (
 		<Box flexDirection="column" width="100%">
 			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} />}
+			{!isBusy && controller.exportConfirmation}
 			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} chatgptModels={chatgptModels} chatgptAccounts={controller.chatgptAccounts} onSelectChatGPTAccount={controller.selectChatGPTAccount} onSelectChatGPTLogin={() => onSelectCommand('/chatgpt login')} onSaveProviderKey={props.onSaveProviderKey} onSelectModel={onSelectModel} agentSession={activeAgentSession} availableAgents={availableAgents} agentDiagnostics={agentDiagnostics} refreshAgents={refreshAgents} />
 			<InputStatus {...controller} operation={operation} />
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
@@ -85,6 +86,7 @@ function useInputBarController({operation, onSubmit, onCancel, onExport, onClear
 	const {exit} = useApp();
 	const {isSavingJev, savingJev, toggleJev} = useJevToggle(setNotice);
 	const chatgpt = useChatGPTControls({onCommand: onChatGPTCommand, onLoadAccounts: onLoadChatGPTAccounts});
+	const chatExport = useExportConfirmation(onExport);
 	const isRunningChatGPT = chatgpt.isRunning;
 	const isLoadingAccounts = chatgpt.isLoadingAccounts;
 	const isBusy = operation !== 'idle' || isSavingJev || isRunningChatGPT || isLoadingAccounts;
@@ -105,7 +107,7 @@ function useInputBarController({operation, onSubmit, onCancel, onExport, onClear
 		updateDraft('');
 		setNotice(undefined);
 		setShowHelp(false);
-		dispatchCommand(command, {onInit, onStatus, onExport, onClear, onCompact, exit, push, setShowHelp, toggleJev, setNotice, reloadAgents, runChatGPT: chatgpt.run, openChatGPTAccountPicker: chatgpt.openAccountPicker});
+		dispatchCommand(command, {onInit, onStatus, onExport: chatExport.requestExport, onClear, onCompact, exit, push, setShowHelp, toggleJev, setNotice, reloadAgents, runChatGPT: chatgpt.run, openChatGPTAccountPicker: chatgpt.openAccountPicker});
 	}
 
 	const submitDraft = createDraftSubmit({owner, isOwner, isBusy, onSelectCommand, setNotice, setShowHelp, updateDraft, onSubmit});
@@ -116,6 +118,7 @@ function useInputBarController({operation, onSubmit, onCancel, onExport, onClear
 	}});
 	return {value, inputRevision, showHelp, isSavingJev, isRunningChatGPT, isLoadingAccounts, chatgptAccounts: chatgpt.accounts,
 		selectChatGPTAccount: chatgpt.selectAccount,
+		exportConfirmation: chatExport.confirmation,
 		palette, notice, noticeTone, owner, isBusy, isEditing, commandQuery, onSelectCommand, handleChange, submitDraft};
 }
 

@@ -3,6 +3,7 @@ import type {InitTransport} from '../../src/chat/session.js';
 import type * as SharedModule from '@codeyantram/shared';
 import type * as ThemeUtilsModule from '../../src/theme/utils/index.js';
 import React, {useEffect} from 'react';
+import {resolve as resolvePath} from 'node:path';
 import {Text} from 'ink';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {JevNotConfiguredError, readConfiguredProviders, readJevConfiguration, saveModelPreference, saveProviderApiKey, toggleJevUsage, type SupportedChatModelId} from '@codeyantram/shared';
@@ -476,15 +477,37 @@ describe('input commands', () => {
 });
 
 describe('chat export command', () => {
-	it('routes palette and explicit paths to export without submitting chat', async () => {
+	it('requires explicit confirmation for palette and explicit paths without submitting chat', async () => {
 		const ui = setup();
-		await command(ui, '/export', 'Enter to send');
-		await vi.waitFor(() => expect(ui.onExport).toHaveBeenCalledWith(undefined));
+		await command(ui, '/export', 'Owner:export-confirmation');
+		expect(ui.onExport).not.toHaveBeenCalled();
+		ui.stdin.write('\x1b[B');
+		await ui.flush();
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.onExport).toHaveBeenCalledOnce());
+		expect(ui.onExport.mock.calls[0]?.[0]).toMatch(/codeyantram-chat-.*\.md$/);
 		ui.stdin.write('/export my chat.md');
 		await vi.waitFor(() => expect(ui.frame()).toContain('/export my chat.md'));
 		await ui.flush();
 		ui.stdin.write('\r');
-		await vi.waitFor(() => expect(ui.onExport).toHaveBeenCalledWith('my chat.md'));
+		await vi.waitFor(() => expect(ui.frame()).toContain('Owner:export-confirmation'));
+		expect(ui.onExport).toHaveBeenCalledOnce();
+		ui.stdin.write('\x1b[B');
+		await ui.flush();
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.onExport).toHaveBeenCalledWith(resolvePath('my chat.md')));
 		expect(ui.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('cancels by default or with Escape without exporting', async () => {
+		const ui = setup();
+		await command(ui, '/export', 'Owner:export-confirmation');
+		ui.stdin.write('\r');
+		await vi.waitFor(() => expect(ui.frame()).toContain('Chat export cancelled.'));
+		expect(ui.keyboard().owner).toBe('input-bar');
+		await command(ui, '/export', 'Owner:export-confirmation');
+		await escape(ui, 'Chat export cancelled.');
+		expect(ui.keyboard().owner).toBe('input-bar');
+		expect(ui.onExport).not.toHaveBeenCalled();
 	});
 });

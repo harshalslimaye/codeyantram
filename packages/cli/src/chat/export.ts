@@ -21,10 +21,15 @@ export function chatMarkdown(messages: readonly ConversationMessage[]): string {
 	return `# Codeyantram chat\n\n${sections.join('\n\n---\n\n')}\n`;
 }
 
-export async function exportChat(messages: readonly ConversationMessage[], filePath?: string): Promise<string> {
-	if (messages.length === 0) throw new Error('There is no chat to export.');
+export function chatExportPath(filePath?: string): string {
 	const target = resolve(filePath ?? `codeyantram-chat-${new Date().toISOString().replace(/[:.]/g, '-')}.md`);
 	if (!target.toLowerCase().endsWith('.md')) throw new Error('Use a .md file path, for example /export chat.md.');
+	return target;
+}
+
+export async function exportChat(messages: readonly ConversationMessage[], filePath?: string): Promise<string> {
+	if (messages.length === 0) throw new Error('There is no chat to export.');
+	const target = chatExportPath(filePath);
 	// oxlint-disable-next-line security/detect-non-literal-fs-filename -- The destination is explicitly chosen by the user; exclusive creation prevents overwrites.
 	await writeFile(target, chatMarkdown(messages), {encoding: 'utf8', flag: 'wx', mode: 0o600});
 	return target;
