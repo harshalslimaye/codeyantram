@@ -149,7 +149,7 @@ describe('command input and permission boundaries', () => {
     expect(await readdir(directory)).toEqual([]);
   });
 
-  it('sanitizes startup and host callback failures and shares the tool budget', async () => {
+  it('sanitizes startup and host callback failures after repeated tool executions', async () => {
     const missing = createBashService({workspaceRoot: directory, approve: async () => true, shellPath: join(directory, 'private-shell')});
     await expect(missing.run({command: 'true'})).rejects.toMatchObject({code: 'execution_failed',
       message: 'Bash could not start. Check the host shell path and directory access.'});
@@ -159,8 +159,8 @@ describe('command input and permission boundaries', () => {
     const result = await tool.execute?.({command: 'true'}, {toolCallId: 'bash', messages: [], context: {}});
     expect(result).toMatchObject({status: 'error', error: {code: 'execution_failed'}});
     expect(JSON.stringify(result)).not.toContain('PRIVATE KEY');
-    for (let position = 1; position < 12; position++) await execute('glob', `${position}`, undefined, async () => ({}));
-    expect(await execute('bash', 'over', undefined, async () => ({}))).toMatchObject({error: {code: 'tool_limit'}});
+    for (let position = 1; position < 40; position++) await execute('glob', `${position}`, undefined, async () => ({}));
+    expect(await execute('bash', 'extra', undefined, async () => ({}))).toMatchObject({status: 'success'});
   });
 
   it('requires explicit host configuration and an absolute shell executable', () => {

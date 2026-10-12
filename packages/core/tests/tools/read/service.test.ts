@@ -108,15 +108,15 @@ describe('workspace read service', () => {
       .toMatchObject({status: 'error', error: {code: 'cancelled'}});
   });
 
-  it('shares the per-turn execution budget with navigation', async () => {
+  it('continues reading after forty shared navigation and read calls', async () => {
     await writeFile(join(root, 'file'), 'text');
     const execute = createToolExecutor();
     const tools = createNavigationTools({getStatus: () => ({lifecycle: 'unopened', graph: null})} as NavigationGraphService, execute);
     const read = createReadTool(createReadService({workspaceRoot: root}), execute);
-    for (let position = 0; position < 6; position++) {
+    for (let position = 0; position < 20; position++) {
       await requireValue(tools.graph.execute)({}, execution(`graph-${position}`));
       await requireValue(read.execute)({filePath: 'file'}, execution(`read-${position}`));
     }
-    expect(await requireValue(read.execute)({filePath: 'file'}, execution('extra'))).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
+    expect(await requireValue(read.execute)({filePath: 'file'}, execution('extra'))).toMatchObject({status: 'success'});
   });
 });

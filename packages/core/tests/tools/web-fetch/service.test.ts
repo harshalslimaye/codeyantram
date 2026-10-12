@@ -37,17 +37,17 @@ describe('web fetch service and shared execution', () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({code: 'cancelled'});
   });
-  it('shares twelve executions between navigation and web tools', async () => {
+  it('continues web fetching beyond forty shared navigation and web calls', async () => {
     const execute = createToolExecutor();
     const graph = createNavigationTools({getStatus: () => ({lifecycle: 'unopened', graph: null})} as NavigationGraphService, execute);
     const transport = {fetch: vi.fn<WebTransport["fetch"]>().mockResolvedValue(document)};
     const web = createWebFetchTool(createWebFetchService({transport}), execute);
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 40; i++) {
       const options = {toolCallId: String(i), messages: [], context: {}};
       const result = i % 2 ? await requireValue(graph.graph.execute)({}, options) : await requireValue(web.execute)({url: document.requestedUrl}, options);
       expect(result).toMatchObject({status: 'success'});
     }
-    expect(await requireValue(web.execute)({url: document.requestedUrl}, {toolCallId: 'extra', messages: [], context: {}})).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
-    expect(transport.fetch).toHaveBeenCalledTimes(6);
+    expect(await requireValue(web.execute)({url: document.requestedUrl}, {toolCallId: 'extra', messages: [], context: {}})).toMatchObject({status: 'success'});
+    expect(transport.fetch).toHaveBeenCalledTimes(21);
   });
 });

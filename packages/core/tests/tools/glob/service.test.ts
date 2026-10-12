@@ -134,7 +134,7 @@ describe('workspace glob discovery', () => {
     const glob = createGlobTool(createGlobService({workspaceRoot: root}), execute);
     const read = createReadTool(createReadService({workspaceRoot: root}), execute);
     expect(await requireValue(glob.execute)({pattern: '{'}, execution())).toMatchObject({status: 'error', error: {code: 'invalid_input'}});
-    for (let position = 0; position < 11; position++) await requireValue(read.execute)({filePath: 'file'}, execution(`read-${position}`));
-    expect(await requireValue(glob.execute)({pattern: '*'}, execution('extra'))).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
+    for (let position = 0; position < 39; position++) await requireValue(read.execute)({filePath: 'file'}, execution(`read-${position}`));
+    expect(await requireValue(glob.execute)({pattern: '*'}, execution('extra'))).toMatchObject({status: 'success'});
   });
 });

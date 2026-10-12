@@ -21,7 +21,7 @@ function toolCallEvent(part: Extract<Part, {type: 'tool-call'}>, invalidCalls: M
 }
 
 function finishEvent(part: Extract<Part, {type: 'finish'}>, startedAt: number): ChatStreamEvent {
-  if (part.finishReason === 'tool-calls') throw new ChatError('tool_limit', 'The tool step limit was reached. Narrow the question or continue in another turn.');
+  if (part.finishReason === 'tool-calls') throw new ChatError('provider_error', 'The provider response ended with unhandled tool calls.');
   if (part.finishReason === 'error' || part.finishReason === 'other') {
     throw new ChatError('provider_error', 'The provider response ended without completing.');
   }

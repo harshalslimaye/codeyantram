@@ -9,16 +9,13 @@ import {ApplyPatchError} from './apply-patch/errors.js';
 import {BashError} from './bash/errors.js';
 import {GitError} from './git/errors.js';
 
-const MAX_TOOL_EXECUTIONS = 12;
 const MAX_TOOL_OUTPUT_BYTES = 80_000;
 
-/** Create once per turn so navigation and web tools share the same call budget. */
+/** Apply the same output and error handling to every agent tool. */
 export function createToolExecutor(): ToolExecutor {
-  let executions = 0;
   return async (name, id, signal, run) => {
     const error = (code: Extract<ToolResult, {status: 'error'}>['error']['code'], message: string): ToolResult =>
       ({toolCallId: id, toolName: name, status: 'error', error: {code, message}});
-    if (++executions > MAX_TOOL_EXECUTIONS) return error('tool_limit', 'The tool call limit was reached. Narrow the task or continue in another turn.');
     try {
       signal?.throwIfAborted();
       const output = await run();

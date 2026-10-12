@@ -258,7 +258,7 @@ relationships, and verified source snippets after synchronizing the selected
 workspace. It lazily builds the initial index if necessary. `graph({})` reports
 lifecycle, freshness, pending changes, and failures without opening SQLite.
 Both tools are read-only; arguments cannot change the selected root or storage.
-Navigation uses at most six provider steps and twelve executions per turn.
+Navigation continues until the model answers or the user cancels the turn.
 `find({query, limit?, maxCharacters?})` returns symbol candidates with verified
 references. `inspect` accepts one reference to read source, or a relative
 `filePath` for an indexed outline. `trace` follows callers or callees of a

@@ -165,8 +165,8 @@ separate from chat usage.
 
 Supply a `webFetch: createWebFetchService({transport?, jev?})` capability to
 `streamChat`. It works independently of `workspaceGraph`. The default server
-always supplies web fetch. Both tool families share twelve executions and six
-provider steps per turn, and keep the existing ToolResult/SSE/history contracts.
+always supplies web fetch. Both tool families continue until the model answers
+or the user cancels, and keep the existing ToolResult/SSE/history contracts.
 
 Input is `{url, format?: 'markdown' | 'text' | 'html', timeout?: number,
 query?: string, filter?: boolean}`. URLs are at most 4,096 characters including
@@ -423,10 +423,9 @@ reads, while external processes can still change the filesystem after a response
 Symbols expose `metadataTruncated`; context and source carry their own truncation
 flags. These references are content checks, not an atomic filesystem snapshot.
 
-The loop allows six provider steps and twelve executions per turn. Results have
-an 80 KB serialized UTF-8 ceiling. A tool failure is a structured result the model
-can inspect; hitting the step limit ends the turn with `tool_limit`, not `done`.
-Cancellation reaches graph queries and ends without a terminal event. Source
+The loop has no fixed provider step or tool execution limit. Results have an 80 KB
+serialized UTF-8 ceiling. A tool failure is a structured result the model can
+inspect. Cancellation reaches graph queries and ends without a terminal event. Source
 and tool outputs are labeled untrusted data in navigation instructions.
 
 ## Workspace patches

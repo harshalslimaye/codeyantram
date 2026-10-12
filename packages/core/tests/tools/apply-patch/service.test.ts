@@ -103,7 +103,7 @@ describe('approved workspace patches', () => {
     expect(await readdir(directory)).toEqual(['other.ts']);
   });
 
-  it('sanitizes host callback errors and shares the executor budget', async () => {
+  it('sanitizes host callback errors after repeated tool executions', async () => {
     const {service} = setup(async () => {throw new Error('PRIVATE KEY');});
     const execute = createToolExecutor();
     const input = {patchText: patch('*** Add File: file.ts', '+new'), expectedHashes: {}};
@@ -111,8 +111,8 @@ describe('approved workspace patches', () => {
     const result = await tool.execute?.(input, {toolCallId: 'patch', messages: [], context: {}});
     expect(result).toMatchObject({status: 'error', error: {code: 'execution_failed'}});
     expect(JSON.stringify(result)).not.toContain('PRIVATE KEY');
-    for (let position = 1; position < 12; position++) await execute('glob', `${position}`, undefined, async () => ({}));
-    expect(await execute('apply_patch', 'over', undefined, async () => ({}))).toMatchObject({error: {code: 'tool_limit'}});
+    for (let position = 1; position < 40; position++) await execute('glob', `${position}`, undefined, async () => ({}));
+    expect(await execute('apply_patch', 'extra', undefined, async () => ({}))).toMatchObject({status: 'success'});
   });
 
   it('rejects removed evaluation controls before requesting approval', async () => {

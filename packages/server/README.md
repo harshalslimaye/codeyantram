@@ -134,7 +134,8 @@ Core failures, including missing credentials and provider errors, are sent as
 an `error` event and end the stream. A `done` event also ends the stream.
 Navigation and web calls and results use `{type: 'tool-call', call}` and
 `{type: 'tool-result', result}` events between text deltas. Tool errors are results
-the model can act on; exhaustion of the six-step loop ends with `tool_limit`.
+the model can act on. The tool loop continues until the model answers or the
+client cancels the request.
 SSE comments (`: keep-alive`) are sent every 15 seconds while waiting; clients
 should ignore comments. Writes wait for the socket to drain when necessary.
 Disconnecting the client aborts core generation, web requests, and JEV evaluation,

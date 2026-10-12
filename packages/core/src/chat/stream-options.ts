@@ -1,4 +1,4 @@
-import {streamText, isStepCount} from 'ai';
+import {streamText, isLoopFinished} from 'ai';
 import {chatRequestSchema, type ChatRequest} from '@codeyantram/shared';
 import {ChatError} from './errors.js';
 import {resolveChatModel} from './models.js';
@@ -9,7 +9,6 @@ import {BUILTIN_AGENTS} from '../agents/builtins.js';
 import {createAgentTools} from './agent-tools.js';
 
 const MAX_TOOL_OBJECTIVE_CHARACTERS = 2048;
-const MAX_TOOL_STEPS = 6;
 
 export function createChatStream(request: ChatRequest, options: ChatStreamOptions, signal: AbortSignal) {
   const parsed = chatRequestSchema.safeParse(request);
@@ -40,7 +39,7 @@ export function createChatStream(request: ChatRequest, options: ChatStreamOption
     maxRetries: 0,
     instructions,
     ...(hasTools ? {
-      tools, stopWhen: isStepCount(MAX_TOOL_STEPS),
+      tools, stopWhen: isLoopFinished(),
     } : {}),
     // Errors are surfaced by the event stream rather than logged by the SDK.
     onError: () => {},
