@@ -7,11 +7,11 @@ import type {ReadChunk} from './chunks.js';
 import type {ReadFilteringMetadata} from './types.js';
 
 export async function selectReadChunks(chunks: ReadChunk[], options: {
-  jev?: JevCapability; objective?: string; filter?: boolean; signal?: AbortSignal; filePath: string;
+  jev?: JevCapability; objective?: string; signal?: AbortSignal; filePath: string;
 }) {
   options.signal?.throwIfAborted();
   const filtering: ReadFilteringMetadata = chunkEvaluationMetadata(chunks.length);
-  const setup = evaluationSetup({jev: options.jev, enabled: options.filter, objective: options.objective,
+  const setup = evaluationSetup({jev: options.jev, objective: options.objective,
     small: {when: () => chunks.reduce((total, chunk) => total + chunk.text.length, 0) < MIN_FILTER_CHARACTERS, reason: 'small_content'}});
   if (setup.status === 'skipped') return {chunks, ...skippedEvaluation(filtering, setup.reason,
     'JEV evaluation unavailable; original read page returned.')};
@@ -35,7 +35,7 @@ export async function selectReadChunks(chunks: ReadChunk[], options: {
   const warnings: string[] = [];
   if (result.judgments.size === 0) warnings.push('JEV evaluation failed or timed out; original read page returned.');
   else if (result.judgments.size < candidates.length) warnings.push('JEV evaluation was incomplete; unevaluated line ranges were retained.');
-  if (retained.length < chunks.length) warnings.push('JEV omitted line ranges. Use filter:false for the original page; filtered source may be incomplete.');
+  if (retained.length < chunks.length) warnings.push('JEV omitted line ranges. Filtered source may be incomplete; request focused line ranges to inspect omitted context.');
   return {chunks: retained, filtering, warnings};
 }
 

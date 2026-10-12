@@ -9,7 +9,6 @@ export const readInputSchema = z.strictObject({
   limit: z.number().int().min(1).max(MAX_READ_LINES).optional(),
   maxCharacters: z.number().int().min(1).max(MAX_READ_CHARACTERS).optional(),
   query: z.string().trim().min(1).max(MAX_OBJECTIVE_CHARACTERS).optional(),
-  filter: z.boolean().optional(),
 });
 
 export type ReadInput = z.infer<typeof readInputSchema>;

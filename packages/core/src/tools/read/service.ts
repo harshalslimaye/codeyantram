@@ -20,7 +20,7 @@ export function createReadService(options: {workspaceRoot: string; jev?: JevCapa
     const file = await readWorkspaceFile(workspaceRoot, args.filePath, context.abortSignal);
     const page = readPage(file.text, args);
     const selected = await selectReadChunks(chunkLines(page.lines), {jev, filePath: args.filePath,
-      objective: args.query ?? context.objective, filter: args.filter, signal: context.abortSignal});
+      objective: args.query ?? context.objective, signal: context.abortSignal});
     const warnings = [...selected.warnings];
     if (page.truncation.lineTruncated) warnings.push('A source line was truncated by the read output budget.');
     return {filePath: args.filePath, contentHash: file.contentHash, totalLines: page.totalLines,

@@ -25,7 +25,7 @@ describe('read relevance selection', () => {
     expect(result.chunks).toEqual([chunks[0], chunks[3], chunks[4]]);
     expect(result.filtering).toMatchObject({status: 'completed', totalChunks: 5, evaluatedChunks: 5, retainedChunks: 3, usage: {inputTokens: 10}});
     expect(mock.mock.calls[0]?.[0].state).toMatchObject({objective: options.objective, filePath: options.filePath});
-    expect(result.warnings.join(' ')).toContain('filter:false');
+    expect(result.warnings.join(' ')).toContain('request focused line ranges');
   });
 
   it('returns the original page when all judgments are negative', async () => {
@@ -49,11 +49,10 @@ describe('read relevance selection', () => {
     expect(JSON.stringify(result)).not.toContain('PRIVATE API KEY');
   });
 
-  it('skips disabled, unavailable, opted-out, small, and objective-free reads', async () => {
+  it('skips disabled, unavailable, small, and objective-free reads', async () => {
     const {jev, mock} = setup();
     expect((await selectReadChunks(chunks, options)).filtering.reason).toBe('disabled');
     expect((await selectReadChunks(chunks, {...options, jev: {status: 'unavailable', reason: 'missing_credentials'}})).filtering.reason).toBe('missing_credentials');
-    expect((await selectReadChunks(chunks, {...options, jev, filter: false})).filtering.reason).toBe('disabled_for_request');
     expect((await selectReadChunks([], {...options, jev})).filtering.reason).toBe('small_content');
     expect((await selectReadChunks(chunks, {filePath: 'file', jev})).filtering.reason).toBe('no_objective');
     expect(mock).not.toHaveBeenCalled();

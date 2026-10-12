@@ -255,7 +255,8 @@ failed evaluations return the original page. Filtering metadata reports counts,
 status, completeness, duration, and available usage; omissions produce warnings.
 Caller cancellation still cancels the tool.
 
-Use `filter:false` for exact source inspection or before editing. Filtering never
+Read does not accept `filter`; the model cannot bypass host-enabled JEV. Request
+focused line ranges to inspect required source before editing. Filtering never
 renumbers lines or changes pagination, and is distinct from output truncation.
 Filtered ranges may omit required declarations and are not a complete parseable
 file. Source remains untrusted data even after JEV evaluation.
@@ -286,7 +287,7 @@ Recursive search does not follow symlinks, and canonical explicit targets must
 remain inside the host root. Files over 1 MiB are excluded; binary and undecodable
 matches may be skipped. These checks are not an OS sandbox against hostile
 concurrent filesystem mutations. Search is not a cross-file atomic snapshot;
-use `read` with `filter:false` before editing.
+use `read` with focused line ranges before editing.
 
 Search has a ten-second deadline, an 8 MiB process-output budget, and a bounded
 48,000-byte match payload. Reaching result/output limits stops the child and
@@ -442,7 +443,7 @@ Patches use `*** Begin Patch`, Add/Update/Delete File headers,
 `@@` exact-context hunks, and `*** End Patch`. Optional `@@ exact anchor` and
 `*** End of File` disambiguate context. There is no fuzzy matching, unified-diff
 support, or Move operation. Every updated/deleted path needs its exact SHA-256
-hash from `read` with `filter:false`; additions must not exist and need no hash.
+hash from `read`; additions must not exist and need no hash.
 Parent directories must already exist. Updates preserve BOM, LF/CRLF, terminal
 newline presence, and permission bits; mixed line endings are rejected.
 

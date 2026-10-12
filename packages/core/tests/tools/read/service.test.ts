@@ -54,12 +54,14 @@ describe('workspace read service', () => {
   });
 
   it.each([{filePath: 'a', workspaceRoot: '/other'}, {filePath: 'a', offset: 0}, {filePath: 'a', limit: 1001},
-    {filePath: 'a', maxCharacters: 24001}, {filePath: 'a', query: ' '}, {filePath: 'a', filter: 'true'}])('rejects unsupported arguments (case %#)', input => {
+    {filePath: 'a', maxCharacters: 24001}, {filePath: 'a', query: ' '}, {filePath: 'a', filter: 'true'}, {filePath: 'a', filter: false}, {filePath: 'a', filter: true}])('rejects unsupported arguments (case %#)', input => {
     expect(readInputSchema.safeParse(input).success).toBe(false);
   });
 
   it('also validates direct service callers', async () => {
     await expect(createReadService({workspaceRoot: root}).read({filePath: '../outside'})).rejects.toMatchObject({code: 'invalid_input'});
+    const bypass = {filePath: 'a', filter: false};
+    await expect(createReadService({workspaceRoot: root}).read(bypass)).rejects.toMatchObject({code: 'invalid_input'});
     expect(() => createReadService({workspaceRoot: ' '})).toThrow('workspace root');
   });
 
