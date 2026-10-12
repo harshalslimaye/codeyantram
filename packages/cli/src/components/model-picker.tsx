@@ -27,6 +27,7 @@ export function ModelPicker({preferences, onSelect, chatgptModels = []}: {
 	return (
 		<>
 			<Picker
+				filterable={true}
 				owner="model-picker"
 				title="Choose a model · ↑/↓ navigate · Enter select · Esc close"
 				options={options}

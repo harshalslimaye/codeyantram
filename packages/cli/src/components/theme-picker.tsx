@@ -39,6 +39,7 @@ export function ThemePicker() {
 	return (
 		<>
 			<Picker
+				filterable={true}
 				owner="theme-picker"
 				title="Choose a theme · saved to user config"
 				options={options}
