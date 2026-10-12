@@ -266,7 +266,7 @@ file. Source remains untrusted data even after JEV evaluation.
 Supply `grep: createGrepService({workspaceRoot, jev?})` to `streamChat` for
 workspace text search independent of graph indexing. The server supplies grep
 for a configured host workspace and reuses the existing JEV opt-in/evaluator.
-The default backend requires **ripgrep (`rg`) on the server's PATH**. No shell is
+The default backend uses **bundled ripgrep** through `@vscode/ripgrep`; no system `rg` or PATH setup is required. No shell is
 used and model arguments cannot select an executable, root, or arbitrary flags.
 Direct hosts can use `createGrepTool(service, execute, objective?)` with the
 shared per-turn executor; a trusted `GrepTransport` can be injected for testing.
@@ -311,7 +311,7 @@ duration, and available usage independently of search truncation/coverage.
 Supply `glob: createGlobService({workspaceRoot, jev?})` to `streamChat` to discover
 file paths independently of graph indexing. The server enables it for a configured
 host workspace and shares the existing JEV opt-in/evaluator. The default backend
-requires **ripgrep (`rg`) on the server's PATH**. A trusted `GlobTransport` can be
+uses **bundled ripgrep** through `@vscode/ripgrep`; no system `rg` or PATH setup is required. A trusted `GlobTransport` can be
 injected, and `createGlobTool(service, execute, objective?)` supports direct hosts
 with the same shared per-turn execution budget as other tools.
 

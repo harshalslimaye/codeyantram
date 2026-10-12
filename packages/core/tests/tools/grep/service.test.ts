@@ -3,7 +3,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {createGrepService, createGrepTool, createToolExecutor, createReadTool, createReadService, grepInputSchema, type GrepTransport} from '../../../src/index.js';
-import {requireValue, asymmetric} from '../../../../shared/tests/helpers.js';
+import {requireValue} from '../../../../shared/tests/helpers.js';
 
 let directory: string;
 let root: string;
@@ -103,13 +103,20 @@ describe('workspace grep service', () => {
     expect((await createGrepService({workspaceRoot: root}).search({pattern: 'needle'})).matches).toEqual([]);
   });
 
-  it('sanitizes invalid regex, missing paths, and missing ripgrep errors', async () => {
+  it('sanitizes invalid regex and missing paths', async () => {
     const service = createGrepService({workspaceRoot: root});
     await expect(service.search({pattern: '['})).rejects.toMatchObject({code: 'invalid_input'});
     await expect(service.search({pattern: '(?=needle)'})).rejects.toMatchObject({code: 'invalid_input'});
     await expect(service.search({pattern: 'needle', path: 'missing'})).rejects.toMatchObject({code: 'not_found'});
+
+  });
+
+  it('searches using bundled ripgrep with no executable on PATH', async () => {
+    await writeFile(join(root, 'file.ts'), 'needle');
     vi.stubEnv('PATH', root);
-    await expect(service.search({pattern: 'needle'})).rejects.toMatchObject({code: 'execution_failed', message: asymmetric.stringContaining('ripgrep')});
+    const result = await createGrepService({workspaceRoot: root}).search({pattern: 'needle'});
+    expect(result.matches).toMatchObject([{filePath: 'file.ts', text: 'needle'}]);
+    expect(result.matches).toHaveLength(1);
   });
 
   it.each([{pattern: ''}, {pattern: 'x\n'}, {pattern: 'x', path: '../outside'}, {pattern: 'x', path: '/absolute'},

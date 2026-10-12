@@ -1,4 +1,5 @@
 import {spawn} from 'node:child_process';
+import {rgPath} from '@vscode/ripgrep';
 
 const MAX_PROCESS_BYTES = 8_388_608;
 const MAX_RESULT_BYTES = 48_000;
@@ -47,7 +48,7 @@ export function runRipgrepRecords<Record>(options: RecordOptions<Record>): Promi
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
     const state: RecordState<Record> = {records: [], truncated: false, incomplete: false, pending: '', bytes: 0, resultBytes: 0, stopped: false};
-    const child = spawn('rg', args, {cwd: root, shell: false, stdio: ['ignore', 'pipe', 'pipe']});
+    const child = spawn(rgPath, args, {cwd: root, shell: false, stdio: ['ignore', 'pipe', 'pipe']});
     const decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
     let stderr = '';
     const cancel = () => {child.kill('SIGKILL');};
@@ -63,7 +64,7 @@ export function runRipgrepRecords<Record>(options: RecordOptions<Record>): Promi
       } catch {state.stopped = true; reject(new RipgrepError('execution_failed', 'The search backend returned invalid results.'));}
       if (state.stopped) child.kill('SIGKILL');
     });
-    child.on('error', () => reject(new RipgrepError('execution_failed', 'Search requires ripgrep (rg) installed and available on PATH.')));
+    child.on('error', () => reject(new RipgrepError('execution_failed', 'Could not launch bundled ripgrep. Reinstall Codeyantram dependencies including optional dependencies.')));
     child.on('close', code => {
       signal.removeEventListener('abort', cancel);
       if (signal.aborted) {reject(signal.reason); return;}

@@ -1,4 +1,5 @@
 import {spawn} from 'node:child_process';
+import {rgPath} from '@vscode/ripgrep';
 import {EventEmitter} from 'node:events';
 import {PassThrough} from 'node:stream';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
@@ -54,7 +55,16 @@ describe('bounded ripgrep process', () => {
     child.stdout.write(bytes.subarray(split));
     child.emit('close', 0);
     expect(await pending).toMatchObject({matches: [{text: '🙂 needle'}], truncated: false});
-    expect(spawn).toHaveBeenCalledWith('rg', ['--', 'needle', '.'], {cwd: '/workspace', shell: false, stdio: ['ignore', 'pipe', 'pipe']});
+    expect(spawn).toHaveBeenCalledWith(rgPath, ['--', 'needle', '.'], {cwd: '/workspace', shell: false, stdio: ['ignore', 'pipe', 'pipe']});
+  });
+
+  it('sanitizes failures to launch the bundled binary', async () => {
+    const child = backend();
+    const pending = runRipgrep('/workspace', [], 10, new AbortController().signal);
+    child.emit('error', Object.assign(new Error('PRIVATE BINARY PATH'), {code: 'ENOENT'}));
+    child.emit('close', -1);
+    await expect(pending).rejects.toMatchObject({code: 'execution_failed',
+      message: 'Could not launch bundled ripgrep. Reinstall Codeyantram dependencies including optional dependencies.'});
   });
 
   it('kills the child when the global result cap is exceeded', async () => {

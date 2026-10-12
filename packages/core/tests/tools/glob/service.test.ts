@@ -3,7 +3,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {createGlobService, createGlobTool, createToolExecutor, createReadTool, createReadService, globInputSchema, type GlobTransport} from '../../../src/index.js';
-import {requireValue, asymmetric} from '../../../../shared/tests/helpers.js';
+import {requireValue} from '../../../../shared/tests/helpers.js';
 
 let directory: string;
 let root: string;
@@ -93,12 +93,17 @@ describe('workspace glob discovery', () => {
     expect((await createGlobService({workspaceRoot: root}).discover({pattern})).files).toEqual([pattern]);
   });
 
-  it('sanitizes malformed globs, missing paths, and missing backend errors', async () => {
+  it('sanitizes malformed globs and missing paths', async () => {
     const service = createGlobService({workspaceRoot: root});
     await expect(service.discover({pattern: '{'})).rejects.toMatchObject({code: 'invalid_input'});
     await expect(service.discover({pattern: '*', path: 'missing'})).rejects.toMatchObject({code: 'not_found'});
+
+  });
+
+  it('discovers files using bundled ripgrep with no executable on PATH', async () => {
+    await writeFile(join(root, 'file.ts'), 'needle');
     vi.stubEnv('PATH', root);
-    await expect(service.discover({pattern: '*'})).rejects.toMatchObject({code: 'execution_failed', message: asymmetric.stringContaining('ripgrep')});
+    expect((await createGlobService({workspaceRoot: root}).discover({pattern: '*'})).files).toEqual(['file.ts']);
   });
 
   it.each([{pattern: ''}, {pattern: 'x\n'}, {pattern: '*', path: '../outside'}, {pattern: '*', path: '/absolute'},

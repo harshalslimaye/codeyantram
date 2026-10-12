@@ -25,6 +25,9 @@ chat without navigation opens no graph. Core's five navigation tools use the bou
 Direct dependencies use exact versions. If a package is used by more than one workspace, keep its declared version identical in each workspace. The root `package-lock.json` records the resolved dependency tree.
 
 Requires Node.js 22.12+ on the 22.x line, 24.x, or 26+.
+Workspace grep and glob bundle ripgrep through `@vscode/ripgrep`; users do not
+need to install `rg` separately. Include optional dependencies when installing
+so npm installs the binary for your operating system and architecture.
 
 ## Run the CLI
 
