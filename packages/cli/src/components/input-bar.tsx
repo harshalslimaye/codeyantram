@@ -65,13 +65,13 @@ export function InputBar(props: InputBarProps) {
 
 	return (
 		<Box flexDirection="column" width="100%">
-			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} />}
+			{!isBusy && <CommandPalette query={commandQuery} onSelect={onSelectCommand} onQueryChange={query => {if (query.includes(' ')) handleChange(`/${query}`);}} />}
 			{!isBusy && controller.exportConfirmation}
 			<InputPickers isBusy={isBusy} owner={owner} modelPreferences={modelPreferences} chatgptModels={chatgptModels} chatgptAccounts={controller.chatgptAccounts} onSelectChatGPTAccount={controller.selectChatGPTAccount} onSelectChatGPTLogin={() => onSelectCommand('/chatgpt login')} onSaveProviderKey={props.onSaveProviderKey} onSelectModel={onSelectModel} agentSession={activeAgentSession} availableAgents={availableAgents} agentDiagnostics={agentDiagnostics} refreshAgents={refreshAgents} />
 			<InputStatus {...controller} operation={operation} />
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
-				<TextInput placeholder={'Okay, what did you do this time?'.slice(0, Math.max(0, columns - INPUT_RESERVED_COLUMNS))} key={inputRevision} defaultValue={value} isDisabled={!isEditing || owner !== 'input-bar'} onChange={handleChange} onSubmit={submitDraft} />
+				<TextInput placeholder={'Okay, what did you do this time?'.slice(0, Math.max(0, columns - INPUT_RESERVED_COLUMNS))} key={`${inputRevision}:${owner}`} defaultValue={value} isDisabled={!isEditing || owner !== 'input-bar'} onChange={handleChange} onSubmit={submitDraft} />
 			</Box>
 		</Box>
 	);

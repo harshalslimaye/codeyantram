@@ -149,9 +149,10 @@ async function renderCompactionApp() {
 	};
 }
 
-async function selectCompact(ui: {stdin: PassThrough; frame: () => string}) {
+async function selectCompact(ui: {stdin: PassThrough; frame: () => string; flush: () => Promise<void>}) {
 	ui.stdin.write('/compact');
 	await vi.waitFor(() => expect(ui.frame()).toContain('Summarize older conversation context'));
+	await ui.flush();
 	ui.stdin.write('\r');
 }
 
@@ -174,6 +175,7 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.stdin.setRawMode).toHaveBeenCalled());
 		ui.stdin.write('/agent');
   await vi.waitFor(() => expect(ui.frame()).toContain('Choose an agent for this session'));
+		await ui.flush();
 		ui.stdin.write('\r');
   await vi.waitFor(() => expect(fetchResponse.mock.calls.filter(([url]) => new URL(requestUrl(url)).pathname === '/agents')).toHaveLength(1));
 		await vi.waitFor(() => expect(ui.frame()).toContain('Inspect source'));
@@ -200,9 +202,10 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(ui.frame()).toContain('❯ Yolo'));
 		ui.stdin.write('\r');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Activate Yolo'));
+		await ui.flush();
 		expect(agents.getSnapshot()).toEqual({id: 'ask', yoloActive: false});
 		ui.stdin.write('a');
-		await vi.waitFor(() => expect(ui.frame()).toContain('YOLO ACTIVE'));
+		await vi.waitFor(() => expect(ui.frame()).toContain('YOLO'));
 		expect(agents.getSnapshot()).toEqual({id: 'yolo', yoloActive: true});
 		ui.stdin.write('Check this');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Check this'));
@@ -215,7 +218,7 @@ describe('CLI chat UI', () => {
 		await vi.waitFor(() => expect(session.getSnapshot().messages).toEqual([]));
 		expect(agents.getSnapshot()).toEqual({id: 'yolo', yoloActive: true});
 		agents.select('ask');
-		await vi.waitFor(() => expect(ui.frame()).not.toContain('YOLO ACTIVE'));
+		await vi.waitFor(() => expect(ui.frame()).not.toContain('YOLO'));
 		await vi.waitFor(() => expect(session.getSnapshot().operation).toBe('idle'));
 		ui.stdin.write('Another check');
 		await vi.waitFor(() => expect(ui.frame()).toContain('Another check'));

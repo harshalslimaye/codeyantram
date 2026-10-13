@@ -5,6 +5,7 @@ import {
 	findSupportedChatModel,
 	isOpenAIModelSlug,
 	toRequestMessage,
+	projectRequestToolResults,
 	type MessagePart,
 	type AssistantMessage,
 	type AgentId,
@@ -39,16 +40,31 @@ export interface ContextStatus {
 	contextWindow: number;
 	usedPercent: number;
 	remainingPercent: number;
+	rawContextBytes?: number;
+	projectedContextBytes?: number;
+	trimmedToolResults?: number;
+}
+
+type ContextStatusOptions = {contextWindow?: number; toolResultTrimming?: boolean};
+
+function contextStatusOptions(options?: number | ContextStatusOptions): ContextStatusOptions {
+	return typeof options === 'number' ? {contextWindow: options} : options ?? {};
 }
 
 /** Estimates active input against catalog capacity, before response headroom. */
-export function getContextStatus(modelId: string, messages: readonly ChatMessage[], compacted?: CompactedContext, discoveredWindow?: number): ContextStatus {
+export function getContextStatus(modelId: string, messages: readonly ChatMessage[], compacted?: CompactedContext, options?: number | ContextStatusOptions): ContextStatus {
+	const policy = contextStatusOptions(options);
 	const model = findSupportedChatModel(modelId);
 	if (!model && !isOpenAIModelSlug(modelId)) throw new Error(`Model "${modelId}" is not supported.`);
-	const usedTokens = estimateContextTokens(buildChatContext(messages, compacted));
-	const contextWindow = model?.contextWindow ?? discoveredWindow ?? 0;
+	const context = buildChatContext(messages, compacted);
+	const projection = projectRequestToolResults(context.messages, policy.toolResultTrimming !== false);
+	const projected = {...context, messages: projection.messages};
+	const usedTokens = estimateContextTokens(projected);
+	const contextWindow = model?.contextWindow ?? policy.contextWindow ?? 0;
 	const usedPercent = contextWindow > 0 ? usedTokens / contextWindow * PERCENT_SCALE : 0;
-	return {modelId, usedTokens, contextWindow, usedPercent, remainingPercent: Math.max(0, PERCENT_SCALE - usedPercent)};
+	return {modelId, usedTokens, contextWindow, usedPercent, remainingPercent: Math.max(0, PERCENT_SCALE - usedPercent),
+		...(projection.stats.trimmedResults > 0 ? {rawContextBytes: measureContextBytes(context),
+			projectedContextBytes: measureContextBytes(projected), trimmedToolResults: projection.stats.trimmedResults} : {})};
 }
 
 /** Reject stale/out-of-range boundaries and boundaries that split a user-led turn. */
@@ -106,6 +122,11 @@ export function estimateContextTokens(context: {
 	const messages = context.messages.reduce((total, message) =>
 		total + textEstimate(message.parts.map(part => part.type === 'text' ? part.text : JSON.stringify(part)).join('')) + ESTIMATED_MESSAGE_OVERHEAD_TOKENS, 0);
 	return messages + (context.contextSummary === undefined ? 0 : textEstimate(context.contextSummary) + ESTIMATED_SUMMARY_OVERHEAD_TOKENS);
+}
+
+/** Estimates the same cross-turn projection as core, excluding provider overhead. */
+export function estimateProjectedContextTokens(context: ChatContext, enabled = true): number {
+	return estimateContextTokens({...context, messages: projectRequestToolResults(context.messages, enabled).messages});
 }
 
 /** Canonical serialized model content; includes the real summary wrapper, excludes IDs/status/usage.

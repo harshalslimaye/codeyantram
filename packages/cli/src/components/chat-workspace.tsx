@@ -37,8 +37,10 @@ export function ChatWorkspace({session, approvals, agentSession, availableAgents
 	const {agents, selectedAgent} = useAgentSelection(agentSession);
 	const {messages, statusEntries, operation, isStreaming, compaction, error, notice} = useSyncExternalStore(session.subscribe, session.getSnapshot);
 	const pending = useSyncExternalStore(approvals?.subscribe ?? emptySubscribe, approvals?.getSnapshot ?? noApproval);
-	const contextStatus = getContextStatus(modelPreferences.modelId, messages, compaction,
-		chatgptModels.find(model => model.id === modelPreferences.modelId)?.contextWindow);
+	const toolResultTrimming = availableAgents.find(agent => agent.id === selectedAgent.id)?.tools.length !== 0;
+	const contextStatus = getContextStatus(modelPreferences.modelId, messages, compaction, {
+		contextWindow: chatgptModels.find(model => model.id === modelPreferences.modelId)?.contextWindow, toolResultTrimming,
+	});
 	const contextTurnCount = compactionTurnCount(compaction, messages);
 	return (
 		<Box flexDirection="column" height={rows}>
@@ -71,8 +73,8 @@ export function ChatWorkspace({session, approvals, agentSession, availableAgents
 					onCancel={() => session.cancel()}
 					onExport={filePath => {void session.exportMarkdown(filePath);}}
 					onClear={() => session.clear()}
-					onCompact={() => {void session.compact(modelPreferences.modelId);}}
-					onStatus={() => session.showStatus(modelPreferences.modelId)}
+					onCompact={() => {void session.compact(modelPreferences.modelId, toolResultTrimming);}}
+					onStatus={() => session.showStatus(modelPreferences.modelId, toolResultTrimming)}
 					onInit={() => {void session.initialize();}}
 				/>
 				<StatusBar branch={branch} agent={selectedAgent.id} automaticActive={selectedAgent.yoloActive} model={modelPreferences.modelId} openaiConnection={modelPreferences.openaiConnection} effort={effort} contextTurnCount={contextTurnCount} contextStatus={contextStatus} />

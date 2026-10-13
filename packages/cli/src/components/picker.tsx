@@ -14,6 +14,7 @@ type PickerProps<Value extends string> = {
 	filterPlaceholder?: string;
 	initialQuery?: string;
 	filterOption?: (option: {value: Value; label: string}, query: string) => boolean;
+	onQueryChange?: (query: string) => void;
 	onSelect: (value: Value) => void;
 	onCancel: () => void;
 };
@@ -42,6 +43,7 @@ function ActivePicker<Value extends string>({
 	filterPlaceholder = 'Filter options…',
 	initialQuery = '',
 	filterOption,
+	onQueryChange,
 	onSelect,
 	onCancel,
 }: PickerProps<Value>) {
@@ -55,8 +57,10 @@ function ActivePicker<Value extends string>({
 	}, [pickerOwner, isOwner, isDisabled, filteredOptions, onSelect, onCancel]);
 	const handleFilterChange = useCallback((value: string) => {
 		const current = interaction.current;
-		if (current.isOwner(current.pickerOwner) && !current.isDisabled) setQuery(value);
-	}, []);
+		if (!current.isOwner(current.pickerOwner) || current.isDisabled) return;
+		setQuery(value);
+		onQueryChange?.(value);
+	}, [onQueryChange]);
 	// Select calls onChange in an effect; a stable callback prevents repeat selections.
 	const handleChange = useCallback((value: string) => {
 		const current = interaction.current;
@@ -64,14 +68,11 @@ function ActivePicker<Value extends string>({
 		const option = current.options.find(candidate => candidate.value === value);
 		if (option) current.onSelect(option.value);
 	}, []);
-
 	useInput((_input, key) => {
 		const current = interaction.current;
 		if (key.escape && current.isOwner(current.pickerOwner) && !current.isDisabled) current.onCancel();
 	}, {isActive: owner === pickerOwner});
-
 	if (owner !== pickerOwner) return null;
-
 	return (
 		<Box flexDirection="column" borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 			<Text color={palette.muted}>{title}</Text>

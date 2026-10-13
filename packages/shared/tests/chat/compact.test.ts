@@ -72,8 +72,8 @@ describe('compact request validation', () => {
     expect(compactMessageSchema.parse(message)).toEqual(message);
   });
 
-  it('reports an unsupported model at the model field', () => {
-    const result = compactRequestSchema.safeParse({...request, model: 'unknown-model'});
+  it('reports a malformed model slug at the model field', () => {
+    const result = compactRequestSchema.safeParse({...request, model: 'unknown/model'});
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error.issues[0]?.path).toEqual(['model']);
   });

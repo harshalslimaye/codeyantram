@@ -81,7 +81,7 @@ describe('provider navigation loop', () => {
     }));
     expect(fetch).toHaveBeenCalledTimes(10);
     expect(events.filter(event => event.type === 'tool-result')).toHaveLength(10);
-    expect(events.at(-1)?.type).toBe('done');
+    expect(events.at(-1)).toMatchObject({type: 'error', code: 'provider_error'});
   });
 
   it('keeps the provider step cap independent from the shared tool execution cap', async () => {
@@ -92,7 +92,7 @@ describe('provider navigation loop', () => {
     expect(fetch).toHaveBeenCalledTimes(10);
     expect(events.filter(event => event.type === 'tool-call')).toHaveLength(10);
     expect(events.filter(event => event.type === 'tool-result')).toHaveLength(10);
-    expect(events.at(-1)?.type).toBe('done');
+    expect(events.at(-1)).toMatchObject({type: 'error', code: 'provider_error'});
   });
 
   it('cancels an in-flight graph query without starting another provider step', async () => {

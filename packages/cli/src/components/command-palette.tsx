@@ -7,12 +7,14 @@ function matchesCommand(option: {value: string}, query: string) {
 	return option.value.slice(1).toLowerCase().startsWith(query.replace(/^\//, ''));
 }
 
-export function CommandPalette({query, onSelect}: {query?: string, onSelect: (command: string) => void}) {
+type CommandPaletteProps = {query?: string; onSelect: (command: string) => void; onQueryChange?: (query: string) => void};
+
+export function CommandPalette({query, onSelect, onQueryChange}: CommandPaletteProps) {
 	const { owner } = useKeyboardOwner();
-	return owner === 'command-palette' ? <CommandPaletteRenderer query={query} onSelect={onSelect} /> : null;
+	return owner === 'command-palette' ? <CommandPaletteRenderer query={query} onSelect={onSelect} onQueryChange={onQueryChange} /> : null;
 }
 
-function CommandPaletteRenderer({query, onSelect}: {query?: string, onSelect: (command: string) => void}) {
+function CommandPaletteRenderer({query, onSelect, onQueryChange}: CommandPaletteProps) {
 	const { isOwner, pop } = useKeyboardOwner();
 	const options = getCommandOptions();
 
@@ -27,6 +29,7 @@ function CommandPaletteRenderer({query, onSelect}: {query?: string, onSelect: (c
 		<Picker owner="command-palette"
 			title="Commands · ↑/↓ navigate · Enter select · Esc close"
 			options={options} filterable initialQuery={query ?? ''} filterOption={matchesCommand}
+			onQueryChange={onQueryChange}
 			onSelect={handleChange} onCancel={() => pop('command-palette')} />
 	);
 }

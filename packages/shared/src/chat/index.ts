@@ -41,3 +41,7 @@ export type {
   CompactStreamEvent,
 } from './compact.js';
 export {formatContextSummary} from './context.js';
+export {trimToolResult, serializedToolResultBytes, MIN_TRIM_RESULT_BYTES, MAX_TRIM_RECORD_BYTES} from './tool-result-record.js';
+export {olderToolResultIds, projectRequestToolResults, projectToolResult, emptyToolResultProjectionStats,
+  KEEP_TOOL_RESULT_TURNS, KEEP_TOOL_RESULT_STEPS} from './tool-result-context.js';
+export type {ToolResultProjectionStats} from './tool-result-context.js';

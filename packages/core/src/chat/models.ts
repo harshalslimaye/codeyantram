@@ -2,6 +2,7 @@ import {
   findSupportedChatModel,
   isOpenAIModelSlug,
   modelSupportsEffort,
+  chatGPTSupportedEfforts,
   type EffortLevel,
   type ProviderCredentials,
 } from '@codeyantram/shared';
@@ -28,7 +29,7 @@ export function resolveChatModel(options: ResolveChatModelOptions): ResolvedChat
   const definition = findSupportedChatModel(options.modelId);
   const chatgpt = options.chatgpt;
   if (chatgpt !== undefined && (definition?.provider === 'openai' || (definition === undefined && isOpenAIModelSlug(options.modelId)))) {
-    if (options.effort !== undefined && chatgpt.supportedEffortLevels?.includes(options.effort) !== true) {
+    if (options.effort !== undefined && !chatGPTSupportedEfforts(options.modelId, chatgpt.supportedEffortLevels).includes(options.effort)) {
       throw new ChatError('invalid_request', 'This ChatGPT model does not support the selected reasoning effort.');
     }
     return {model: createChatGPTModel({modelSlug: options.modelId, reasoningEffort: options.effort,

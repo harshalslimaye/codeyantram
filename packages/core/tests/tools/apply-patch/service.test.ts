@@ -112,7 +112,7 @@ describe('approved workspace patches', () => {
     expect(result).toMatchObject({status: 'error', error: {code: 'execution_failed'}});
     expect(JSON.stringify(result)).not.toContain('PRIVATE KEY');
     for (let position = 1; position < 40; position++) await execute('glob', `${position}`, undefined, async () => ({}));
-    expect(await execute('apply_patch', 'extra', undefined, async () => ({}))).toMatchObject({status: 'success'});
+    expect(await execute('apply_patch', 'extra', undefined, async () => ({}))).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
   });
 
   it('rejects removed evaluation controls before requesting approval', async () => {

@@ -218,6 +218,41 @@ and `/jev` to enable or disable it. Project configuration only overrides the two
 thresholds; it cannot supply credentials or enable JEV. Host-enabled JEV cannot
 be bypassed per request by `read` or `web_fetch`, including HTML fetches.
 
+## Older tool results
+
+Older large tool results are automatically replaced with concise records in the
+model's input. The full results remain in chat history and Markdown exports.
+The latest two user-led turns stay intact; within a tool loop, results from the
+latest two tool-producing steps stay intact. Parallel results age together.
+
+Results must be at least 8 KiB to qualify. A replacement must fit within 2 KiB
+and reduce the result by at least 50%. Records preserve exact paths, coordinates,
+hashes, execution outcomes, coverage, filtering/truncation, and warnings, plus
+bounded verbatim excerpts. Errors, unknown output shapes, small results, and
+records whose required metadata cannot fit remain complete. Large call arguments
+and patch outcomes are preserved.
+
+The model can use `tool_result_read` to recover paged original historical JSON
+without rerunning a command or changing files. Recovery uses the existing turn
+budget and is limited to results in the active context. Results removed by
+`/compact` are unavailable to recovery. Historical hashes describe the original
+snapshot and do not establish current file state. Recovered pages stay complete
+within the current turn; large pages can age across subsequent turns.
+
+This context capability is available to agents with a nonempty tool allowlist,
+including when only historical results are available. Agents configured with
+`tools: []` retain full results. `/status` reports projected context estimates
+and byte reduction when results qualify; provider formatting and tool definitions
+add overhead. Smaller payloads do not guarantee cheaper or faster requests:
+recovery and provider cache behavior matter. Live answer-quality and billing
+comparisons have not been measured.
+
+Core callers can disable trimming with `ChatStreamOptions.toolResultTrimming:
+false`; HTTP `/chat` callers can send `toolResultTrimming: false`. Neither option
+changes transcript storage or manual compaction. Core's `onToolResultContext`
+callback reports per-step original/projected result bytes, trimming/skip counts,
+projection duration, and cumulative recovery page calls/bytes, without raw source.
+
 ## Compact conversation context
 
 Use `/compact` to summarize older conversation context with the active model.

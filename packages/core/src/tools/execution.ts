@@ -18,7 +18,8 @@ export function createToolExecutor(onExecutionCount?: (count: number) => void): 
   return async (name, id, signal, run) => {
     const error = (code: Extract<ToolResult, {status: 'error'}>['error']['code'], message: string): ToolResult =>
       ({toolCallId: id, toolName: name, status: 'error', error: {code, message}});
-    onExecutionCount?.(++executions);
+    executions++;
+    onExecutionCount?.(executions);
     if (executions > MAX_TOOL_EXECUTIONS) return error('tool_limit', 'The 20 tool executions allowed for this turn have been exhausted. Finish with the evidence already gathered.');
     try {
       signal?.throwIfAborted();

@@ -233,8 +233,8 @@ describe('POST /chat', () => {
   });
 
   it.each([
-    {...request, model: 'unsupported'},
-    {...request, effort: 'none'},
+    {...request, model: 'unsupported/model'},
+    {...request, effort: 'invalid-effort'},
     {...request, messages: []},
   ])('rejects invalid chat input before reading keys or starting generation', async body => {
     const readConfig = vi.fn<typeof ReadConfigFunction>(async () => config);

@@ -43,8 +43,8 @@ describe('chat request validation', () => {
     }).success).toBe(false);
   });
 
-  it('rejects unsupported models and reports the model field', () => {
-    const result = chatRequestSchema.safeParse({model: 'unknown-model', messages});
+  it('rejects malformed model slugs and reports the model field', () => {
+    const result = chatRequestSchema.safeParse({model: 'unknown/model', messages});
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error.issues[0]?.path).toEqual(['model']);
   });

@@ -86,7 +86,7 @@ describe('POST /compact', () => {
   });
 
   it.each([
-    {...request, model: 'unsupported'}, {...request, messages: []}, {...request, previousSummary: ' '},
+    {...request, model: 'unsupported/model'}, {...request, messages: []}, {...request, previousSummary: ' '},
     {...request, previousSummary: 'x'.repeat(12_001)},
     {...request, messages: [{...request.messages[0], status: 'failed'}]},
     {...request, messages: [{...request.messages[1], status: 'streaming'}]},

@@ -18,6 +18,7 @@ export function SessionStatus({status}: {status: ContextStatus}) {
 			<Text bold color={palette.primary}>Session status</Text>
 			<Text color={palette.text}>Model    {status.modelId}</Text>
 			<Text color={palette.text}>Context  ~{tokenFormatter.format(status.usedTokens)} / {tokenFormatter.format(status.contextWindow)} tokens</Text>
+			{status.trimmedToolResults !== undefined && <Text color={palette.muted}>Older tool results: {status.trimmedToolResults} trimmed · {status.rawContextBytes} → {status.projectedContextBytes} bytes (estimated model context)</Text>}
 			<Box columnGap={1}>
 				<Box flexGrow={1} flexBasis={0}><ProgressBar value={status.usedPercent} /></Box>
 				<Text color={palette.muted}>~{formatContextPercent(status.usedPercent)}% used</Text>
