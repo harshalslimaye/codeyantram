@@ -32,6 +32,17 @@ describe('tool-bearing conversation history', () => {
     expect(history[1].parts).toContainEqual(call);
   });
 
+  it('keeps the provider step number on stored calls without sending it to the model', async () => {
+    const stepped = {...call, step: 2};
+    const session = new ChatSession(async function* () {yield {type: 'start', messageId: 'a1'}; yield stepped; yield result; yield {type: 'done', durationMs: 1};});
+    await session.send('Locate greet', 'gpt-6.1-sol');
+    const history = session.getSnapshot().messages;
+    expect(history[1].parts).toEqual([stepped, result]);
+    const context = buildChatContext(history);
+    expect(chatRequestSchema.safeParse({model: 'gpt-6.1-sol', ...context}).success).toBe(true);
+    expect(toModelMessages(context)[1].content).toContainEqual({type: 'tool-call', ...call.call});
+  });
+
   it('closes interrupted calls for replay without inventing a successful result or altering the transcript', async () => {
     const session = new ChatSession(async function* () {yield {type: 'start', messageId: 'a1'}; yield call;});
     await session.send('Locate greet', 'gpt-6.1-sol');

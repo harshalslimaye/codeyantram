@@ -1,4 +1,4 @@
-import {streamText, isStepCount, type PrepareStepFunction, type ToolSet} from 'ai';
+import {streamText, isStepCount, type ModelMessage, type PrepareStepFunction, type ToolSet} from 'ai';
 import {chatRequestSchema, olderToolResultIds, type ChatRequest, type ResolvedAgent} from '@codeyantram/shared';
 import {ChatError} from './errors.js';
 import {resolveChatModel} from './models.js';
@@ -13,6 +13,7 @@ import type {ToolExecutor} from '../tools/types.js';
 
 const MAX_TOOL_OBJECTIVE_CHARACTERS = 2048;
 const MAX_TOOL_STEPS = 10;
+const DEFAULT_TRIM_BATCH_BYTES = 32_768;
 const HALF_TOOL_EXECUTIONS = 10;
 const FIVE_TOOL_EXECUTIONS_REMAINING = 15;
 const FIVE_STEPS_COMPLETED = 5;
@@ -76,17 +77,36 @@ function prepareToolResultContext(input: ToolResultContextOptions) {
   const older = trimming ? olderToolResultIds(request.messages) : new Set<string>();
   const baseInstructions = `${instructions}\n\nTurn budget: up to ${MAX_TOOL_STEPS} provider steps and ${MAX_TOOL_EXECUTIONS} tool executions. Use the budget deliberately, avoid unnecessary tool calls, and finish the task with the evidence available.`
     + (trimming ? '\nOlder tool outputs may be concise historical records. Use tool_result_read with their original toolCallId to recover omitted details before relying on them. Recovery uses the same turn budget. Historical hashes do not establish current source state.' : '');
+  const batcher = createTrimBatcher(options.toolResultTrimBatchBytes ?? DEFAULT_TRIM_BATCH_BYTES, id => archive.isAmbiguous(id));
   const prepareStep: PrepareStepFunction<ToolSet> = ({stepNumber, initialMessages: original, responseMessages, steps}) => {
     if (trimming) archive.record(responseMessages);
-    const eligible = new Set([...older, ...(trimming ? olderStepToolResultIds(steps) : [])].filter(id => !archive.isAmbiguous(id)));
-    const projection = projectModelToolResults([...original, ...responseMessages], eligible, stepNumber);
+    const full = [...original, ...responseMessages];
+    const candidates = [...older, ...(trimming ? olderStepToolResultIds(steps) : [])];
+    const projection = projectModelToolResults(full, batcher.select(full, candidates, stepNumber), stepNumber);
     options.onToolResultContext?.({...projection.diagnostic, ...archive.diagnostics()});
     const reminders = budgetReminders(stepNumber, executions());
-    return {messages: projection.messages, instructions: reminders.length === 0 ? baseInstructions
-      : `${baseInstructions}\n\nTurn budget update: ${reminders.join(' ')}`,
+    const messages: ModelMessage[] = reminders.length === 0 ? projection.messages
+      : [...projection.messages, {role: 'user', content: `Turn budget update: ${reminders.join(' ')}`}];
+    return {messages, instructions: baseInstructions,
       ...(executions() >= MAX_TOOL_EXECUTIONS || stepNumber === MAX_TOOL_STEPS - 1 ? {toolChoice: 'none' as const} : {})};
   };
   return {initialMessages, baseInstructions, prepareStep};
+}
+
+function createTrimBatcher(batchBytes: number, isAmbiguous: (id: string) => boolean) {
+  const applied = new Set<string>();
+  return {select(messages: readonly ModelMessage[], candidates: readonly string[], stepNumber: number): Set<string> {
+    const pending = candidates.filter(id => !applied.has(id) && !isAmbiguous(id));
+    if (pending.length > 0 && (stepNumber === 0 || trimSavings(messages, pending, stepNumber) >= batchBytes)) {
+      for (const id of pending) applied.add(id);
+    }
+    return new Set([...applied].filter(id => !isAmbiguous(id)));
+  }};
+}
+
+function trimSavings(messages: readonly ModelMessage[], ids: readonly string[], stepNumber: number): number {
+  const {diagnostic} = projectModelToolResults(messages, new Set(ids), stepNumber);
+  return diagnostic.originalResultBytes - diagnostic.projectedResultBytes;
 }
 
 function budgetReminders(stepNumber: number, executions: number): string[] {

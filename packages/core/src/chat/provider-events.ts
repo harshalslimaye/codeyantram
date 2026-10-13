@@ -12,12 +12,13 @@ function toolErrorCode(error: unknown): 'tool_not_found' | 'invalid_input' | 'ex
   return 'execution_failed';
 }
 
-function toolCallEvent(part: Extract<Part, {type: 'tool-call'}>, invalidCalls: Map<string, unknown>): ChatStreamEvent {
+function toolCallEvent(part: Extract<Part, {type: 'tool-call'}>, invalidCalls: Map<string, unknown>, step: number): ChatStreamEvent {
   if ('invalid' in part && part.invalid === true && 'error' in part) invalidCalls.set(part.toolCallId, part.error);
   const rawInput: unknown = part.input;
   const input = typeof rawInput === 'object' && rawInput !== null && !Array.isArray(rawInput) ? rawInput : {};
   return {type: 'tool-call', call: toolCallSchema.parse({toolCallId: part.toolCallId, toolName: part.toolName, input,
-    ...(part.providerMetadata ? {providerOptions: JSON.parse(JSON.stringify(part.providerMetadata)) as unknown} : {})})};
+    ...(part.providerMetadata ? {providerOptions: JSON.parse(JSON.stringify(part.providerMetadata)) as unknown} : {})}),
+    ...(step < 0 ? {} : {step})};
 }
 
 function finishEvent(part: Extract<Part, {type: 'finish'}>, startedAt: number): ChatStreamEvent {
@@ -29,10 +30,10 @@ function finishEvent(part: Extract<Part, {type: 'finish'}>, startedAt: number): 
   return {type: 'done', durationMs: performance.now() - startedAt, ...(usage === undefined ? {} : {usage})};
 }
 
-function toEvent(part: Part, invalidCalls: Map<string, unknown>, startedAt: number): ChatStreamEvent | undefined {
+function toEvent(part: Part, invalidCalls: Map<string, unknown>, startedAt: number, step: number): ChatStreamEvent | undefined {
 
   if (part.type === 'text-delta') return {type: 'text-delta', text: part.text};
-  if (part.type === 'tool-call') return toolCallEvent(part, invalidCalls);
+  if (part.type === 'tool-call') return toolCallEvent(part, invalidCalls, step);
   if (part.type === 'tool-result') return {type: 'tool-result', result: toolResultSchema.parse(part.output)};
   if (part.type === 'tool-error') {
       const error = invalidCalls.get(part.toolCallId) ?? part.error;
@@ -48,9 +49,11 @@ function toEvent(part: Part, invalidCalls: Map<string, unknown>, startedAt: numb
 
 export async function* translateProviderEvents(stream: AsyncIterable<Part>, signal: AbortSignal, startedAt: number): AsyncGenerator<ChatStreamEvent> {
   const invalidCalls = new Map<string, unknown>();
+  let step = -1;
   for await (const part of stream) {
     if (signal.aborted || part.type === 'abort') return;
-    const event = toEvent(part, invalidCalls, startedAt);
+    if (part.type === 'start-step') step++;
+    const event = toEvent(part, invalidCalls, startedAt, step);
     if (event) yield event;
     if (part.type === 'error' || part.type === 'finish') return;
   }

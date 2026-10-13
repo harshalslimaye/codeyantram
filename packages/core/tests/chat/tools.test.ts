@@ -95,6 +95,22 @@ describe('provider navigation loop', () => {
     expect(events.at(-1)).toMatchObject({type: 'error', code: 'provider_error'});
   });
 
+  it('delivers budget reminders as trailing messages and keeps the system prompt identical across steps', async () => {
+    let call = 0;
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
+      sseResponse(++call <= 9 ? openaiToolEvents('graph', {}, `call-${call}`) : openaiEvents));
+    await collect(streamChat({model: 'gpt-6.1-sol', messages}, {credentials: {openai: 'test'}, fetch, workspaceGraph: service()}));
+    const bodies = fetch.mock.calls.map(([, init]) => parseJson<{input: unknown[]}>(requestBody(init?.body)));
+    const systemPrompts = bodies.map(body => JSON.stringify(body.input[0]));
+    expect(new Set(systemPrompts).size).toBe(1);
+    expect(systemPrompts.join('')).not.toContain('Turn budget update');
+    const tail = (body: {input: unknown[]} | undefined) => JSON.stringify(body?.input.at(-1));
+    const [, , , , , fifth, sixth, , ninth] = bodies;
+    expect(tail(fifth)).toContain('Five provider steps have been completed');
+    expect(JSON.stringify(sixth?.input)).not.toContain('Five provider steps have been completed');
+    expect(tail(ninth)).toContain('only two steps remain');
+  });
+
   it('cancels an in-flight graph query without starting another provider step', async () => {
     const controller = new AbortController();
     let querySignal: AbortSignal | undefined;

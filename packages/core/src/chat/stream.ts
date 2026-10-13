@@ -16,6 +16,7 @@ export interface ChatStreamOptions extends ToolHostServices {
   chatgpt?: ResolveChatModelOptions['chatgpt'];
   /** Disable projection without changing transcript storage or manual compaction. */
   toolResultTrimming?: boolean;
+  toolResultTrimBatchBytes?: number;
   onToolResultContext?: (diagnostic: ToolResultContextDiagnostic) => void;
 }
 

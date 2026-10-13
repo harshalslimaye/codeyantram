@@ -72,6 +72,7 @@ export const toolResultSchema = z.discriminatedUnion('status', [
 export const toolCallPartSchema = z.strictObject({
   type: z.literal('tool-call'),
   call: toolCallSchema,
+  step: z.number().int().nonnegative().optional(),
 });
 
 export const toolResultPartSchema = z.strictObject({

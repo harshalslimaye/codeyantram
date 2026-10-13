@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {chatRequestSchema, toolResultSchema, trimToolResult, serializedToolResultBytes, MIN_TRIM_RESULT_BYTES, MAX_TRIM_RECORD_BYTES,
-  projectRequestToolResults, olderToolResultIds, type ToolResult} from '../../src/index.js';
+  projectRequestToolResults, olderToolResultIds, type RequestMessage, type ToolResult} from '../../src/index.js';
 import {history, readResult, readOutput, OMITTED_MARKER} from './tool-result-fixtures.js';
 
 describe('older tool result projection', () => {
@@ -32,6 +32,47 @@ describe('older tool result projection', () => {
     expect(olderToolResultIds(messages.slice(0, 4)).size).toBe(0);
     expect(projectRequestToolResults(messages.slice(0, 4)).stats.trimmedResults).toBe(0);
     expect(projectRequestToolResults(messages, false).messages).toEqual(messages);
+  });
+
+  describe('step rule inside a stored turn', () => {
+    const step = (id: string, name = 'read') => [
+      {type: 'tool-call' as const, call: {toolCallId: id, toolName: name, input: {filePath: 'src/large.ts'}}},
+      {type: 'tool-result' as const, result: {...readResult(id), toolName: name}},
+    ];
+    const turn = (parts: RequestMessage['parts']): RequestMessage[] => [
+      {id: 'u1', role: 'user', parts: [{type: 'text', text: 'Inspect'}]},
+      {id: 'a1', role: 'assistant', parts},
+      {id: 'u2', role: 'user', parts: [{type: 'text', text: 'Next'}]},
+    ];
+
+    it('keeps trimmed what the model already saw trimmed, so the next turn does not grow back', () => {
+      const parts = ['s1', 's2', 's3', 's4'].flatMap(id => step(id));
+      expect([...olderToolResultIds(turn(parts))]).toEqual(['s1', 's2']);
+    });
+
+    it('counts parallel calls as one step and ignores recovery reads', () => {
+      const parallel = [
+        {type: 'tool-call' as const, call: {toolCallId: 'p1', toolName: 'read', input: {}}},
+        {type: 'tool-call' as const, call: {toolCallId: 'p2', toolName: 'read', input: {}}},
+        {type: 'tool-result' as const, result: readResult('p1')}, {type: 'tool-result' as const, result: readResult('p2')},
+      ];
+      const parts = [...parallel, ...step('s2'), ...step('r1', 'tool_result_read'), ...step('s3')];
+      expect([...olderToolResultIds(turn(parts))].sort()).toEqual(['p1', 'p2']);
+    });
+
+    it('uses recorded step numbers so an immediate invalid-call error does not split a step', () => {
+      const call = (id: string, stepNumber: number) => ({type: 'tool-call' as const, call: {toolCallId: id, toolName: 'read', input: {}}, step: stepNumber});
+      const result = (id: string) => ({type: 'tool-result' as const, result: readResult(id)});
+      const invalid = {type: 'tool-result' as const, result: {toolCallId: 'b', toolName: 'read', status: 'error' as const,
+        error: {code: 'invalid_input' as const, message: 'The tool call could not be executed.'}}};
+      const parts = [call('a', 0), call('b', 0), invalid, call('c', 0), result('a'), result('c'), call('d', 1), result('d')];
+      expect(olderToolResultIds(turn(parts)).size).toBe(0);
+      expect([...olderToolResultIds(turn([...parts, call('e', 2), result('e')]))].sort()).toEqual(['a', 'b', 'c']);
+    });
+
+    it('trims nothing when a turn has no more steps than the protected window', () => {
+      expect(olderToolResultIds(turn([...step('s1'), ...step('s2')])).size).toBe(0);
+    });
   });
 
   const unchanged: ToolResult[] = [

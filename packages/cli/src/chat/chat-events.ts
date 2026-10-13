@@ -20,7 +20,7 @@ export function createChatEventHandler(context: {
 			const call = toolCallSchema.parse(event.call);
 			if (isDuplicateCall(call.toolCallId, pendingTools, context.getMessages())) throw new Error('Duplicate tool call ID.');
 			pendingTools.set(call.toolCallId, call.toolName);
-			context.updateAssistant(message => ({...message, parts: [...message.parts, {type: 'tool-call', call}]}));
+			context.updateAssistant(message => ({...message, parts: [...message.parts, {type: 'tool-call', call, ...(event.step === undefined ? {} : {step: event.step})}]}));
 		} else if (event.type === 'tool-result') {
 			const result = toolResultSchema.parse(event.result);
 			if (pendingTools.get(result.toolCallId) !== result.toolName) throw new Error('Tool result did not match a pending call.');
