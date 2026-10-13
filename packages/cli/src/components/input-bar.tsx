@@ -71,7 +71,7 @@ export function InputBar(props: InputBarProps) {
 			<InputStatus {...controller} operation={operation} />
 			<Box borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
 				<Text color={palette.prompt}>› </Text>
-				<TextInput placeholder={'Okay, what did you do this time?'.slice(0, Math.max(0, columns - INPUT_RESERVED_COLUMNS))} key={inputRevision} defaultValue={value} isDisabled={!isEditing} onChange={handleChange} onSubmit={submitDraft} />
+				<TextInput placeholder={'Okay, what did you do this time?'.slice(0, Math.max(0, columns - INPUT_RESERVED_COLUMNS))} key={inputRevision} defaultValue={value} isDisabled={!isEditing || owner !== 'input-bar'} onChange={handleChange} onSubmit={submitDraft} />
 			</Box>
 		</Box>
 	);
@@ -111,7 +111,7 @@ function useInputBarController({operation, onSubmit, onCancel, onExport, onClear
 	}
 
 	const submitDraft = createDraftSubmit({owner, isOwner, isBusy, onSelectCommand, setNotice, setShowHelp, updateDraft, onSubmit});
-	const handleChange = createDraftChange({isOwner, push, pop, setValue, setShowHelp, setNotice});
+	const handleChange = createDraftChange({value, isOwner, push, pop, setValue, setShowHelp, setNotice});
 
 	useInputBarKeyboard({savingJev, isBusy, isEditing, isOwner, pop, setShowHelp, updateDraft, onCancel: () => {
 		if (chatgpt.isRunning) chatgpt.cancel(); else onCancel();
@@ -184,8 +184,8 @@ function createDraftSubmit(context: Pick<DraftContext, 'owner' | 'isOwner' | 'is
 	return submitDraft;
 }
 
-function createDraftChange(context: Pick<DraftContext, 'isOwner' | 'push' | 'pop' | 'setValue' | 'setShowHelp' | 'setNotice'>) {
-	const {isOwner, push, pop, setValue, setShowHelp, setNotice} = context;
+function createDraftChange(context: Pick<DraftContext, 'isOwner' | 'push' | 'pop' | 'setValue' | 'setShowHelp' | 'setNotice'> & {value: string}) {
+	const {value, isOwner, push, pop, setValue, setShowHelp, setNotice} = context;
 	function updateCommandPalette(next: string) {
 		if (next.startsWith('/') && !next.includes(' ') && !isOwner('command-palette')) {
 			push('command-palette');
@@ -195,12 +195,13 @@ function createDraftChange(context: Pick<DraftContext, 'isOwner' | 'push' | 'pop
 	}
 
 	function handleChange(next: string) {
+		// Ignore TextInput's replay of unchanged values after a callback update.
+		if (next === value) return;
 		setValue(next);
 		setShowHelp(false);
 		setNotice(undefined);
 		updateCommandPalette(next);
 	}
-
 	return handleChange;
 }
 
@@ -219,7 +220,6 @@ function useInputBarKeyboard(context: Pick<DraftContext, 'savingJev' | 'isBusy' 
 			else pop('command-palette');
 			return;
 		}
-
 	}, {isActive: isEditing || isBusy});
 }
 

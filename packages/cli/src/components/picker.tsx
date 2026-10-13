@@ -12,6 +12,7 @@ type PickerProps<Value extends string> = {
 	resetKey?: number;
 	filterable?: boolean;
 	filterPlaceholder?: string;
+	initialQuery?: string;
 	onSelect: (value: Value) => void;
 	onCancel: () => void;
 };
@@ -38,12 +39,13 @@ function ActivePicker<Value extends string>({
 	resetKey,
 	filterable = false,
 	filterPlaceholder = 'Filter options…',
+	initialQuery = '',
 	onSelect,
 	onCancel,
 }: PickerProps<Value>) {
 	const {palette} = useTheme();
 	const {owner, isOwner} = useKeyboardOwner();
-	const [query, setQuery] = useState('');
+	const [query, setQuery] = useState(initialQuery);
 	const filteredOptions = useFilteredOptions(options, query, filterable);
 	const interaction = useRef({pickerOwner, isOwner, isDisabled, options: filteredOptions, onSelect, onCancel});
 	useLayoutEffect(() => {

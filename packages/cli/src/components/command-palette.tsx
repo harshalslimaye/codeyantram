@@ -1,7 +1,5 @@
 import React, { useCallback } from 'react';
-import { Box, Text } from 'ink';
-import { Select } from '@inkjs/ui';
-import { useTheme } from '../theme/provider.js';
+import {Picker} from './picker.js';
 import { useKeyboardOwner } from '../keyboard/provider.js';
 import { getCommandOptions } from '../lib/commands.js';
 
@@ -12,9 +10,8 @@ export function CommandPalette({query, onSelect}: {query?: string, onSelect: (co
 }
 
 function CommandPaletteRenderer({query, onSelect}: {query?: string, onSelect: (command: string) => void}) {
-	const { palette } = useTheme();
 	const { isOwner, pop } = useKeyboardOwner();
-	const options = getCommandOptions(query ?? '');
+	const options = getCommandOptions();
 
 	// Select calls onChange from an effect; parent renders must not repeat selection.
 	const handleChange = useCallback((command: string) => {
@@ -24,9 +21,9 @@ function CommandPaletteRenderer({query, onSelect}: {query?: string, onSelect: (c
 	}, [isOwner, pop, onSelect]);
 
 	return (
-		<Box flexDirection="column" borderStyle="round" borderColor={palette.border} paddingX={1} width="100%">
-			<Text color={palette.muted}>Commands · ↑/↓ navigate · Enter select · Esc close</Text>
-			<Select options={options} onChange={handleChange} />
-		</Box>
+		<Picker owner="command-palette"
+			title="Commands · ↑/↓ navigate · Enter select · Esc close"
+			options={options} filterable initialQuery={query ?? ''}
+			onSelect={handleChange} onCancel={() => pop('command-palette')} />
 	);
 }
