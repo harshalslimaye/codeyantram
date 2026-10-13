@@ -7,4 +7,3 @@ export const MIN_FILTER_CHARACTERS = 6000;
 export const MAX_CHUNK_LINES = 40;
 export const MAX_CHUNK_CHARACTERS = 2400;
 export const MAX_EVALUATED_CHUNKS = 32;
-export const IRRELEVANT_PROBABILITY = 0.05;

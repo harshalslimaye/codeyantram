@@ -72,26 +72,26 @@ describe('provider navigation loop', () => {
     expect(events.at(-1)?.type).toBe('done');
   });
 
-  it('completes a turn that needs more than six tool steps', async () => {
+  it('stops the provider loop after ten tool steps', async () => {
     let call = 0;
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
-      sseResponse(++call <= 7 ? openaiToolEvents('graph', {}, `call-${call}`) : openaiEvents));
+      sseResponse(++call <= 11 ? openaiToolEvents('graph', {}, `call-${call}`) : openaiEvents));
     const events = await collect(streamChat({model: 'gpt-6.1-sol', messages}, {
       credentials: {openai: 'test'}, fetch, workspaceGraph: service(),
     }));
-    expect(fetch).toHaveBeenCalledTimes(8);
-    expect(events.filter(event => event.type === 'tool-result')).toHaveLength(7);
+    expect(fetch).toHaveBeenCalledTimes(10);
+    expect(events.filter(event => event.type === 'tool-result')).toHaveLength(10);
     expect(events.at(-1)?.type).toBe('done');
   });
 
-  it('continues beyond twenty steps and forty tool calls until the model answers', async () => {
+  it('keeps the provider step cap independent from the shared tool execution cap', async () => {
     let call = 0;
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
-      sseResponse(++call <= 41 ? openaiToolEvents('graph', {}, `call-${call}`) : openaiEvents));
+      sseResponse(++call <= 21 ? openaiToolEvents('graph', {}, `call-${call}`) : openaiEvents));
     const events = await collect(streamChat({model: 'gpt-6.1-sol', messages}, {credentials: {openai: 'test'}, fetch, workspaceGraph: service()}));
-    expect(fetch).toHaveBeenCalledTimes(42);
-    expect(events.filter(event => event.type === 'tool-call')).toHaveLength(41);
-    expect(events.filter(event => event.type === 'tool-result')).toHaveLength(41);
+    expect(fetch).toHaveBeenCalledTimes(10);
+    expect(events.filter(event => event.type === 'tool-call')).toHaveLength(10);
+    expect(events.filter(event => event.type === 'tool-result')).toHaveLength(10);
     expect(events.at(-1)?.type).toBe('done');
   });
 

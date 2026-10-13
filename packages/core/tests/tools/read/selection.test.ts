@@ -19,6 +19,23 @@ const options = {filePath: 'src/file.ts', objective: 'Find relevant implementati
 afterEach(() => vi.useRealTimers());
 
 describe('read relevance selection', () => {
+  it.each([[undefined, true], [0.5, true], [0.6, true], [0.8, false]] as const)('uses neighbor threshold %s', async (neighborThreshold, keptNeighbor) => {
+    const {jev} = setup(async input => ({modelId: 'fixture', durationMs: 0,
+      answers: Object.fromEntries(Object.keys(input.questions).map(id => [id, {type: 'boolean', probability: id === 'range-2' ? 0.6 : 0.01}])),
+    }));
+    if (jev.status !== 'available') throw new Error('Expected available evaluator');
+    const result = await selectReadChunks(chunks, {...options, jev: {...jev, neighborThreshold}});
+    expect(result.chunks.some(chunk => chunk.id === 'range-1')).toBe(keptNeighbor);
+    expect(result.chunks.some(chunk => chunk.id === 'range-2')).toBe(true);
+  });
+  it.each([[undefined, false], [0.1, true], [0.15, true], [0.2, false]] as const)('uses retention threshold %s', async (retentionThreshold, kept) => {
+    const {jev} = setup(async input => ({modelId: 'fixture', durationMs: 0,
+      answers: Object.fromEntries(Object.keys(input.questions).map(id => [id, {type: 'boolean', probability: id === 'range-1' ? 0.15 : id === 'range-4' ? 0.9 : 0.01}])),
+    }));
+    if (jev.status !== 'available') throw new Error('Expected available evaluator');
+    const result = await selectReadChunks(chunks, {...options, jev: {...jev, retentionThreshold}});
+    expect(result.chunks.some(chunk => chunk.id === 'range-1')).toBe(kept);
+  });
   it('retains whole ranges, leading context, neighboring evidence, and original locations', async () => {
     const {jev, mock} = setup();
     const result = await selectReadChunks(chunks, {...options, jev});

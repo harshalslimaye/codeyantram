@@ -13,6 +13,7 @@ type PickerProps<Value extends string> = {
 	filterable?: boolean;
 	filterPlaceholder?: string;
 	initialQuery?: string;
+	filterOption?: (option: {value: Value; label: string}, query: string) => boolean;
 	onSelect: (value: Value) => void;
 	onCancel: () => void;
 };
@@ -23,12 +24,12 @@ export function Picker<Value extends string>(props: PickerProps<Value>) {
 	return <ActivePicker key={String(props.filterable ?? false)} {...props} />;
 }
 
-function useFilteredOptions<Value extends string>(options: PickerProps<Value>['options'], query: string, filterable: boolean) {
+function useFilteredOptions<Value extends string>(options: PickerProps<Value>['options'], query: string, filterable: boolean, filterOption?: PickerProps<Value>['filterOption']) {
 	return useMemo(() => {
 		const search = query.trim().toLowerCase();
 		if (!filterable || !search) return options;
-		return options.filter(option => option.label.toLowerCase().includes(search) || option.value.toLowerCase().includes(search));
-	}, [options, query, filterable]);
+		return options.filter(option => filterOption ? filterOption(option, search) : option.label.toLowerCase().includes(search) || option.value.toLowerCase().includes(search));
+	}, [options, query, filterable, filterOption]);
 }
 
 function ActivePicker<Value extends string>({
@@ -40,23 +41,22 @@ function ActivePicker<Value extends string>({
 	filterable = false,
 	filterPlaceholder = 'Filter options…',
 	initialQuery = '',
+	filterOption,
 	onSelect,
 	onCancel,
 }: PickerProps<Value>) {
 	const {palette} = useTheme();
 	const {owner, isOwner} = useKeyboardOwner();
 	const [query, setQuery] = useState(initialQuery);
-	const filteredOptions = useFilteredOptions(options, query, filterable);
+	const filteredOptions = useFilteredOptions(options, query, filterable, filterOption);
 	const interaction = useRef({pickerOwner, isOwner, isDisabled, options: filteredOptions, onSelect, onCancel});
 	useLayoutEffect(() => {
 		interaction.current = {pickerOwner, isOwner, isDisabled, options: filteredOptions, onSelect, onCancel};
 	}, [pickerOwner, isOwner, isDisabled, filteredOptions, onSelect, onCancel]);
-
 	const handleFilterChange = useCallback((value: string) => {
 		const current = interaction.current;
 		if (current.isOwner(current.pickerOwner) && !current.isDisabled) setQuery(value);
 	}, []);
-
 	// Select calls onChange in an effect; a stable callback prevents repeat selections.
 	const handleChange = useCallback((value: string) => {
 		const current = interaction.current;

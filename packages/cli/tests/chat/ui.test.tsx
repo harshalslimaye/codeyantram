@@ -260,8 +260,46 @@ describe('CLI chat UI', () => {
     await vi.waitFor(() => expect(ui.frame()).toContain('https://example.com/docs'));
     expect(ui.frame()).toContain('web_fetch · completed');
     expect(ui.frame()).toContain('output truncated');
-    expect(ui.frame()).toContain('JEV filtering skipped');
+    expect(ui.frame().replace(/\s+/g, ' ')).toContain('JEV filtering skipped');
     expect(ui.frame()).not.toContain('PRIVATE_PAGE_BODY');
+  });
+
+  it.each(['web_fetch', 'read'].flatMap(toolName => ['completed', 'partial', 'skipped', 'failed'].map(status => ({toolName, status}))))
+    ('shows a compact JEV summary for $toolName ($status)', async ({toolName, status}) => {
+      const session = new ChatSession(async function* (): AsyncGenerator<ChatStreamEvent> {
+        yield {type: 'start', messageId: 'jev-ui'};
+        yield {type: 'tool-call', call: {toolCallId: 'jev-call', toolName, input: {filePath: 'source.ts'}}};
+        yield {type: 'tool-result', result: {toolCallId: 'jev-call', toolName, status: 'success', output: {
+          content: 'PRIVATE_SOURCE_BODY',
+          filtering: {status, totalChunks: 7, retainedChunks: 5, evaluatedChunks: status === 'partial' ? 4 : 7, durationMs: 419.6,
+            ...(status === 'skipped' ? {reason: 'small_content'} : {})},
+          warnings: [],
+        }}};
+        yield {type: 'done', durationMs: 1};
+      });
+      const ui = renderWorkspace(session);
+      await session.send('Read this source', 'gpt-6.1-sol');
+      const expected = status === 'completed' ? 'JEV · kept 5/7 chunks · omitted 2 · evaluated 7/7 · 420 ms'
+        : status === 'partial' ? 'JEV partial · kept 5/7 chunks · omitted 2 · evaluated 4/7 · 420 ms'
+        : status === 'skipped' ? 'JEV skipped · small content' : 'JEV failed';
+      await vi.waitFor(() => expect(ui.frame().replace(/\s+/g, ' ')).toContain(`${toolName} · completed · ${expected}`));
+      expect(ui.frame()).not.toContain('PRIVATE_SOURCE_BODY');
+    });
+
+  it('shows read truncation and fallback warnings without inventing JEV statistics', async () => {
+    const session = new ChatSession(async function* (): AsyncGenerator<ChatStreamEvent> {
+      yield {type: 'start', messageId: 'read-fallback-ui'};
+      yield {type: 'tool-call', call: {toolCallId: 'read-call', toolName: 'read', input: {filePath: 'source.ts'}}};
+      yield {type: 'tool-result', result: {toolCallId: 'read-call', toolName: 'read', status: 'success', output: {
+        filtering: {status: 'completed'}, truncation: {truncated: true}, warnings: ['Original read page returned.'],
+      }}};
+      yield {type: 'done', durationMs: 1};
+    });
+    const ui = renderWorkspace(session);
+    await session.send('Read this source', 'gpt-6.1-sol');
+    await vi.waitFor(() => expect(ui.frame().replace(/\s+/g, ' ')).toContain('read · completed · JEV · output truncated · Original read page returned.'));
+    expect(ui.frame()).not.toContain('NaN');
+    expect(ui.frame()).not.toContain('undefined');
   });
 
   it('shows navigation activity and completion without dumping source results', async () => {

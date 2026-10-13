@@ -16,5 +16,3 @@ export {
   DEFAULT_EVALUATION_CONCURRENCY as EVALUATION_CONCURRENCY,
   DEFAULT_EVALUATION_TIMEOUT_MS as FILTER_TIMEOUT_MS,
 } from '../../evaluation/batches.js';
-/** Provisional conservative cutoff; live evidence-retention evaluation is documented separately. */
-export const IRRELEVANT_PROBABILITY = 0.05;

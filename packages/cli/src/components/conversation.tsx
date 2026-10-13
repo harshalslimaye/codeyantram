@@ -36,13 +36,39 @@ function toolInputSummary(input: ToolInput): string {
 
 function toolResultSummary(result: ToolResult): string {
 	if (result.status === 'error') return result.error.message;
-	if (result.toolName !== 'web_fetch' || !isDetailsRecord(result.output)) return 'completed';
+	if ((result.toolName !== 'web_fetch' && result.toolName !== 'read') || !isDetailsRecord(result.output)) return 'completed';
 	const details = ['completed'];
 	const {warnings, truncation, filtering} = result.output;
-	if (isDetailsRecord(filtering) && filtering.status === 'completed') details.push('JEV filtered');
+	if (isDetailsRecord(filtering)) details.push(...filteringSummary(filtering));
 	if (isDetailsRecord(truncation) && truncation.truncated === true) details.push('output truncated');
 	if (Array.isArray(warnings)) details.push(...warnings.filter((warning): warning is string => typeof warning === 'string').map(warning => warning.slice(0, MAX_WARNING_CHARACTERS)));
 	return details.join(' · ');
+}
+
+function filteringSummary(filtering: Record<string, unknown>): string[] {
+	const {status, durationMs, reason} = filtering;
+	if (status === 'skipped' || status === 'failed') {
+		return [`JEV ${status}`, ...(typeof reason === 'string' ? [reason.replaceAll('_', ' ').slice(0, MAX_WARNING_CHARACTERS)] : [])];
+	}
+	if (status !== 'completed' && status !== 'partial') return [];
+	const details = [status === 'partial' ? 'JEV partial' : 'JEV'];
+	details.push(...chunkSummary(filtering));
+	if (isNonnegativeNumber(durationMs)) details.push(`${Math.round(durationMs)} ms`);
+	return details;
+}
+
+function chunkSummary(filtering: Record<string, unknown>): string[] {
+	const {totalChunks, retainedChunks, evaluatedChunks} = filtering;
+	if (!isChunkCount(totalChunks) || totalChunks === 0 || !isChunkCount(retainedChunks, totalChunks) || !isChunkCount(evaluatedChunks, totalChunks)) return [];
+	return [`kept ${retainedChunks}/${totalChunks} chunks`, `omitted ${totalChunks - retainedChunks}`, `evaluated ${evaluatedChunks}/${totalChunks}`];
+}
+
+function isChunkCount(value: unknown, maximum = Number.MAX_SAFE_INTEGER): value is number {
+	return isNonnegativeNumber(value) && Number.isSafeInteger(value) && value <= maximum;
+}
+
+function isNonnegativeNumber(value: unknown): value is number {
+	return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
 export function Conversation({messages, statusEntries, isStreaming}: {messages: ConversationMessage[]; statusEntries: StatusEntry[]; isStreaming: boolean}) {

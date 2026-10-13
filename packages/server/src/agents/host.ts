@@ -3,6 +3,7 @@ import {createReadService, createGrepService, createGlobService, createGitServic
   type AgentRegistry, type ChatStreamOptions} from '@codeyantram/core';
 import {chatGPTSupportedEfforts, readConfig, readProviderCredentials, usesChatGPTConnection, type AgentMetadata, type ChatRequest, type ResolvedAgent} from '@codeyantram/shared';
 import {resolveJevCapability} from '../integrations/jev.js';
+import {readProjectJevThresholds} from '../integrations/project-jev.js';
 import type {ServerAppOptions} from '../app.js';
 
 export function agentMetadata(agents: AgentRegistry, options: ServerAppOptions): AgentMetadata[] {
@@ -41,8 +42,9 @@ export async function readChatOptions(request: ChatRequest, signal: AbortSignal,
   if (selected === undefined) throw new Error('Selected agent unavailable.');
   const policy = resolvePolicy(selected, request, options);
   const config = await (options.readConfig ?? readConfig)();
-  const jev = resolveJevCapability(config, signal, options.createJevEvaluator);
   const workspaceRoot = options.workspaceRoot;
+  const projectThresholds = await readProjectJevThresholds(workspaceRoot);
+  const jev = resolveJevCapability(config, signal, options.createJevEvaluator, projectThresholds);
   let chatgpt: ChatStreamOptions['chatgpt'];
   if (usesChatGPTConnection(config, request.model)) {
     const session = options.chatgptSession;

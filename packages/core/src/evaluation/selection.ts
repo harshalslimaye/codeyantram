@@ -1,3 +1,4 @@
+import {resolveJevRetentionThreshold, resolveJevNeighborThreshold} from '@codeyantram/shared';
 import {performance} from 'node:perf_hooks';
 import type {TokenUsage} from '@codeyantram/shared';
 import type {EvaluationMetadata, JevCapability, JevEvaluator} from './types.js';
@@ -69,4 +70,12 @@ export function retainUncertainEvidence(probability: number | undefined, cutoff:
 export function evaluationStatus(total: number, evaluated: number): EvaluationMetadata['status'] {
   if (evaluated === 0) return 'failed';
   return evaluated < total ? 'partial' : 'completed';
+}
+
+export function jevRetentionThreshold(jev?: JevCapability): number {
+  return resolveJevRetentionThreshold(jev?.status === 'available' ? jev.retentionThreshold : undefined);
+}
+
+export function jevNeighborThreshold(jev?: JevCapability): number {
+  return resolveJevNeighborThreshold(jev?.status === 'available' ? jev.neighborThreshold : undefined);
 }

@@ -1,0 +1,8 @@
+{
+    "integrations": {
+        "jev": {
+            "retentionThreshold": 0.5,
+            "neighborThreshold": 0.5
+        }
+    }
+}

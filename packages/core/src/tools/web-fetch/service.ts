@@ -30,7 +30,7 @@ export function createWebFetchService(options: {transport?: WebTransport; jev?: 
       } finally { scope.dispose(); }
     })();
     const selection = await selectContent(converted.content, document.finalUrl, format === 'html' ? 'html' : converted.format, {
-      jev: options.jev, objective: args.query ?? context.objective, filter: args.filter, signal: context.abortSignal,
+      jev: options.jev, objective: args.query ?? context.objective, signal: context.abortSignal,
     });
     return formatOutput(document, converted.format, converted.content.length, selection);
   }};

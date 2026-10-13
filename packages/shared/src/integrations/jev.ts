@@ -1,10 +1,26 @@
 import {readConfig, writeConfig} from '../filesystem/config.js';
 import {asObject} from '../utils/objects.js';
 
+export const DEFAULT_JEV_RETENTION_THRESHOLD = 0.2;
+export const DEFAULT_JEV_NEIGHBOR_THRESHOLD = 0.5;
+
+/** Invalid settings fall back to the default; zero keeps all judged evidence. */
+export function resolveJevRetentionThreshold(value: unknown): number {
+	return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+		? value : DEFAULT_JEV_RETENTION_THRESHOLD;
+}
+
+export function resolveJevNeighborThreshold(value: unknown): number {
+	return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+		? value : DEFAULT_JEV_NEIGHBOR_THRESHOLD;
+}
+
 /** Public configuration status deliberately omits the credential. */
 export interface JevConfiguration {
 	enabled: boolean;
 	configured: boolean;
+	retentionThreshold?: number;
+	neighborThreshold?: number;
 }
 
 export class JevNotConfiguredError extends Error {
@@ -19,6 +35,8 @@ export function resolveJevConfiguration(config: Record<string, unknown>): JevCon
 	const settings = asObject(asObject(config.integrations).jev);
 	return {
 		enabled: settings.enabled === true,
+		retentionThreshold: resolveJevRetentionThreshold(settings.retentionThreshold),
+		neighborThreshold: resolveJevNeighborThreshold(settings.neighborThreshold),
 		configured: typeof apiKey === 'string' && Boolean(apiKey.trim()),
 	};
 }

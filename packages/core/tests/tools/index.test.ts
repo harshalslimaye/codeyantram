@@ -14,13 +14,13 @@ function setup() {
 const execution = (toolCallId = 'call-1') => ({toolCallId, messages: [], context: {}});
 
 describe('bound navigation tool registry', () => {
-  it('registers all five tools and allows navigation beyond forty calls', async () => {
+  it('registers all five tools and shares a twenty-call execution budget', async () => {
     const {tools, query} = setup();
     expect(Object.keys(tools)).toEqual(['explore', 'graph', 'find', 'inspect', 'trace']);
-    for (let i = 0; i < 20; i++) await requireValue(tools.find.execute)({query: 'greet'}, execution(`find-${i}`));
-    for (let i = 0; i < 20; i++) await requireValue(tools.inspect.execute)({reference}, execution(`inspect-${i}`));
-    expect(await requireValue(tools.trace.execute)({reference, direction: 'callers'}, execution('extra'))).toMatchObject({status: 'success'});
-    expect(query).toHaveBeenCalledTimes(41);
+    for (let i = 0; i < 10; i++) expect(await requireValue(tools.find.execute)({query: 'greet'}, execution(`find-${i}`))).toMatchObject({status: 'success'});
+    for (let i = 0; i < 10; i++) expect(await requireValue(tools.inspect.execute)({reference}, execution(`inspect-${i}`))).toMatchObject({status: 'success'});
+    expect(await requireValue(tools.trace.execute)({reference, direction: 'callers'}, execution('over-limit'))).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
+    expect(query).toHaveBeenCalledTimes(20);
   });
   it.each([{query: ''}, {query: ' '}, {query: 'x'.repeat(1025)}, {query: 'q', maxNodes: 21},
     {query: 'q', maxCharacters: 24_001}, {query: 'q', workspaceRoot: '/other'}, {query: 'q', databasePath: '/other.db'}])
@@ -56,11 +56,11 @@ describe('bound navigation tool registry', () => {
     expect(await requireValue(tools.graph.execute)({}, execution('call-3'))).toMatchObject({status: 'success'});
   });
 
-  it('stops cancelled calls before graph work while allowing later calls', async () => {
+  it('stops cancelled calls before graph work and enforces the shared limit', async () => {
     const {tools, query} = setup();
     expect(await requireValue(tools.explore.execute)({query: 'q'}, {...execution(), abortSignal: AbortSignal.abort()})).toMatchObject({status: 'error', error: {code: 'cancelled'}});
     expect(query).not.toHaveBeenCalled();
-    for (let i = 1; i < 40; i++) await requireValue(tools.graph.execute)({}, execution(`call-${i}`));
-    expect(await requireValue(tools.graph.execute)({}, execution('extra'))).toMatchObject({status: 'success'});
+    for (let i = 1; i < 20; i++) expect(await requireValue(tools.graph.execute)({}, execution(`call-${i}`))).toMatchObject({status: 'success'});
+    expect(await requireValue(tools.graph.execute)({}, execution('extra'))).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
   });
 });

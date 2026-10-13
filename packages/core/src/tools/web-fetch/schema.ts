@@ -8,6 +8,5 @@ export const webFetchInputSchema = z.strictObject({
   format: z.enum(['markdown', 'text', 'html']).optional(),
   timeout: z.number().int().min(1).max(MAX_TIMEOUT_SECONDS).optional(),
   query: z.string().trim().min(1).max(MAX_QUERY_CHARACTERS).optional(),
-  filter: z.boolean().optional(),
 });
 export type WebFetchInput = z.infer<typeof webFetchInputSchema>;

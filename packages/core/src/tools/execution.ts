@@ -9,13 +9,17 @@ import {ApplyPatchError} from './apply-patch/errors.js';
 import {BashError} from './bash/errors.js';
 import {GitError} from './git/errors.js';
 
+export const MAX_TOOL_EXECUTIONS = 20;
 const MAX_TOOL_OUTPUT_BYTES = 80_000;
 
-/** Apply the same output and error handling to every agent tool. */
-export function createToolExecutor(): ToolExecutor {
+/** Create once per turn so all agent tools share the same call budget. */
+export function createToolExecutor(onExecutionCount?: (count: number) => void): ToolExecutor {
+  let executions = 0;
   return async (name, id, signal, run) => {
     const error = (code: Extract<ToolResult, {status: 'error'}>['error']['code'], message: string): ToolResult =>
       ({toolCallId: id, toolName: name, status: 'error', error: {code, message}});
+    onExecutionCount?.(++executions);
+    if (executions > MAX_TOOL_EXECUTIONS) return error('tool_limit', 'The 20 tool executions allowed for this turn have been exhausted. Finish with the evidence already gathered.');
     try {
       signal?.throwIfAborted();
       const output = await run();

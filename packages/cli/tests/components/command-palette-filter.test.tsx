@@ -49,10 +49,10 @@ describe('command palette filter', () => {
 		await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledExactlyOnceWith('hello'));
 	});
 
-	it('matches descriptions case-insensitively and selects once', async () => {
+	it('matches command prefixes case-insensitively and selects once', async () => {
 		const ui = setup();
 		await vi.waitFor(() => expect(ui.frame()).toContain('Filter:'));
-		ui.stdin.write('SUMMARIZE');
+		ui.stdin.write('COM');
 		await vi.waitFor(() => {
 			expect(ui.frame()).toContain('/compact');
 			expect(ui.frame()).not.toContain('/help');
@@ -62,6 +62,22 @@ describe('command palette filter', () => {
 		await vi.waitFor(() => {
 			expect(ui.frame()).toContain('Owner: input-bar');
 			expect(ui.frame()).not.toContain('Filter:');
+		});
+	});
+
+	it.each(['omp', 'summarize'])('does not match substrings or descriptions: %s', async query => {
+		const ui = setup(query);
+		await vi.waitFor(() => expect(ui.frame()).toContain('No matching options'));
+		ui.stdin.write('\r');
+		await ui.flush();
+		expect(ui.onSelect).not.toHaveBeenCalled();
+	});
+
+	it('accepts a leading slash and does not match description words', async () => {
+		const ui = setup('/MOD');
+		await vi.waitFor(() => {
+			expect(ui.frame()).toContain('/model');
+			expect(ui.frame()).not.toContain('/status');
 		});
 	});
 

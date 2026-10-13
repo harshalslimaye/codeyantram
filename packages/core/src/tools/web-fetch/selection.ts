@@ -1,6 +1,6 @@
 import {performance} from 'node:perf_hooks';
 import type {TokenUsage} from '@codeyantram/shared';
-import {evaluationCapability, evaluationObjective, evaluationStatus} from '../../evaluation/index.js';
+import {jevNeighborThreshold, jevRetentionThreshold, evaluationCapability, evaluationObjective, evaluationStatus} from '../../evaluation/index.js';
 import {evaluateChunks} from './evaluation-batches.js';
 import {retainedPositions} from './retained-content.js';
 import {chunkContent, ChunkLimitError, type ContentChunk} from './chunks.js';
@@ -10,10 +10,10 @@ import type {FilteringMetadata, JevCapability, WebFormat} from './types.js';
 export interface Selection {content: string; filtering: FilteringMetadata; warnings: string[]}
 
 export async function selectContent(content: string, sourceUrl: string, format: WebFormat, options: {
-  jev?: JevCapability; objective?: string; filter?: boolean; signal?: AbortSignal;
+  jev?: JevCapability; objective?: string; signal?: AbortSignal;
 }): Promise<Selection> {
   options.signal?.throwIfAborted();
-  const early = earlySelection(content, format, options);
+  const early = earlySelection(content, options);
   if ('content' in early) return early;
   const objective = evaluationObjective(options.objective);
   if (objective === undefined || objective === '') return skippedSelection(content, 'no_objective');
@@ -31,8 +31,17 @@ export async function selectContent(content: string, sourceUrl: string, format: 
   const started = performance.now();
   await evaluateChunks(candidates, evaluator, {objective, signal: options.signal, judgments, usage});
   options.signal?.throwIfAborted();
-  const retained = retainedPositions(chunks, judgments);
-  return buildSelection(content, chunks, {judgments, evaluatedChunkLimit: candidates.length, usage, started, retained});
+  const retained = retainedPositions(chunks, judgments, jevRetentionThreshold(options.jev), jevNeighborThreshold(options.jev));
+  const selection = buildSelection(content, chunks, {judgments, evaluatedChunkLimit: candidates.length, usage, started, retained});
+  warnIncompleteHtml(selection, format);
+  return selection;
+}
+
+function warnIncompleteHtml(selection: Selection, format: WebFormat) {
+  const {retainedChunks, totalChunks} = selection.filtering;
+  if (format === 'html' && retainedChunks > 0 && retainedChunks < totalChunks) {
+    selection.warnings.push('JEV omitted HTML sections; filtered output may be incomplete markup.');
+  }
 }
 
 function buildSelection(content: string, chunks: ContentChunk[], context: {
@@ -78,14 +87,13 @@ function skippedSelection(content: string, reason: string, warning?: string): Se
   };
 }
 
-function earlySelection(content: string, format: WebFormat, options: {jev?: JevCapability; filter?: boolean}): Selection | Extract<JevCapability, {status: 'available'}> {
-  const capability = evaluationCapability(options.jev, options.filter);
+function earlySelection(content: string, options: {jev?: JevCapability}): Selection | Extract<JevCapability, {status: 'available'}> {
+  const capability = evaluationCapability(options.jev);
   if (capability.status === 'skipped') {
     let warning: string | undefined;
     if (capability.reason === 'missing_credentials') warning = 'JEV filtering skipped: configure TypeSafe through /connect. Normal content returned.';
     if (capability.reason === 'initialization_failed') warning = 'JEV filtering skipped: evaluation could not be initialized. Normal content returned.';
     return skippedSelection(content, capability.reason, warning);
   }
-  if (format === 'html') return skippedSelection(content, 'raw_html');
   return capability;
 }

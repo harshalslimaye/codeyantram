@@ -157,10 +157,10 @@ enabling. Saving a key does not enable usage. The key is stored at
 `providers.typesafe.apiKey`, and the opt-in preference at
 `integrations.jev.enabled`, in the global user config. Disabling preserves the
 key. JEV is an evaluation integration and does not appear in `/model`.
-The server resolves this preference on each chat turn. When enabled, web fetch
-can send fetched chunks and the current task objective to TypeSafe for relevance
-evaluation. Saving a key alone makes no evaluation request. Failed or incomplete
-evaluation retains unevaluated content and reports a fallback notice.
+When enabled, JEV can send retrieved content and the current task objective to
+TypeSafe for relevance evaluation. Failed or incomplete evaluation retains
+unevaluated content and reports a fallback notice. See [JEV configuration](#jev-configuration)
+for project-specific filtering thresholds.
 
 The `web_fetch` tool reads public HTTP(S) URLs without requiring `/init`. It
 returns Markdown by default, with text and explicit raw HTML options. Requests
@@ -169,7 +169,7 @@ unsupported. Every destination, including redirects, must resolve to public IPs.
 The default request timeout is 30 seconds (maximum 120), with five redirects and
 5 MiB limits on both wire and decompressed bytes. Output is limited to 24,000
 characters and 60,000 serialized UTF-8 bytes, with explicit truncation metadata.
-JEV filtering is optional; `filter:false` requests unfiltered bounded content.
+Host-enabled JEV filtering cannot be disabled per fetch, including HTML output.
 The CLI shows the URL, completion/errors, truncation, and filtering fallback notices.
 See [web-fetch evaluation](packages/core/WEB_FETCH_EVALUATION.md) for reproducible
 fixtures and opt-in live evidence, answer-quality, latency, and cost comparisons.
@@ -180,6 +180,43 @@ percentage remaining. The footer shows live estimated context usage. Status card
 are UI-only and are excluded from chat and compaction requests; `/clear` removes them.
 Context estimates include the active messages and summary, exclude archived history
 and the unsent draft, and do not reserve output tokens or guarantee that a request fits.
+
+## JEV configuration
+
+Create `.codeyantram/config.json` in your project root to tune JEV filtering for
+that project. Merge these options into an existing file rather than replacing it:
+
+```json
+{
+  "integrations": {
+    "jev": {
+      "retentionThreshold": 0.2,
+      "neighborThreshold": 0.5
+    }
+  }
+}
+```
+
+Both values are numbers from `0` to `1`: `0.2` means 20%, `0.5` means 50%, and
+`0.8` means 80%.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `retentionThreshold` | `0.2` (20%) | Chunks scoring below this relevance threshold can be omitted by `web_fetch`, `read`, and `explore`. Higher values filter more content. |
+| `neighborThreshold` | `0.5` (50%) | A retained chunk at or above this score keeps adjacent context in `web_fetch` and `read`. Higher values keep fewer neighbors; web fetch restricts neighbors to the same section. |
+
+Each option resolves independently: **project config → user config → default**.
+Changes are loaded on the next chat turn. Invalid project values report an error;
+missing or invalid user values use the defaults. Missing or failed judgments,
+unevaluated content, headings, and other context-preservation rules may keep
+content below the retention threshold. Ranking-only tools do not discard results.
+
+API credentials and JEV enablement remain in the user configuration at
+`~/.config/codeyantram/config.json` on macOS/Linux, or
+`%APPDATA%\codeyantram\config.json` on Windows. Use `/connect` to configure TypeSafe
+and `/jev` to enable or disable it. Project configuration only overrides the two
+thresholds; it cannot supply credentials or enable JEV. Host-enabled JEV cannot
+be bypassed per request by `read` or `web_fetch`, including HTML fetches.
 
 ## Compact conversation context
 
@@ -266,7 +303,7 @@ relationships, and verified source snippets after synchronizing the selected
 workspace. It lazily builds the initial index if necessary. `graph({})` reports
 lifecycle, freshness, pending changes, and failures without opening SQLite.
 Both tools are read-only; arguments cannot change the selected root or storage.
-Navigation continues until the model answers or the user cancels the turn.
+A chat turn uses at most ten provider steps and twenty tool executions.
 `find({query, limit?, maxCharacters?})` returns symbol candidates with verified
 references. `inspect` accepts one reference to read source, or a relative
 `filePath` for an indexed outline. `trace` follows callers or callees of a

@@ -147,13 +147,13 @@ describe('workspace grep service', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('uses the shared tool error envelope beyond forty calls', async () => {
+  it('enforces the shared twenty-call budget across tool errors and reads', async () => {
     await writeFile(join(root, 'file'), 'needle');
     const execute = createToolExecutor();
     const grep = createGrepTool(createGrepService({workspaceRoot: root}), execute);
     const read = createReadTool(createReadService({workspaceRoot: root}), execute);
     expect(await requireValue(grep.execute)({pattern: '['}, execution())).toMatchObject({status: 'error', error: {code: 'invalid_input'}});
-    for (let position = 0; position < 39; position++) await requireValue(read.execute)({filePath: 'file'}, execution(`read-${position}`));
-    expect(await requireValue(grep.execute)({pattern: 'needle'}, execution('extra'))).toMatchObject({status: 'success'});
+    for (let position = 0; position < 19; position++) await requireValue(read.execute)({filePath: 'file'}, execution(`read-${position}`));
+    expect(await requireValue(grep.execute)({pattern: 'needle'}, execution('extra'))).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
   });
 });

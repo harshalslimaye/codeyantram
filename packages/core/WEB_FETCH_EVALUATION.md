@@ -35,7 +35,7 @@ output bounding in all five cases. Serialized output measurements were:
 
 Filtered bytes vary slightly with serialized duration. These are synthetic
 selection-mechanics results using known labels, not measured JEV classification
-accuracy or provider token savings. The 0.05 discard cutoff is conservative and
+accuracy or provider token savings. The default 0.2 discard cutoff is configurable and
 provisional. Keep JEV disabled by default until live evaluation supports a benefit.
 
 ## Opt-in live comparisons

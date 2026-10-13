@@ -169,12 +169,12 @@ always supplies web fetch. Both tool families continue until the model answers
 or the user cancels, and keep the existing ToolResult/SSE/history contracts.
 
 Input is `{url, format?: 'markdown' | 'text' | 'html', timeout?: number,
-query?: string, filter?: boolean}`. URLs are at most 4,096 characters including
+query?: string}`. URLs are at most 4,096 characters including
 normalization, timeout is an integer in seconds (default 30, maximum 120), and
 the optional relevance query is at most 2,048 characters. Without query, core
 uses only the latest user text, capped at 2,048 characters. It never sends the
-conversation or summary to JEV. `filter:false` overrides filtering only; it
-cannot enable JEV against host configuration.
+conversation or summary to JEV. Host-enabled JEV cannot be disabled per fetch,
+including HTML output; filtered HTML may be incomplete markup.
 
 The native GET transport validates every resolved address and every redirect,
 rejects non-public IPv4/IPv6 and transition ranges, and pins validated addresses
@@ -190,22 +190,31 @@ Cancellation covers DNS, connection, redirects, and streaming bodies.
 HTML conversion uses htmlparser2 and Turndown with GFM tables. Scripts, styles,
 hidden elements, and embedded documents are removed; HTTP(S) links resolve
 against the final URL. Conversion rejects over 50,000 elements or depth 128.
-Explicit HTML skips conversion and filtering. Non-HTML text is preserved, with
+Explicit HTML skips conversion but still undergoes host-enabled JEV filtering. Non-HTML text is preserved, with
 an accurate returned format (JSON/XML remain text; Markdown remains Markdown).
 JavaScript rendering, attachment downloads, cookies, caching, and paging are absent.
 
-Enabled JEV filters converted documents of at least 6,000 characters. Stable
+Enabled JEV filters documents of at least 6,000 characters. Stable
 chunks have source URL, UTF-16 offsets, position, heading ancestry, and at most
 2,400 characters. Documents requiring more than 4,096 chunks fall back to normal
 bounded content before evaluation. Each Boolean answer is P(useful evidence), not confidence.
 Up to the first 32 chunks are evaluated in batches of eight, with two concurrent
 batches and a five-second overall filtering deadline in addition to the fetch
-timeout. Only probabilities below 0.05 permit removal; this cutoff is provisional.
+timeout. Only probabilities below the configured retention threshold permit removal
+(default 0.2). Set `integrations.jev.retentionThreshold` to a number from 0 to 1
+in the project `.codeyantram/config.json`. The server resolves project settings
+before user settings, then defaults to 0.2. Invalid project values report an
+error; invalid user values fall back to 0.2. Credentials and enablement remain
+user settings. SDK hosts pass `retentionThreshold` on an available JEV capability. The setting applies to web fetch,
+read, and explore; ranking-only tools keep all results. `neighborThreshold` uses
+the same configuration precedence and valid range, defaults to 0.5, and controls
+adjacent context expansion in web fetch and read. SDK hosts pass it on the JEV
+capability. Higher neighbor thresholds retain fewer neighboring chunks.
 Uncertain, failed, and unevaluated chunks survive. Selection preserves heading
 context, adjacent positive context, whole fenced examples, and source order.
 Chunks are copied verbatim with explicit gap markers. All-negative selection
 falls back to the original content. Small pages, missing objectives, disabled
-JEV, and explicit HTML skip evaluation.
+JEV skip evaluation.
 
 Results include requested/final URL, HTTP status, content type, returned format,
 untrusted content framing, warnings, `filtering`, and `truncation`. Filtering has
@@ -372,7 +381,8 @@ with concurrency two and a five-second overall deadline. Results include
 available usage) and warnings. Evaluation failure returns normal graph results;
 missing judgments are retained and caller cancellation still cancels the tool.
 
-Explore removes only symbols with relevance probability below 0.05, retaining
+Explore removes only symbols below the configured relevance threshold (default
+0.2), retaining
 whole snippets and all graph-connected context of surviving symbols. An all-negative
 evaluation returns original context. When symbols are omitted, related files are
 rebuilt and the original summary is cleared. Find only ranks evaluated candidates
@@ -424,8 +434,8 @@ reads, while external processes can still change the filesystem after a response
 Symbols expose `metadataTruncated`; context and source carry their own truncation
 flags. These references are content checks, not an atomic filesystem snapshot.
 
-The loop has no fixed provider step or tool execution limit. Results have an 80 KB
-serialized UTF-8 ceiling. A tool failure is a structured result the model can
+The loop uses at most ten provider steps and twenty tool executions per turn.
+Results have an 80 KB serialized UTF-8 ceiling. A tool failure is a structured result the model can
 inspect. Cancellation reaches graph queries and ends without a terminal event. Source
 and tool outputs are labeled untrusted data in navigation instructions.
 

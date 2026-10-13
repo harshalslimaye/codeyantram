@@ -41,6 +41,6 @@ export function StatusBar({ branch, agent = 'ask', automaticActive = false, mode
 function displayAgent(agent: CliAgentId, automaticActive: boolean): string {
 	if (agent === 'ask') return 'Ask';
 	if (agent === 'build') return 'Build';
-	if (agent === 'yolo') return 'YOLO ACTIVE';
-	return automaticActive ? `YOLO ACTIVE · ${agent}` : agent;
+	if (agent === 'yolo') return 'YOLO';
+	return automaticActive ? `YOLO · ${agent}` : agent;
 }

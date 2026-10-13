@@ -25,7 +25,7 @@ export interface JevEvaluator {
   evaluate<const Questions extends EvaluationQuestions>(input: EvaluationInput<Questions>): Promise<EvaluationResult<Questions>>;
 }
 
-export type JevCapability = {status: 'disabled'} | {status: 'available'; evaluator: JevEvaluator}
+export type JevCapability = {status: 'disabled'} | {status: 'available'; evaluator: JevEvaluator; retentionThreshold?: number; neighborThreshold?: number}
   | {status: 'unavailable'; reason: 'missing_credentials' | 'initialization_failed'};
 
 export interface EvaluationMetadata {

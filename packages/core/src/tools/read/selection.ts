@@ -1,8 +1,8 @@
 import {performance} from 'node:perf_hooks';
 import {chunkEvaluationMetadata, evaluateCandidates, evaluationSetup, recordEvaluationMetadata, retainUncertainEvidence,
-  skippedEvaluation} from '../../evaluation/index.js';
+  skippedEvaluation, jevRetentionThreshold, jevNeighborThreshold} from '../../evaluation/index.js';
 import type {JevCapability} from '../../evaluation/index.js';
-import {IRRELEVANT_PROBABILITY, MAX_EVALUATED_CHUNKS, MIN_FILTER_CHARACTERS} from './limits.js';
+import {MAX_EVALUATED_CHUNKS, MIN_FILTER_CHARACTERS} from './limits.js';
 import type {ReadChunk} from './chunks.js';
 import type {ReadFilteringMetadata} from './types.js';
 
@@ -27,9 +27,9 @@ export async function selectReadChunks(chunks: ReadChunk[], options: {
     }),
   });
   recordEvaluationMetadata(filtering, result, started);
-  const retainedIds = new Set(chunks.filter(chunk => retainUncertainEvidence(result.judgments.get(chunk.id), IRRELEVANT_PROBABILITY)).map(chunk => chunk.id));
+  const retainedIds = new Set(chunks.filter(chunk => retainUncertainEvidence(result.judgments.get(chunk.id), jevRetentionThreshold(options.jev))).map(chunk => chunk.id));
   if (retainedIds.size === 0) return {chunks, filtering: {...filtering, reason: 'no_evidence'}, warnings: ['JEV selected no evidence; original read page returned.']};
-  retainContext(chunks, result.judgments, retainedIds);
+  retainContext(chunks, result.judgments, retainedIds, jevNeighborThreshold(options.jev));
   const retained = chunks.filter(chunk => retainedIds.has(chunk.id));
   filtering.retainedChunks = retained.length;
   const warnings: string[] = [];
@@ -39,12 +39,12 @@ export async function selectReadChunks(chunks: ReadChunk[], options: {
   return {chunks: retained, filtering, warnings};
 }
 
-function retainContext(chunks: ReadChunk[], judgments: Map<string, number>, retained: Set<string>) {
+function retainContext(chunks: ReadChunk[], judgments: Map<string, number>, retained: Set<string>, neighborThreshold: number) {
   const first = chunks.at(0);
   if (first) retained.add(first.id);
-  const positiveProbability = 0.5;
   for (const [position, chunk] of chunks.entries()) {
-    if ((judgments.get(chunk.id) ?? 0) < positiveProbability) continue;
+    const probability = judgments.get(chunk.id);
+    if (probability === undefined || probability < neighborThreshold || !retained.has(chunk.id)) continue;
     const previous = position > 0 ? chunks.at(position - 1) : undefined;
     for (const neighbor of [previous, chunks.at(position + 1)]) {
       if (neighbor) retained.add(neighbor.id);

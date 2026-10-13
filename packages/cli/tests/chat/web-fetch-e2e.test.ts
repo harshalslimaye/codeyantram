@@ -12,7 +12,7 @@ const servers: Awaited<ReturnType<typeof startChatServer>>[] = [];
 afterEach(async () => {await Promise.all(servers.splice(0).map(server => server.close()));});
 
 describe('CLI web fetch end to end', () => {
-  it('fetches and filters through the server, answers, replays, and honors an unfiltered follow-up', async () => {
+  it('fetches and filters through the server, answers, replays, and rejects a filtering bypass on follow-up', async () => {
     const url = 'https://docs.example.com/api';
     const page = '<h1>API</h1><h2>History</h2>' + '<p>HISTORICAL_NEWS: community newsletters and conference schedules.</p>'.repeat(140)
       + '<h2>Authentication</h2><p>Use Authorization: Bearer TOKEN and rotate credentials.</p>';
@@ -52,7 +52,8 @@ describe('CLI web fetch end to end', () => {
     await session.send('Fetch the complete page without filtering.', 'gpt-6.1-sol');
     expect(session.getSnapshot().error).toBeUndefined();
     expect(requestBody(requireValue(providerFetch.mock.calls[2])[1]?.body)).toContain('filtered');
-    expect(requestBody(requireValue(providerFetch.mock.calls[3])[1]?.body)).toContain('HISTORICAL');
+    expect(requestBody(requireValue(providerFetch.mock.calls[3])[1]?.body)).toContain('AI_InvalidToolInputError');
+    expect(requestBody(requireValue(providerFetch.mock.calls[3])[1]?.body)).not.toContain('HISTORICAL');
     expect(jevFetch).toHaveBeenCalledTimes(evaluationCalls);
     expect(readConfig).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(session.getSnapshot().messages)).not.toContain('evaluation-key');

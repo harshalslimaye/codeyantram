@@ -41,7 +41,32 @@ describe('lossless chunking', () => {
   });
 });
 
-describe('optional relevance selection', () => {
+describe('host-controlled relevance selection', () => {
+  it.each([[undefined, 3], [0.5, 3], [0.6, 3], [0.8, 1]] as const)('uses neighbor threshold %s', async (neighborThreshold, retainedChunks) => {
+    const {jev} = capability(async input => ({modelId: 'fixture', durationMs: 0,
+      answers: Object.fromEntries((input.state as {chunks: {id: string; position: number}[]}).chunks.map(chunk =>
+        [chunk.id, {type: 'boolean', probability: chunk.position === 2 ? 0.6 : 0.01}]))}));
+    if (jev.status !== 'available') throw new Error('Expected available evaluator');
+    const result = await selectContent('body '.repeat(2500), sourceUrl, 'text', {jev: {...jev, neighborThreshold}, objective: 'task'});
+    expect(result.filtering.retainedChunks).toBe(retainedChunks);
+  });
+  it.each([[undefined, false], [0.1, true], [0.15, true], [0.2, false]] as const)('uses retention threshold %s (keeps borderline content: %s)', async (retentionThreshold, kept) => {
+    const {jev} = capability(async input => ({modelId: 'fixture', durationMs: 0,
+      answers: Object.fromEntries((input.state as {chunks: {id: string; sectionPath: string[]}[]}).chunks.map(chunk =>
+        [chunk.id, {type: 'boolean', probability: chunk.sectionPath.includes('History') ? 0.15 : 0.8}]))}));
+    if (jev.status !== 'available') throw new Error('Expected available evaluator');
+    const result = await selectContent(content, sourceUrl, 'markdown', {jev: {...jev, retentionThreshold}, objective: 'task'});
+    expect(result.content.includes('IRRELEVANT')).toBe(kept);
+    expect(result.content).toContain('EVIDENCE');
+  });
+  it('evaluates HTML instead of allowing a format-based bypass', async () => {
+    const {jev, mock} = capability();
+    const result = await selectContent('<html><body>' + content + '</body></html>', sourceUrl, 'html', {jev, objective: 'task'});
+    expect(mock).toHaveBeenCalled();
+    expect(result.filtering.status).toBe('completed');
+    expect(result.content).not.toContain('IRRELEVANT');
+    expect(result.warnings).toContain('JEV omitted HTML sections; filtered output may be incomplete markup.');
+  });
   it('falls back without evaluation when adversarial structure creates excessive chunks', async () => {
     const {jev, mock} = capability();
     const text = '# Heading\n'.repeat(MAX_CHUNKS + 1);
@@ -64,16 +89,14 @@ describe('optional relevance selection', () => {
     expect(Object.keys(requireValue(mock.mock.calls[0])[0].questions).length).toBeLessThanOrEqual(8);
   });
   it.each([
-    [{status: 'disabled'}, true, 'markdown', 'task', content, 'disabled'],
-    [{status: 'unavailable', reason: 'missing_credentials'}, true, 'markdown', 'task', content, 'missing_credentials'],
-    [{status: 'unavailable', reason: 'initialization_failed'}, true, 'markdown', 'task', content, 'initialization_failed'],
-    [null, false, 'markdown', 'task', content, 'disabled_for_request'],
-    [null, true, 'html', 'task', content, 'raw_html'],
-    [null, true, 'markdown', ' ', content, 'no_objective'],
-    [null, true, 'markdown', 'task', 'small', 'small_document'],
-  ] as const)('skips evaluation for configuration and request boundaries (case %#)', async (configuration, filter, format, objective, text, reason) => {
+    [{status: 'disabled'}, 'markdown', 'task', content, 'disabled'],
+    [{status: 'unavailable', reason: 'missing_credentials'}, 'markdown', 'task', content, 'missing_credentials'],
+    [{status: 'unavailable', reason: 'initialization_failed'}, 'markdown', 'task', content, 'initialization_failed'],
+    [null, 'markdown', ' ', content, 'no_objective'],
+    [null, 'markdown', 'task', 'small', 'small_document'],
+  ] as const)('skips evaluation for configuration and request boundaries (case %#)', async (configuration, format, objective, text, reason) => {
     const {jev, mock} = capability();
-    const result = await selectContent(text, sourceUrl, format, {jev: configuration ?? jev, filter, objective});
+    const result = await selectContent(text, sourceUrl, format, {jev: configuration ?? jev, objective});
     expect(result.content).toBe(text);
     expect(result.filtering).toMatchObject({status: 'skipped', reason});
     expect(mock).not.toHaveBeenCalled();
@@ -81,7 +104,7 @@ describe('optional relevance selection', () => {
   });
   it('retains uncertainty, missing judgments, malformed answers, and complete failed batches', async () => {
     const {jev} = capability(async input => ({modelId: 'fixture', durationMs: 0, answers: Object.fromEntries(Object.keys(input.questions).map((id, i) => [id,
-      i % 3 === 0 ? {type: 'boolean', probability: 0.05} : i % 3 === 1 ? {type: 'boolean', probability: NaN} : undefined,
+      i % 3 === 0 ? {type: 'boolean', probability: 0.2} : i % 3 === 1 ? {type: 'boolean', probability: NaN} : undefined,
     ]))} as EvaluationResult<EvaluationQuestions>));
     const result = await selectContent(content, sourceUrl, 'markdown', {jev, objective: 'task'});
     expect(result.content).toBe(content);

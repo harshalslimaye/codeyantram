@@ -1,16 +1,14 @@
 import type {GraphExploreContext} from '@codeyantram/graph';
-import {retainUncertainEvidence} from '../../evaluation/index.js';
+import {retainUncertainEvidence, jevRetentionThreshold} from '../../evaluation/index.js';
 import {evaluateSymbols} from './evaluation.js';
 import type {NavigationEvaluationOptions} from './types.js';
-
-const IRRELEVANT_PROBABILITY = 0.05;
 
 export async function selectExploreContext(context: GraphExploreContext, options: NavigationEvaluationOptions & {
   query: string; filter?: boolean; signal?: AbortSignal;
 }) {
   const result = await evaluateSymbols(context.symbols, {...options, mode: 'filter', context});
   if (result.judgments.size === 0) return {context, filtering: result.filtering, warnings: result.warnings};
-  const retained = new Set(context.symbols.filter(symbol => retainUncertainEvidence(result.judgments.get(symbol.id), IRRELEVANT_PROBABILITY)).map(symbol => symbol.id));
+  const retained = new Set(context.symbols.filter(symbol => retainUncertainEvidence(result.judgments.get(symbol.id), jevRetentionThreshold(options.jev))).map(symbol => symbol.id));
   if (retained.size === 0) return {context, filtering: {...result.filtering, reason: 'no_evidence'},
     warnings: [...result.warnings, 'JEV selected no evidence; original graph results returned.']};
   retainConnectedSymbols(context, retained);

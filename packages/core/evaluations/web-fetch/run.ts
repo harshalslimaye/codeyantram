@@ -86,7 +86,7 @@ async function evaluateFixture(fixture: typeof fetchFixtures[number], context: {
     const jev: JevCapability = {status: 'available', evaluator: evaluator ?? oracle};
     const url = `https://example.com/evaluation/${fixture.id}`;
     const document = {requestedUrl: url, finalUrl: url, status: 200, contentType: 'text/markdown', text: fixture.content};
-    const baselineSelection = await selectContent(fixture.content, url, 'markdown', {filter: false});
+    const baselineSelection = await selectContent(fixture.content, url, 'markdown', {jev: {status: 'disabled'}});
     const selection = await selectContent(fixture.content, url, 'markdown', {jev, objective: fixture.objective});
     const baseline = formatOutput(document, 'markdown', fixture.content.length, baselineSelection);
     const filtered = formatOutput(document, 'markdown', fixture.content.length, selection);

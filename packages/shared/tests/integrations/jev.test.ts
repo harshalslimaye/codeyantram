@@ -18,11 +18,28 @@ beforeEach(async () => {
 afterEach(async () => { await rm(directory, {recursive: true, force: true}); });
 
 describe('JEV configuration', () => {
+	it.each([0, 0.5, 0.8, 1])('accepts neighbor threshold %s', neighborThreshold => {
+		expect(resolveJevConfiguration({integrations: {jev: {neighborThreshold}}}).neighborThreshold).toBe(neighborThreshold);
+	});
+	it.each([undefined, null, '0.8', -1, 2, NaN, Infinity])('defaults invalid neighbor threshold %s', neighborThreshold => {
+		expect(resolveJevConfiguration({integrations: {jev: {neighborThreshold}}}).neighborThreshold).toBe(0.5);
+	});
+	it.each([0, 0.1, 0.2, 1])('accepts retention threshold %s', retentionThreshold => {
+		expect(resolveJevConfiguration({integrations: {jev: {retentionThreshold}}}).retentionThreshold).toBe(retentionThreshold);
+	});
+	it.each([undefined, null, '0.2', -0.1, 1.1, NaN, Infinity])('defaults invalid retention threshold %s', retentionThreshold => {
+		expect(resolveJevConfiguration({integrations: {jev: {retentionThreshold}}}).retentionThreshold).toBe(0.2);
+	});
+	it('preserves a configured threshold when toggling usage', async () => {
+		await writeConfig({providers: {typesafe: {apiKey: 'test'}}, integrations: {jev: {retentionThreshold: 0.35, neighborThreshold: 0.8}}});
+		await expect(toggleJevUsage()).resolves.toMatchObject({enabled: true, retentionThreshold: 0.35, neighborThreshold: 0.8});
+		await expect(readConfig()).resolves.toMatchObject({integrations: {jev: {retentionThreshold: 0.35, neighborThreshold: 0.8}}});
+	});
 	it('saves an evaluation key without enabling usage or adding a coding model', async () => {
-		await expect(readJevConfiguration()).resolves.toEqual({enabled: false, configured: false});
+		await expect(readJevConfiguration()).resolves.toEqual({enabled: false, configured: false, retentionThreshold: 0.2, neighborThreshold: 0.5});
 		await saveProviderApiKey('typesafe', '  test-jev-key  ');
 		await expect(readConfig()).resolves.toEqual({providers: {typesafe: {apiKey: 'test-jev-key'}}});
-		await expect(readJevConfiguration()).resolves.toEqual({enabled: false, configured: true});
+		await expect(readJevConfiguration()).resolves.toEqual({enabled: false, configured: true, retentionThreshold: 0.2, neighborThreshold: 0.5});
 		await expect(readConfiguredProviders()).resolves.toEqual([]);
 		await expect(readProviderCredentials('jev-latest')).resolves.toEqual({});
 		expect(SUPPORTED_CHAT_MODELS.some(model => /jev|typesafe/i.test(`${model.id} ${model.provider}`))).toBe(false);
@@ -35,12 +52,12 @@ describe('JEV configuration', () => {
 			integrations: {other: {enabled: true}, jev: {custom: 'keep'}},
 		};
 		await writeConfig(config);
-		await expect(toggleJevUsage()).resolves.toEqual({enabled: true, configured: true});
+		await expect(toggleJevUsage()).resolves.toEqual({enabled: true, configured: true, retentionThreshold: 0.2, neighborThreshold: 0.5});
 		await expect(readConfig()).resolves.toEqual({
 			...config, integrations: {...config.integrations, jev: {custom: 'keep', enabled: true}},
 		});
-		await expect(readJevConfiguration()).resolves.toEqual({enabled: true, configured: true});
-		await expect(toggleJevUsage()).resolves.toEqual({enabled: false, configured: true});
+		await expect(readJevConfiguration()).resolves.toEqual({enabled: true, configured: true, retentionThreshold: 0.2, neighborThreshold: 0.5});
+		await expect(toggleJevUsage()).resolves.toEqual({enabled: false, configured: true, retentionThreshold: 0.2, neighborThreshold: 0.5});
 		await expect(readConfig()).resolves.toEqual({
 			...config, integrations: {...config.integrations, jev: {custom: 'keep', enabled: false}},
 		});
@@ -56,19 +73,19 @@ describe('JEV configuration', () => {
 
 	it('allows disabling an enabled integration after its key has been removed', async () => {
 		await writeConfig({integrations: {jev: {enabled: true}}});
-		await expect(toggleJevUsage()).resolves.toEqual({enabled: false, configured: false});
+		await expect(toggleJevUsage()).resolves.toEqual({enabled: false, configured: false, retentionThreshold: 0.2, neighborThreshold: 0.5});
 		await expect(readConfig()).resolves.toEqual({integrations: {jev: {enabled: false}}});
 	});
 
 	it.each([{}, {integrations: null}, {integrations: []}, {integrations: {jev: 'invalid'}}, {integrations: {jev: {enabled: 'true'}}}])
 	('defaults malformed or absent preferences to disabled: %j', config => {
-		expect(resolveJevConfiguration(config)).toEqual({enabled: false, configured: false});
+		expect(resolveJevConfiguration(config)).toEqual({enabled: false, configured: false, retentionThreshold: 0.2, neighborThreshold: 0.5});
 	});
 
 	it('replaces malformed integration containers when enabling', async () => {
 		await writeConfig({providers: {typesafe: {apiKey: 'test-key'}}, integrations: []});
 		await toggleJevUsage();
-		await expect(readJevConfiguration()).resolves.toEqual({enabled: true, configured: true});
+		await expect(readJevConfiguration()).resolves.toEqual({enabled: true, configured: true, retentionThreshold: 0.2, neighborThreshold: 0.5});
 	});
 
 	it('propagates read and write failures without reporting success', async () => {
@@ -80,6 +97,6 @@ describe('JEV configuration', () => {
 		vi.mocked(getUserConfigPath).mockReturnValueOnce(path.join(directory, 'config.json')).mockReturnValueOnce(directory);
 		await expect(toggleJevUsage()).rejects.toBeInstanceOf(Error);
 		vi.mocked(getUserConfigPath).mockReturnValue(path.join(directory, 'config.json'));
-		await expect(readJevConfiguration()).resolves.toEqual({enabled: false, configured: true});
+		await expect(readJevConfiguration()).resolves.toEqual({enabled: false, configured: true, retentionThreshold: 0.2, neighborThreshold: 0.5});
 	});
 });
