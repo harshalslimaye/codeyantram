@@ -34,8 +34,8 @@ export function useExportConfirmation(onExport?: (filePath?: string) => void) {
 		? <Picker owner="export-confirmation" title={`Export chat to ${target}?`}
 			options={
 				[
-					{value: 'export', label: 'Export'},
-					{value: 'cancel', label: 'Cancel'}
+					{value: 'cancel', label: 'Cancel'},
+					{value: 'export', label: 'Export'}
 				]
 			}
 			onSelect={value => finish(value === 'export')} onCancel={() => finish(false)} />

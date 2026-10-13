@@ -5,7 +5,7 @@ import {createChatEventHandler} from './chat-events.js';
 import {recordCompactionUsage, usageNotice} from './compaction-usage.js';
 import {compactionNoopNotice, prepareCompactionRequest, readCompactionResult} from './compaction-stream.js';
 import type {AgentId, ChatRequest, CompactStreamEvent, EffortLevel} from '@codeyantram/shared';
-import {buildChatContext, estimateContextTokens, getContextStatus, type ConversationMessage} from './context.js';
+import {buildChatContext, estimateProjectedContextTokens, getContextStatus, type ConversationMessage} from './context.js';
 import {assessCompactionReduction, planCompaction, type CompactionPlan} from './compaction.js';
 
 export type {ChatTransport, CompactTransport, InitTransport, SessionOperation, CompactionState, CompactionUsage, CompactionOutcome, ChatSnapshot, StatusEntry} from './session-types.js';
@@ -79,12 +79,12 @@ export class ChatSession {
 		}
 	}
 
-	showStatus(modelId: string) {
+	showStatus(modelId: string, toolResultTrimming = true) {
 		if (this.controller) return;
 		this.update({
 			statusEntries: [...this.state.statusEntries, {
 				id: randomUUID(), afterMessageCount: this.state.messages.length,
-				status: getContextStatus(modelId, this.state.messages, this.state.compaction),
+				status: getContextStatus(modelId, this.state.messages, this.state.compaction, {toolResultTrimming}),
 			}],
 			notice: undefined,
 		});
@@ -168,7 +168,7 @@ export class ChatSession {
 		}
 	}
 
-	async compact(model: string): Promise<CompactionOutcome> {
+	async compact(model: string, toolResultTrimming = true): Promise<CompactionOutcome> {
 		if (this.controller) return {type: 'busy'};
 		let controller: AbortController | undefined;
 		let revision = this.revision;
@@ -196,7 +196,7 @@ export class ChatSession {
 			// Breaking the loop waits for transport cleanup before any context commit.
 			if (this.compactionCancelled(controller, revision)) return {type: 'cancelled'};
 			if (!result) throw new Error('The compaction response was interrupted. Try again.');
-			return this.commitCompaction({result, plan, previous, transcript, model: request.model, before, replaced});
+			return this.commitCompaction({result, plan, previous, transcript, model: request.model, before, replaced, toolResultTrimming});
 		} catch (error) {
 			return this.handleCompactionFailure(error, controller, revision);
 		} finally {
@@ -212,8 +212,9 @@ export class ChatSession {
 		result: Extract<CompactStreamEvent, {type: 'done'}>; plan: Extract<CompactionPlan, {type: 'ready'}>;
 		previous: CompactionState | undefined; transcript: ConversationMessage[]; model: string;
 		before: ReturnType<typeof buildChatContext>; replaced: ReturnType<typeof buildChatContext>;
+		toolResultTrimming: boolean;
 	}): CompactionOutcome {
-		const {result, plan, previous, transcript, model, before, replaced} = context;
+		const {result, plan, previous, transcript, model, before, replaced, toolResultTrimming} = context;
 		const candidate: CompactionState = {
 			summary: result.summary, coveredMessageCount: plan.coveredMessageCount,
 			generation: (previous?.generation ?? 0) + 1, model,
@@ -229,7 +230,7 @@ export class ChatSession {
 		this.update({
 			compaction: candidate, compactionUsage,
 			notice: `Compacted ${plan.coveredMessageCount - (previous?.coveredMessageCount ?? 0)} messages; latest ${plan.retainedTurnCount} turns kept. `
-				+ `Estimated context: ~${estimateContextTokens(before)} → ~${estimateContextTokens(after)} tokens.` + usageNotice(result.usage),
+				+ `Estimated context: ~${estimateProjectedContextTokens(before, toolResultTrimming)} → ~${estimateProjectedContextTokens(after, toolResultTrimming)} tokens.` + usageNotice(result.usage),
 		});
 		return {type: 'success'};
 	}

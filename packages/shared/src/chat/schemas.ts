@@ -69,6 +69,7 @@ export const chatRequestSchema = z.object({
   messages: z.array(requestMessageSchema).min(1),
   effort: effortLevelSchema.optional(),
   contextSummary: contextSummarySchema.optional(),
+  toolResultTrimming: z.boolean().optional(),
 }).superRefine((request, ctx) => {
   const ids = new Set<string>();
   for (const [index, message] of request.messages.entries()) {

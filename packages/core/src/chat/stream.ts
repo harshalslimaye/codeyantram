@@ -6,6 +6,7 @@ import type {ProviderCredentials, ResolveChatModelOptions} from './models.js';
 import type {ToolHostServices} from '../tools/catalog.js';
 import {createChatStream} from './stream-options.js';
 import {translateProviderEvents} from './provider-events.js';
+import type {ToolResultContextDiagnostic} from './tool-result-context.js';
 
 export interface ChatStreamOptions extends ToolHostServices {
   credentials: ProviderCredentials;
@@ -13,6 +14,9 @@ export interface ChatStreamOptions extends ToolHostServices {
   abortSignal?: AbortSignal;
   fetch?: typeof globalThis.fetch;
   chatgpt?: ResolveChatModelOptions['chatgpt'];
+  /** Disable projection without changing transcript storage or manual compaction. */
+  toolResultTrimming?: boolean;
+  onToolResultContext?: (diagnostic: ToolResultContextDiagnostic) => void;
 }
 
 /** Streams the shared chat events; cancellation ends without a terminal event. */

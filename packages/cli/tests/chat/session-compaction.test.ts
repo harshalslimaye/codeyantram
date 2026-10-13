@@ -211,7 +211,7 @@ describe('session compaction', () => {
 	it('keeps a usable session when the requested summarization model is unsupported', async () => {
 		const {session, compact} = setup();
 		await seed(session);
-		expect((await session.compact('unsupported')).type).toBe('failed');
+		expect((await session.compact('unsupported/model')).type).toBe('failed');
 		expect(compact).not.toHaveBeenCalled();
 		expect(session.getSnapshot().operation).toBe('idle');
 		expect(await session.compact(model)).toEqual({type: 'success'});

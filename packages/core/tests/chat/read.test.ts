@@ -19,14 +19,14 @@ async function collect(stream: AsyncIterable<ChatStreamEvent>) {
 describe('read provider loop', () => {
   it('registers read without a graph and passes only the latest user objective', async () => {
     const read = vi.fn<ReadService['read']>().mockResolvedValue(output);
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(sseResponse(openaiToolEvents('read', {filePath: 'config.json', filter: false})))
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(sseResponse(openaiToolEvents('read', {filePath: 'config.json'})))
       .mockResolvedValueOnce(sseResponse(openaiEvents));
     const messages = [{id: 'prior', role: 'user' as const, parts: [{type: 'text' as const, text: 'Private prior task'}]},
       {id: 'latest', role: 'user' as const, parts: [{type: 'text' as const, text: 'Inspect the config'}]}];
     const events = await collect(streamChat({model: 'gpt-6.1-sol', messages}, {credentials: {openai: 'test'}, fetch, read: {read}}));
     expect(events.map(event => event.type)).toEqual(['start', 'tool-call', 'tool-result', 'text-delta', 'text-delta', 'done']);
     expect(events[2]).toMatchObject({type: 'tool-result', result: {toolName: 'read', status: 'success', output}});
-    expect(read).toHaveBeenCalledWith({filePath: 'config.json', filter: false}, {objective: 'Inspect the config', abortSignal: asymmetric.any(AbortSignal)});
+    expect(read).toHaveBeenCalledWith({filePath: 'config.json'}, {objective: 'Inspect the config', abortSignal: asymmetric.any(AbortSignal)});
     const second = parseJson<ProviderRequest>(requestBody(requireValue(fetch.mock.calls[1])[1]?.body));
     expect(JSON.stringify(second)).toContain('config.json');
   });

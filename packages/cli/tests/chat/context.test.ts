@@ -80,7 +80,7 @@ describe('chat context builder', () => {
 
 describe('context token estimates', () => {
 	it('rejects an unsupported model instead of estimating against an arbitrary capacity', () => {
-		expect(() => getContextStatus('unsupported', transcript)).toThrow('Model "unsupported" is not supported.');
+		expect(() => getContextStatus('unsupported/model', transcript)).toThrow('Model "unsupported/model" is not supported.');
 	});
 	it('reports empty context and changes capacity when switching models', () => {
 		expect(getContextStatus('gemma-4-31b-it', [])).toMatchObject({usedTokens: 0, usedPercent: 0, remainingPercent: 100, contextWindow: 262_144});

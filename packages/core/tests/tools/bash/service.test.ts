@@ -160,7 +160,7 @@ describe('command input and permission boundaries', () => {
     expect(result).toMatchObject({status: 'error', error: {code: 'execution_failed'}});
     expect(JSON.stringify(result)).not.toContain('PRIVATE KEY');
     for (let position = 1; position < 40; position++) await execute('glob', `${position}`, undefined, async () => ({}));
-    expect(await execute('bash', 'extra', undefined, async () => ({}))).toMatchObject({status: 'success'});
+    expect(await execute('bash', 'extra', undefined, async () => ({}))).toMatchObject({status: 'error', error: {code: 'tool_limit'}});
   });
 
   it('requires explicit host configuration and an absolute shell executable', () => {
